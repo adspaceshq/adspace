@@ -1,80 +1,84 @@
 'use client';
 
 import { useEffect } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { useAuthSession, type AuthSession } from '@/components/AuthSessionProvider';
+import { PRIVY_ENABLED } from '@/lib/privy';
 
-export interface XIdentity {
-  ready: boolean;
-  authenticated: boolean;
-  handle: string | undefined;
-  login: () => void;
-}
+export type XIdentity = AuthSession;
 
-/** X handle from the Privy user object (X-only login, no wallets). */
+/** Backend-verified X identity (Privy OAuth + API session). */
 export function useXIdentity(): XIdentity {
-  const { ready, authenticated, user, login } = usePrivy();
-  const username = (user as unknown as { twitter?: { username?: string } })?.twitter?.username;
-  return { ready, authenticated, handle: username ? `@${username}` : undefined, login };
+  return useAuthSession();
 }
 
-/**
- * Mount this (only when NEXT_PUBLIC_PRIVY_APP_ID is set) to observe X login
- * state from a parent without calling usePrivy there — safe when Privy is
- * disabled because this component simply never mounts.
- */
 export function XProbe({ onChange }: { onChange: (x: XIdentity) => void }) {
-  const { ready, authenticated, handle, login } = useXIdentity();
+  const x = useXIdentity();
   useEffect(() => {
-    onChange({ ready, authenticated, handle, login });
-    // Primitive deps only: login identity is stable; avoids effect loops.
+    onChange(x);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, authenticated, handle]);
+  }, [x.ready, x.authenticated, x.handle, x.name, x.avatar, x.loggingIn, x.error]);
   return null;
 }
 
 export default function AuthButton() {
-  // Hooks below require PrivyProvider. Without an App ID the provider renders
-  // bare children, so render nothing here instead of crashing prerender.
-  if (!process.env.NEXT_PUBLIC_PRIVY_APP_ID) return null;
+  if (!PRIVY_ENABLED) return null;
   return <PrivyAuthButton />;
 }
 
 function PrivyAuthButton() {
-  const { ready, authenticated, user, login, logout } = usePrivy();
+  const { ready, authenticated, handle, avatar, loggingIn, error, login, logout } = useAuthSession();
 
-  if (!ready) {
+  if (!ready && !authenticated) {
     return (
-      <span className="rounded-lg px-4 py-2 text-[13px] font-medium text-[#020817]/40">
-        Loading…
-      </span>
+      <button
+        type="button"
+        disabled
+        aria-label="Log in with X"
+        className="rounded-lg border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium text-[#020817]/40"
+      >
+        Log in with X
+      </button>
     );
   }
 
   if (!authenticated) {
     return (
-      <button
-        onClick={() => login()}
-        className="rounded-lg bg-[#020817] px-4 py-2 text-[13px] font-medium text-white shadow-sm transition hover:-translate-y-px hover:bg-[#0f1a33]"
-      >
-        Log in
-      </button>
+      <span className="flex flex-col items-end gap-1">
+        <button
+          type="button"
+          onClick={login}
+          disabled={loggingIn}
+          aria-label="Log in with X"
+          className="rounded-lg border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium text-[#020817] shadow-sm transition hover:-translate-y-px hover:border-[#c3cdfd] hover:bg-[#f8f8ff] disabled:cursor-wait disabled:opacity-60"
+        >
+          {loggingIn ? 'Connecting…' : 'Log in with X'}
+        </button>
+        {error && <span className="max-w-[240px] text-right text-[11px] text-[#dc2626]">{error}</span>}
+      </span>
     );
   }
 
-  // X handle only — wallet display comes later with wallet login.
-  const twitter = (user as unknown as { twitter?: { username?: string } })?.twitter?.username;
-  const label = twitter ? `@${twitter}` : 'Connected';
+  const label = handle ?? 'Connected';
 
   return (
     <span className="flex items-center gap-2">
       <span
-        title={user?.id ?? ''}
-        className="max-w-[160px] truncate rounded-full border border-[#e7e5e0] bg-white px-3 py-[6px] font-mono text-[12px] font-medium text-[#020817]"
+        title={handle ?? ''}
+        className="flex max-w-[180px] items-center gap-2 truncate rounded-full border border-[#e7e5e0] bg-white py-[4px] pl-[5px] pr-3 font-mono text-[12px] font-medium text-[#020817]"
       >
+        {avatar ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={avatar} alt="" width={22} height={22} className="h-[22px] w-[22px] rounded-full object-cover" />
+        ) : (
+          <span className="grid h-[22px] w-[22px] place-items-center rounded-full bg-[#4166fb] text-[10px] font-semibold text-white">
+            {label.replace('@', '').charAt(0).toUpperCase()}
+          </span>
+        )}
         {label}
       </span>
       <button
-        onClick={() => logout()}
+        type="button"
+        onClick={() => void logout()}
         className="rounded-lg px-3 py-2 text-[13px] font-medium text-[#020817]/60 transition hover:text-[#020817]"
       >
         Log out

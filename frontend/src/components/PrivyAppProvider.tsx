@@ -1,16 +1,14 @@
 'use client';
 
 import { PrivyProvider } from '@privy-io/react-auth';
-
-const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? '';
+import { PRIVY_APP_ID } from '@/lib/privy';
 
 export default function PrivyAppProvider({ children }: { children: React.ReactNode }) {
-  if (!appId) {
-    // Don't crash the demo if env is missing — show a one-time warning in console
-    // and render children unauthenticated.
+  if (!PRIVY_APP_ID) {
+    // Don't crash the demo if env is missing — render children unauthenticated.
     if (typeof window !== 'undefined') {
       console.warn(
-        'NEXT_PUBLIC_PRIVY_APP_ID is missing. Add it to frontend/.env.local to enable login.'
+        'NEXT_PUBLIC_PRIVY_APP_ID is missing. Add it to frontend/.env.local to enable X login.',
       );
     }
     return <>{children}</>;
@@ -18,11 +16,25 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
 
   return (
     <PrivyProvider
-      appId={appId}
+      appId={PRIVY_APP_ID}
       config={{
-        // X-only for now — wallet comes later.
+        // X-only. Wallet login ships later with real payments.
         // Dashboard must have X (Twitter) enabled as a login method.
         loginMethods: ['twitter'],
+        appearance: {
+          theme: 'light',
+          accentColor: '#4166fb',
+          landingHeader: 'Log in with X',
+          loginMessage: 'Your X handle is your identity on Spotboard.',
+          showWalletLoginFirst: false,
+        },
+        embeddedWallets: {
+          ethereum: { createOnLogin: 'off' },
+          solana: { createOnLogin: 'off' },
+        },
+        externalWallets: {
+          disableAllExternalWallets: true,
+        },
       }}
     >
       {children}
