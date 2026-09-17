@@ -8,11 +8,8 @@ import Footer from '@/components/Footer'
 import SpecSheet from '@/components/SpecSheet'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { formatMoney, surfaceLabels, type Spot } from '@/lib/listings'
-
-// True once the new Privy App ID lands in frontend/.env.local.
-// When false the page falls back to the logged-out demo (manual name).
-const PRIVY_ENABLED = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID
+import { formatMoney, minBidFor, surfaceLabels, type Spot } from '@/lib/listings'
+import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
   'w-full rounded-lg border border-[#e7e5e0] bg-white px-[14px] py-3 font-[family-name:var(--font-body)] text-[15px] text-[#020817] transition focus:border-[#4166fb] focus:shadow-[0_0_0_3px_#e9edfe] focus:outline-none'
@@ -94,7 +91,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
   }
   const openBid = (spot: Spot) => {
     setName('')
-    setAmount(String((spot.bid ?? spot.price) + (spot.bid ? 10 : 0)))
+    setAmount(String(minBidFor(listing, spot)))
     setSuccess(null)
     setModal({ spot, mode: 'bid' })
   }
@@ -109,7 +106,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
     e.preventDefault()
     if (!modal) return
     if (PRIVY_ENABLED) {
-      if (!x?.ready) return
+      if (!x?.ready || x.loggingIn) return
       if (!x.authenticated || !x.handle) {
         x.login()
         return
@@ -122,13 +119,13 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
         setSuccess({ spotLabel: modal.spot.label, text: `${modal.spot.label} claimed by ${actor} — mock, no charge.` })
       } else {
         const amt = Number(amount)
-        const min = (modal.spot.bid ?? modal.spot.price) + (modal.spot.bid ? 10 : 0)
+        const min = minBidFor(listing, modal.spot)
         if (!amt || amt < min) {
-          showToast(`Bid must be at least ${formatMoney(min)}.`)
+          showToast(`Bid must be at least ${formatMoney(min, listing.currency)}.`)
           return
         }
         await placeBid(listing.id, modal.spot.id, actor, amt)
-        setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt)} on ${modal.spot.label} — mock.` })
+        setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt, listing.currency)} on ${modal.spot.label} — mock.` })
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Something went wrong.')
@@ -174,12 +171,12 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
               <strong className="text-[#020817]">{listing.seller.name}</strong> {listing.seller.handle}
             </span>
             <span className="inline-flex items-center gap-[6px]"><Calendar size={14} /> Ends {listing.deadline}</span>
-            <span><strong className="text-[#020817]">{formatMoney(raised)}</strong> raised</span>
+            <span><strong className="text-[#020817]">{formatMoney(raised, listing.currency)}</strong> raised</span>
             {leaders.length > 0 && (
               <span className="inline-flex items-center gap-[6px]">
                 <Trophy size={14} className="text-[#b89b00]" />
                 {leaders.map(([n, t], i) => (
-                  <span key={n}>{i > 0 && '· '}<strong className="text-[#020817]">{n}</strong> {formatMoney(t)}</span>
+                  <span key={n}>{i > 0 && '· '}<strong className="text-[#020817]">{n}</strong> {formatMoney(t, listing.currency)}</span>
                 ))}
               </span>
             )}
@@ -200,7 +197,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
               {allBids.slice(0, 6).map((b, i) => (
                 <div key={`${b.at}-${i}`} className="flex items-center gap-3 rounded-xl border border-[#e7e5e0] bg-white px-5 py-3 text-sm">
                   <span className="font-semibold">{b.bidder}</span>
-                  <span className="text-[#64748b]">bid {formatMoney(b.amount)} on {b.spotLabel}</span>
+                  <span className="text-[#64748b]">bid {formatMoney(b.amount, listing.currency)} on {b.spotLabel}</span>
                   <span className="ml-auto text-[13px] text-[#64748b]">{ago(b.at)}</span>
                 </div>
               ))}
@@ -238,16 +235,25 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
                 <h3 className="mb-1 text-2xl">{modal.mode === 'claim' ? 'Claim' : 'Bid on'} {modal.spot.label}</h3>
                 <p className="mb-6 text-sm text-[#64748b]">
                   {modal.spot.size} · {modal.mode === 'claim'
-                    ? `${formatMoney(modal.spot.price)} fixed — mock checkout, no charge.`
-                    : `current ${formatMoney(modal.spot.bid ?? modal.spot.price)} — mock bid.`}
+                    ? `${formatMoney(modal.spot.price, listing.currency)} fixed — mock checkout, no charge.`
+                    : `current ${formatMoney(modal.spot.bid ?? modal.spot.price, listing.currency)} — mock bid.`}
                 </p>
                 <form onSubmit={submit}>
                   {PRIVY_ENABLED ? (
                     <div className="mb-5 rounded-xl border border-[#e7e5e0] bg-[#fafaf7] px-[14px] py-3 text-[14px]">
                       {x?.authenticated && x.handle ? (
-                        <span>Claiming as <strong>{x.handle}</strong></span>
+                        <span className="flex items-center gap-2">
+                          {x.avatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={x.avatar} alt="" width={24} height={24} className="h-6 w-6 rounded-full object-cover" />
+                          ) : null}
+                          <span>{modal.mode === 'claim' ? 'Claiming' : 'Bidding'} as <strong>{x.handle}</strong></span>
+                        </span>
                       ) : (
-                        <span className="text-[#64748b]">Log in with X to {modal.mode === 'claim' ? 'claim' : 'bid'} — your handle is your identity.</span>
+                        <span className="text-[#64748b]">
+                          Log in with X to {modal.mode === 'claim' ? 'claim' : 'bid'} — your handle is your identity.
+                          {x?.error && <span className="mt-1 block text-[#dc2626]">{x.error}</span>}
+                        </span>
                       )}
                     </div>
                   ) : (
@@ -262,11 +268,11 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
                   {modal.mode === 'bid' && (
                     <div className="mb-5 flex flex-col gap-[6px]">
                       <label className="text-[13px] font-semibold" htmlFor="modal-amount">
-                        Bid (min {formatMoney((modal.spot.bid ?? modal.spot.price) + (modal.spot.bid ? 10 : 0))})
+                        Bid (min {formatMoney(minBidFor(listing, modal.spot), listing.currency)})
                       </label>
                       <input
                         id="modal-amount" required type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                        min={(modal.spot.bid ?? modal.spot.price) + (modal.spot.bid ? 10 : 0)} className={field}
+                        min={minBidFor(listing, modal.spot)} className={field}
                       />
                     </div>
                   )}
@@ -276,7 +282,7 @@ export default function ListingDetail({ params }: { params: Promise<{ id: string
                     </button>
                     <button type="submit" className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8]">
                       {PRIVY_ENABLED && (!x?.authenticated || !x.handle)
-                        ? 'Log in with X'
+                        ? (x?.loggingIn ? 'Redirecting…' : 'Log in with X')
                         : modal.mode === 'claim' ? 'Confirm claim' : 'Place bid'}
                     </button>
                   </div>

@@ -33,7 +33,19 @@ export default function ListingCard({ listing }: { listing: Listing }) {
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white transition duration-200 hover:-translate-y-1 hover:border-[#c3cdfd] hover:shadow-[0_16px_40px_rgba(2,8,23,0.1)]">
       <div className="relative aspect-[16/10] bg-[#f1f0ec]">
-        <img src={listing.image} alt={listing.title} loading="lazy" className="h-full w-full object-cover" />
+        {listing.image ? (
+          <img src={listing.image} alt={listing.title} loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <div
+            aria-hidden="true"
+            className="grid h-full w-full place-items-center"
+            style={{ background: `linear-gradient(135deg, ${listing.seller.color}22, #e9edfe)` }}
+          >
+            <span className="font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">
+              {surfaceLabels[listing.surface] ?? listing.surface}
+            </span>
+          </div>
+        )}
         <span className={`absolute left-3 top-3 inline-flex items-center rounded-full px-3 py-[5px] font-mono text-[11px] font-medium uppercase tracking-wide shadow-sm ${badgeStyles[badge]}`}>
           {soldOut ? 'Sold out' : isAuction ? 'Live auction' : 'Live'}
         </span>
@@ -45,7 +57,7 @@ export default function ListingCard({ listing }: { listing: Listing }) {
           </span>
           <span className="text-[15px] font-semibold">
             {isAuction ? 'Bids from ' : 'From '}
-            {formatMoney(minPrice)}
+            {formatMoney(minPrice, listing.currency)}
           </span>
         </div>
         <h3 className="font-display text-[22px] leading-tight">{listing.title}</h3>

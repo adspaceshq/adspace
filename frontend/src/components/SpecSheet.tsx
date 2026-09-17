@@ -38,7 +38,7 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
       aria-label={
         isClaimed
           ? `${spot.label} claimed by ${spot.claimedBy}`
-          : `${spot.label}, ${spot.size}, ${formatMoney(spot.bid || spot.price)}`
+          : `${spot.label}, ${spot.size}, ${formatMoney(spot.bid || spot.price, listing.currency)}`
       }
       className={`flex min-h-[120px] flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-[#9aa0aa] bg-[#ececee] p-4 text-center transition sm:min-h-[150px] ${
         isClaimed ? 'cursor-default' : 'cursor-pointer hover:border-[#4166fb] hover:bg-white hover:shadow-[0_8px_24px_rgba(65,102,251,0.2)]'
@@ -56,12 +56,12 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
           <span className="font-[family-name:var(--font-body)] text-[15px] font-semibold text-[#020817]">
             {spot.claimedBy}
           </span>
-          <span className="font-mono text-sm text-[#64748b]">{formatMoney(spot.bid ?? spot.price)}</span>
+          <span className="font-mono text-sm text-[#64748b]">{formatMoney(spot.bid ?? spot.price, listing.currency)}</span>
         </>
       ) : (
         <>
           <span className="font-mono text-xs font-bold tracking-wide text-[#020817]">{spot.size}</span>
-          <span className="font-mono text-sm text-[#020817]">{formatMoney(spot.bid || spot.price)}</span>
+          <span className="font-mono text-sm text-[#020817]">{formatMoney(spot.bid || spot.price, listing.currency)}</span>
           <span className="font-mono text-[11px] text-[#64748b]">
             {spot.bid ? 'top bid · tap to outbid' : 'open · tap to bid'}
           </span>
@@ -172,8 +172,8 @@ export default function SpecSheet({ listing, onClaim, onBid }: {
                       isClaimed
                         ? `${spot.label} claimed by ${spot.claimedBy}`
                         : isWinning
-                          ? `${spot.label}, top bid ${formatMoney(spot.bid ?? spot.price)} by ${spot.bidBy}`
-                          : `${spot.label}, ${spot.size}, ${formatMoney(spot.bid || spot.price)}`
+                          ? `${spot.label}, top bid ${formatMoney(spot.bid ?? spot.price, listing.currency)} by ${spot.bidBy}`
+                          : `${spot.label}, ${spot.size}, ${formatMoney(spot.bid || spot.price, listing.currency)}`
                     }
                     className={`absolute z-[2] flex min-h-[46px] min-w-[46px] max-w-[180px] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-[1px] rounded-[10px] px-2 py-[6px] font-mono leading-normal transition ${
                       isClaimed || isWinning
@@ -190,12 +190,12 @@ export default function SpecSheet({ listing, onClaim, onBid }: {
                     {isClaimed || isWinning ? (
                       <>
                         <span className="text-center text-xs font-bold leading-tight">{isClaimed ? spot.claimedBy : spot.bidBy}</span>
-                        <span className="text-[10px] font-medium opacity-90">{formatMoney(spot.bid ?? spot.price)}</span>
+                        <span className="text-[10px] font-medium opacity-90">{formatMoney(spot.bid ?? spot.price, listing.currency)}</span>
                       </>
                     ) : (
                       <>
                         <span className="text-[11px] font-bold tracking-wide">{spot.size}</span>
-                        <span className="text-[10px] font-medium">{formatMoney(spot.bid || spot.price)}</span>
+                        <span className="text-[10px] font-medium">{formatMoney(spot.bid || spot.price, listing.currency)}</span>
                       </>
                     )}
                   </button>

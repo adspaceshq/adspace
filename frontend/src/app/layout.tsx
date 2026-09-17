@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import StoreProvider from "@/components/StoreProvider";
 import PrivyAppProvider from "@/components/PrivyAppProvider";
+import AuthSessionProvider from "@/components/AuthSessionProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,7 +22,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="flex min-h-full flex-col">
         <PrivyAppProvider>
-          <StoreProvider>{children}</StoreProvider>
+          <AuthSessionProvider>
+            <StoreProvider>{children}</StoreProvider>
+          </AuthSessionProvider>
         </PrivyAppProvider>
       </body>
     </html>

@@ -8,9 +8,7 @@ import Footer from '@/components/Footer'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
 import { surfaceLabels, type Listing } from '@/lib/listings'
-
-// True once the new Privy App ID lands in frontend/.env.local.
-const PRIVY_ENABLED = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID
+import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
   'w-full rounded-lg border border-[#e7e5e0] bg-white px-[14px] py-3 font-[family-name:var(--font-body)] text-[15px] text-[#020817] transition focus:border-[#4166fb] focus:shadow-[0_0_0_3px_#e9edfe] focus:outline-none'
@@ -46,7 +44,7 @@ export default function ListPage() {
     e.preventDefault()
     // Seller: verified X handle when Privy is configured, manual name in demo mode.
     if (PRIVY_ENABLED) {
-      if (!x?.ready) return
+      if (!x?.ready || x.loggingIn) return
       if (!x.authenticated || !x.handle) {
         x.login()
         return
@@ -103,18 +101,20 @@ export default function ListPage() {
         ],
       },
     }
+    let newId: string
     try {
-      await addListing(listing)
+      newId = await addListing(listing)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not publish. Try again.')
       return
     }
-    router.push(`/listings/${id}`)
+    router.push(`/listings/${newId}`)
   }
 
   return (
     <>
       <Header />
+      {PRIVY_ENABLED && <XProbe onChange={setX} />}
       <main className="mx-auto w-full max-w-[760px] px-6 pb-16 pt-8">
         <div className="mb-8">
           <h1 className="mb-2" style={{ fontSize: '40px' }}>List your space.</h1>
@@ -126,7 +126,25 @@ export default function ListPage() {
             <h2 className="mb-6 text-[22px]">The basics</h2>
             <div className="mb-5 flex flex-col gap-[6px]">
               <label className="text-[13px] font-semibold" htmlFor="list-name">Your name</label>
-              <input id="list-name" className={field} placeholder="vana" value={sellerName} onChange={(e) => setSellerName(e.target.value)} required />
+              {PRIVY_ENABLED ? (
+                x?.authenticated && x.handle ? (
+                  <input id="list-name" className={field} value={x.handle} readOnly aria-readonly />
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => x?.login()}
+                      disabled={!x?.ready || x?.loggingIn}
+                      className="rounded-lg bg-[#020817] px-4 py-3 text-[15px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
+                    >
+                      {x?.loggingIn ? 'Redirecting to X…' : 'Log in with X to list'}
+                    </button>
+                    {x?.error && <p className="text-sm font-medium text-[#dc2626]">{x.error}</p>}
+                  </>
+                )
+              ) : (
+                <input id="list-name" className={field} placeholder="vana" value={sellerName} onChange={(e) => setSellerName(e.target.value)} required />
+              )}
             </div>
             <div className="mb-5 flex flex-col gap-[6px]">
               <label className="text-[13px] font-semibold" htmlFor="list-title">Title</label>
@@ -229,7 +247,7 @@ export default function ListPage() {
 
           <div className="flex justify-end">
             <button type="submit" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-7 py-[15px] text-[16px] font-medium text-white shadow-sm transition hover:-translate-y-px hover:bg-[#3558e8]">
-              Publish space
+              {PRIVY_ENABLED && (!x?.authenticated || !x.handle) ? 'Log in with X to publish' : 'Publish space'}
             </button>
           </div>
         </form>
