@@ -1,28 +1,94 @@
-import { getAccessToken } from '@privy-io/react-auth';
+import { getAccessToken, getIdentityToken } from "@privy-io/react-auth";
+import type {
+  ApiCreateListingRequest,
+  ApiListing,
+  ApiListingSummary,
+  ApiSpot,
+  SessionUser,
+} from "./types";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080';
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 
-/** POST to the Express API with the Privy access token attached (Bearer). */
-export async function apiPost<T>(path: string, body: unknown): Promise<T> {
-  const token = await getAccessToken();
+async function parseError(res: Response): Promise<string> {
+  const err = await res.json().catch(() => ({ error: res.statusText }));
+  return (err as { error?: string }).error ?? `request failed: ${res.status}`;
+}
+
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API}${path}`, {
-    method: 'POST',
+    ...init,
+    credentials: "include",
     headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      "Content-Type": "application/json",
+      ...(init.headers ?? {}),
     },
-    body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((err as { error?: string }).error ?? `request failed: ${res.status}`);
-  }
+  if (!res.ok) throw new Error(await parseError(res));
   return res.json() as Promise<T>;
 }
 
-/** GET from the Express API (public endpoints need no token). */
+/** Authenticated POST: session cookie + Privy Bearer so the API can verify X. */
+export async function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
+  let token: string | null = null;
+  try {
+    token = await getAccessToken();
+  } catch {
+    token = null;
+  }
+  return request<T>(path, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: JSON.stringify(body),
+  });
+}
+
 export async function apiGet<T>(path: string): Promise<T> {
-  const res = await fetch(`${API}${path}`);
-  if (!res.ok) throw new Error(`request failed: ${res.status}`);
-  return res.json() as Promise<T>;
+  return request<T>(path);
+}
+
+export function fetchListingSummaries(): Promise<ApiListingSummary[]> {
+  return apiGet<ApiListingSummary[]>("/api/listings");
+}
+
+export function fetchListing(slug: string): Promise<ApiListing> {
+  return apiGet<ApiListing>(`/api/listings/${encodeURIComponent(slug)}`);
+}
+
+export function createApiListing(req: ApiCreateListingRequest): Promise<ApiListing> {
+  return apiPost<ApiListing>("/api/listings", req);
+}
+
+export function claimApiSpot(spotId: string): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/claim`, {});
+}
+
+export function bidApiSpot(spotId: string, amount: number): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/bid`, { amount });
+}
+
+/** Exchange the Privy access token for an API session cookie. */
+export async function createApiSession(): Promise<SessionUser> {
+  const token = await getAccessToken();
+  if (!token) throw new Error("not signed in with X");
+  let identityToken: string | null = null;
+  try {
+    identityToken = await getIdentityToken();
+  } catch {
+    identityToken = null;
+  }
+  return request<SessionUser>("/api/auth/session", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(identityToken ? { "privy-id-token": identityToken } : {}),
+    },
+  });
+}
+
+export function fetchApiMe(): Promise<SessionUser> {
+  return apiGet<SessionUser>("/api/auth/me");
+}
+
+export function logoutApiSession(): Promise<{ ok: boolean }> {
+  return apiPost<{ ok: boolean }>("/api/auth/logout", {});
 }
