@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-17.
+Last updated: 2026-09-17 (API session after X login).
 
 ---
 
@@ -97,13 +97,13 @@ Uncommitted frontend work wires those pages to the Express API.
 
 ```
 browser
-  └── Next.js app (client components + StoreProvider)
+  └── Next.js (Privy X OAuth → access token)
         ├── GET  /api/listings, /api/listings/:slug     (public)
-        └── POST /api/listings, /api/spots/:id/claim|bid
-              └── optional Authorization: Bearer <Privy access token>
-                    └── Express API
-                          ├── auth.ts   verify Privy token, enrich X handle / wallet
-                          └── store.ts  in-memory listings (seed + user-created)
+        └── POST /api/auth/session  Bearer <Privy access token>
+              └── Express verifies token, Set-Cookie: spotboard_sid
+                    ├── GET  /api/auth/me
+                    └── POST /api/listings, /api/spots/:id/claim|bid
+                          identity = session handle, never the request body
 ```
 
 If the API is unreachable, the frontend falls back to a local seed
@@ -158,10 +158,13 @@ Full spec: `CONTRACT.md`. Summary:
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/health` | `{ status: "ok" }` |
+| GET | `/health` | `{ status, auth }` |
+| POST | `/api/auth/session` | Exchange Privy Bearer for session cookie |
+| GET | `/api/auth/me` | Current `SessionUser` |
+| POST | `/api/auth/logout` | Clear cookie |
 | GET | `/api/listings` | `ListingSummary[]` |
 | GET | `/api/listings/{slug}` | `Listing` with `spots` |
-| POST | `/api/listings` | Create. Seller from verified identity if logged in, else `body.seller`. |
+| POST | `/api/listings` | Create. Seller = session handle. 401 if not signed in. |
 | POST | `/api/spots/{id}/claim` | Fixed-price only. 409 on auction or already taken. |
 | POST | `/api/spots/{id}/bid` | Auction only. Must beat current by `minIncrement`, or double if `doubleUp`. |
 
@@ -220,16 +223,18 @@ does not match seeds. Worth aligning later.
 
 ## Auth
 
-- **Provider:** Privy. X (Twitter) is the only login method for now.
-  Wallet login comes later. Dashboard must have X enabled.
-- **Frontend:** `NEXT_PUBLIC_PRIVY_APP_ID`. If unset, provider renders
-  children unauthenticated and AuthButton is a no-op. List/claim/bid then
-  take a typed name.
-- **Backend:** `PRIVY_APP_ID` + `PRIVY_APP_SECRET`. Token verify is
-  best-effort enrichment (X handle, wallet). Display name never trusts
-  client input when a valid token is present.
-- **Identity on listings:** seller/buyer/bidder is a display string
-  (`@handle`, truncated wallet, or typed name). No user table yet.
+- **Provider:** Privy is the X IdP in the browser. The **API owns the
+  session**. After OAuth, the frontend POSTs the access token to
+  `/api/auth/session`; the API verifies it with the App Secret and sets
+  an httpOnly `spotboard_sid` cookie. List/claim/bid require that session.
+- **Frontend:** `NEXT_PUBLIC_PRIVY_APP_ID`. Login uses
+  `useLoginWithOAuth({ provider: 'twitter' })`. Wallets are off.
+- **Backend:** `PRIVY_APP_ID` + `PRIVY_APP_SECRET` (secret never in the
+  frontend). Without the secret, `/api/auth/session` returns 503.
+- **Dashboard:** enable X under Login methods → Socials; add
+  `http://localhost:3000` to Allowed origins.
+- **Identity:** seller/buyer/bidder is always `req.user.handle` (`@username`).
+  The client cannot spoof it.
 
 ---
 
