@@ -21,6 +21,7 @@ export interface ApiSpot {
   currentBid?: number;
   buyer?: string;
   bids?: ApiBid[];
+  fulfilledAt?: string;
 }
 
 export interface ApiListing {
@@ -74,8 +75,44 @@ export interface ApiCreateSpotRequest {
 }
 
 export interface SessionUser {
+  id: string;
   did: string;
   handle: string;
   name?: string;
   avatar?: string;
+  csrfToken: string;
+  expiresAt: string;
+}
+
+export interface SellerDashboardListing {
+  id: string;
+  slug: string;
+  title: string;
+  image: string;
+  status: "active" | "closed";
+  mode: ApiMode;
+  currency: string;
+  sold: number;
+  open: number;
+  total: number;
+  revenue: number;
+}
+
+export interface SellerAttentionItem {
+  spotId: string;
+  listingId: string;
+  listingSlug: string;
+  listingTitle: string;
+  spotLabel: string;
+  buyer: string;
+  amount: number;
+  currency: string;
+  submittedAt: string;
+  status: "pending" | "approved";
+}
+
+export interface SellerDashboard {
+  summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; currency: string };
+  listings: SellerDashboardListing[];
+  attention: SellerAttentionItem[];
 }
