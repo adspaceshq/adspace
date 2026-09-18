@@ -25,9 +25,14 @@ List/claim/bid **require** a session. Seller/buyer/bidder is always `req.user.ha
 | GET | `/health` | — | — | `{ status: "ok", auth: "privy" \| "unconfigured" }` |
 | GET | `/api/listings` | public | — | `ListingSummary[]` |
 | GET | `/api/listings/{slug}` | public | — | `Listing` (with `spots`) |
+| GET | `/api/seller/dashboard` | required | — | `SellerDashboard` |
 | POST | `/api/listings` | required | `{ title, surface?, story?, mode?, currency?, artworkClose?, spots?: [{ label?, location?, size?, price }] }` | `Listing` (201) |
+| PATCH | `/api/listings/{slug}` | owner + CSRF | `{ title?, story? }` | `Listing` |
 | POST | `/api/spots/{id}/claim` | required | — | `Spot` |
 | POST | `/api/spots/{id}/bid` | required | `{ amount }` | `Spot` |
+| POST | `/api/spots/{id}/approve` | owner + CSRF | — | `Spot` |
+| POST | `/api/spots/{id}/reject` | owner + CSRF | — | `Spot` |
+| POST | `/api/spots/{id}/fulfill` | owner + CSRF | — | `Spot` |
 
 ## Rules
 
@@ -35,6 +40,7 @@ List/claim/bid **require** a session. Seller/buyer/bidder is always `req.user.ha
 - `mode: "auction"` → bid only. First bid ≥ starting `price`. Later bids must beat current by `minIncrement` (Vincent: 10 EUR). If `doubleUp: true` (Marc), each takeover doubles.
 - Claiming/bidding a non-open spot → 409.
 - Max 60 spots. Every spot price must be > 0.
+- Editing, approval, and fulfillment compare immutable user IDs, never X handles.
 
 ## Types
 
