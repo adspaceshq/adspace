@@ -5,9 +5,11 @@ import type {
   ApiListingSummary,
   ApiSpot,
   SessionUser,
+  SellerDashboard,
 } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
+let csrfToken: string | null = null;
 
 async function parseError(res: Response): Promise<string> {
   const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -37,7 +39,10 @@ export async function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
   }
   return request<T>(path, {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+    },
     body: JSON.stringify(body),
   });
 }
@@ -76,19 +81,24 @@ export async function createApiSession(): Promise<SessionUser> {
   } catch {
     identityToken = null;
   }
-  return request<SessionUser>("/api/auth/session", {
+  const session = await request<SessionUser>("/api/auth/session", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
       ...(identityToken ? { "privy-id-token": identityToken } : {}),
     },
   });
+  csrfToken = session.csrfToken;
+  return session;
 }
 
-export function fetchApiMe(): Promise<SessionUser> {
-  return apiGet<SessionUser>("/api/auth/me");
+export async function fetchApiMe(): Promise<SessionUser> {
+  const session = await apiGet<SessionUser>("/api/auth/me");
+  csrfToken = session.csrfToken;
+  return session;
 }
 
-export function logoutApiSession(): Promise<{ ok: boolean }> {
-  return apiPost<{ ok: boolean }>("/api/auth/logout", {});
+export async function logoutApiSession(): Promise<{ ok: boolean }> {
+  try { return await apiPost<{ ok: boolean }>("/api/auth/logout", {}); }
+  finally { csrfToken = null; }
 }
