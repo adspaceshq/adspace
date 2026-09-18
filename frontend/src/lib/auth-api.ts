@@ -71,6 +71,22 @@ export function bidApiSpot(spotId: string, amount: number): Promise<ApiSpot> {
   return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/bid`, { amount });
 }
 
+export function fetchSellerDashboard(): Promise<SellerDashboard> {
+  return apiGet<SellerDashboard>("/api/seller/dashboard");
+}
+
+export function approveApiSpot(spotId: string): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/approve`, {});
+}
+
+export function rejectApiSpot(spotId: string): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/reject`, {});
+}
+
+export function fulfillApiSpot(spotId: string): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/fulfill`, {});
+}
+
 /** Exchange the Privy access token for an API session cookie. */
 export async function createApiSession(): Promise<SessionUser> {
   const token = await getAccessToken();
