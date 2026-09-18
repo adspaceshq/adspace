@@ -60,3 +60,26 @@ test("non-owners cannot edit, approve, or fulfill a seller listing", async () =>
   const fulfilled = await owner.post(`/api/spots/${spotId}/fulfill`).set("X-CSRF-Token", ownerCsrf).send({}).expect(200);
   assert.equal(typeof fulfilled.body.fulfilledAt, "string");
 });
+
+test("seller dashboard requires authentication", async () => {
+  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token] });
+  await request(app).get("/api/seller/dashboard").expect(401);
+});
+
+test("logout revokes the persisted session", async () => {
+  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token] });
+  const agent = request.agent(app);
+  const csrf = await login(agent, "owner");
+  await agent.post("/api/auth/logout").set("X-CSRF-Token", csrf).send({}).expect(200);
+  await agent.get("/api/auth/me").expect(401);
+});
+
+test("authentication is rate limited and production cookies are hardened", async () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  assert.deepEqual(cookieOptions(), { httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 604_800_000 });
+  process.env.NODE_ENV = previous;
+  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token] });
+  for (let i = 0; i < 10; i++) await request(app).post("/api/auth/session").set("Authorization", "Bearer owner").expect(200);
+  await request(app).post("/api/auth/session").set("Authorization", "Bearer owner").expect(429);
+});
