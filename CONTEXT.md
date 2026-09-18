@@ -59,17 +59,17 @@ Working **demo marketplace**, not a payments product.
 |---|---|
 | List / browse / claim / bid | Real money (USDC on Solana, or Stripe like Marc) |
 | Two pricing modes, including `doubleUp` | Escrow, refunds on outbid, seller payouts |
-| Four seeded campaigns + user-created listings | Persistence (Postgres), image upload, real mockup editor |
+| Postgres persistence for users, sessions, listings, spots, claims, and bids | Image upload, real mockup editor |
 | X identity via Privy (optional) | Wallet login, on-chain verification |
 | Generic photo-grid / overlay mockup | Vincent-style sticker overlay editor, Marc-style 3D body |
-| Share-on-X after a claim | Seller approval of brands, fulfillment (artwork in, proof out) |
+| Seller dashboard with approve / reject / fulfill | Artwork intake, proof uploads, buyer notifications |
 
 Money is mock. Claims and bids mark spots. `txSignature` is accepted and
 logged as a Solana hook; nothing is verified on-chain. Stripe and Solana
 packages sit in the frontend unused.
 
-Next layer (from `README.md`): **Postgres + auth + Stripe/crypto**. The
-HTTP contract is meant to stay the same.
+Next layer (from `README.md`): **image workflow + Stripe/crypto**. The HTTP
+contract is meant to stay stable.
 
 ---
 
@@ -142,13 +142,14 @@ Keep `types.ts` in lockstep with `backend/src/types.ts` and `CONTRACT.md`.
 | File | Role |
 |---|---|
 | `backend/src/index.ts` | Express, CORS, optional auth, routes |
-| `backend/src/store.ts` | In-memory store, seed, claim/bid rules |
+| `backend/src/db.ts` | Supabase Postgres pool, users, persistent sessions |
+| `backend/src/market.ts` | Postgres marketplace repository and seller dashboard queries |
+| `backend/src/store.ts` | In-memory test/demo repository |
 | `backend/src/auth.ts` | Privy token verify + display name (`@handle` > truncated wallet > `user-…`) |
 | `backend/src/types.ts` | Canonical types |
 
-Store is process memory. Restart wipes user-created listings and mock
-claims/bids. Seeded demos rebuild with **relative** deadlines so they stay
-live. Postgres replaces this later; do not change the contract to do it.
+Production routes use Postgres, so user-created listings, claims, and bids
+survive restarts. The in-memory store remains only as the test/demo adapter.
 
 ---
 
