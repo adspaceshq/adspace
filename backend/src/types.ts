@@ -19,6 +19,7 @@ export interface Spot {
   currentBid?: number;
   buyer?: string;
   bids?: Bid[];
+  fulfilledAt?: string;
 }
 
 export interface Listing {
@@ -27,6 +28,7 @@ export interface Listing {
   title: string;
   seller: string;
   sellerHandle: string;
+  sellerUserId?: string;
   surface: string;
   story: string;
   image: string;
@@ -72,8 +74,45 @@ export interface CreateSpotRequest {
 }
 
 export interface SessionUser {
+  id: string;
   did: string;
   handle: string;
   name?: string;
   avatar?: string;
+}
+
+export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId: string }
+export interface SessionResponse extends SessionUser { csrfToken: string; expiresAt: string }
+
+export interface SellerDashboardListing {
+  id: string;
+  slug: string;
+  title: string;
+  image: string;
+  status: "active" | "closed";
+  mode: Mode;
+  currency: string;
+  sold: number;
+  open: number;
+  total: number;
+  revenue: number;
+}
+
+export interface SellerAttentionItem {
+  spotId: string;
+  listingId: string;
+  listingSlug: string;
+  listingTitle: string;
+  spotLabel: string;
+  buyer: string;
+  amount: number;
+  currency: string;
+  submittedAt: string;
+  status: "pending" | "approved";
+}
+
+export interface SellerDashboard {
+  summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; currency: string };
+  listings: SellerDashboardListing[];
+  attention: SellerAttentionItem[];
 }
