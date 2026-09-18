@@ -150,6 +150,49 @@ export class Store {
     return listing;
   }
 
+  createForUser(req: CreateListingRequest, seller: SessionUser): Listing {
+    return this.create({ ...req, seller: seller.handle, sellerHandle: seller.handle, sellerUserId: seller.id });
+  }
+
+  update(slug: string, actorUserId: string, patch: { title?: string; story?: string }): Listing {
+    const listing = this.ownedListing(slug, actorUserId);
+    if (patch.title !== undefined) {
+      const title = patch.title.trim();
+      if (!title) throw Object.assign(new Error("title is required"), { status: 400 });
+      listing.title = title;
+    }
+    if (patch.story !== undefined) listing.story = patch.story.trim();
+    return listing;
+  }
+
+  approve(spotId: string, actorUserId: string): Spot {
+    const { listing, spot } = this.ownedSpot(spotId, actorUserId);
+    if (!spot.buyer) throw Object.assign(new Error("spot has no buyer to approve"), { status: 409 });
+    spot.status = "sold";
+    return spot;
+  }
+
+  fulfill(spotId: string, actorUserId: string): Spot {
+    const { spot } = this.ownedSpot(spotId, actorUserId);
+    if (spot.status !== "sold") throw Object.assign(new Error("spot must be approved before fulfillment"), { status: 409 });
+    spot.fulfilledAt = new Date().toISOString();
+    return spot;
+  }
+
+  private ownedListing(slug: string, actorUserId: string): Listing {
+    const listing = this.listings.get(slug);
+    if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
+    if (!listing.sellerUserId || listing.sellerUserId !== actorUserId) throw Object.assign(new Error("forbidden"), { status: 403 });
+    return listing;
+  }
+
+  private ownedSpot(spotId: string, actorUserId: string): { listing: Listing; spot: Spot } {
+    const found = this.findSpot(spotId);
+    if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
+    if (!found.listing.sellerUserId || found.listing.sellerUserId !== actorUserId) throw Object.assign(new Error("forbidden"), { status: 403 });
+    return found;
+  }
+
   private findSpot(spotId: string): { listing: Listing; spot: Spot } | undefined {
     for (const slug of this.order) {
       const listing = this.listings.get(slug)!;
@@ -159,18 +202,18 @@ export class Store {
     return undefined;
   }
 
-  claim(spotId: string, buyer: string): Spot {
+  claim(spotId: string, buyer: SessionUser | string): Spot {
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
     if (listing.mode === "auction") throw Object.assign(new Error("auction spot: place a bid instead"), { status: 409 });
     if (spot.status !== "open") throw Object.assign(new Error("spot already taken"), { status: 409 });
     spot.status = "claimed";
-    spot.buyer = buyer;
+    spot.buyer = typeof buyer === "string" ? buyer : buyer.handle;
     return spot;
   }
 
-  placeBid(spotId: string, bidder: string, amount: number): Spot {
+  placeBid(spotId: string, bidder: SessionUser | string, amount: number): Spot {
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
@@ -185,9 +228,27 @@ export class Store {
     if (amount < required) {
       throw Object.assign(new Error(`bid must be at least ${required} ${listing.currency}`), { status: 409 });
     }
-    spot.bids!.push({ bidder, amount, at: new Date().toISOString() });
+    const handle = typeof bidder === "string" ? bidder : bidder.handle;
+    spot.bids!.push({ bidder: handle, amount, at: new Date().toISOString() });
     spot.currentBid = amount;
-    spot.buyer = bidder;
+    spot.buyer = handle;
     return spot;
+  }
+
+  reject(spotId: string, actorUserId: string): Spot {
+    const { spot } = this.ownedSpot(spotId, actorUserId);
+    if (spot.status !== "claimed") throw Object.assign(new Error("spot is not pending"), { status: 409 });
+    spot.status = "open"; spot.buyer = undefined; spot.currentBid = undefined;
+    return spot;
+  }
+
+  dashboard(actorUserId: string): SellerDashboard {
+    const listings = this.order.map(slug => this.listings.get(slug)!).filter(l => l.sellerUserId === actorUserId).map(l => ({
+      id:l.id,slug:l.slug,title:l.title,image:l.image,status:"active" as const,mode:l.mode,currency:l.currency,
+      sold:l.spots.filter(s=>s.status!=="open").length,open:l.spots.filter(s=>s.status==="open").length,total:l.spots.length,
+      revenue:l.spots.filter(s=>s.status==="sold").reduce((sum,s)=>sum+(s.currentBid??s.price),0),
+    }));
+    const attention = this.order.flatMap(slug => { const l=this.listings.get(slug)!; if(l.sellerUserId!==actorUserId)return []; return l.spots.filter(s=>s.buyer&&(s.status==="claimed"||(s.status==="sold"&&!s.fulfilledAt))).map(s=>({spotId:s.id,listingId:l.id,listingSlug:l.slug,listingTitle:l.title,spotLabel:s.label,buyer:s.buyer!,amount:s.currentBid??s.price,currency:s.currency,submittedAt:new Date().toISOString(),status:s.status==="claimed"?"pending" as const:"approved" as const})); });
+    return {summary:{activeListings:listings.length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),currency:listings[0]?.currency??"USD"},listings,attention};
   }
 }
