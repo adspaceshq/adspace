@@ -1,4 +1,4 @@
-import type { Bid, Listing, ListingSummary, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingSummary, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 const daysFromNow = (days: number) =>
   new Date(Date.now() + days * 86_400_000).toISOString();
@@ -75,6 +75,8 @@ export class Store {
     }
   }
 
+  async migrate(): Promise<void> {}
+
   summaries(): ListingSummary[] {
     return this.order.map((slug) => {
       const l = this.listings.get(slug)!;
@@ -101,6 +103,7 @@ export class Store {
     title: string;
     seller: string;
     sellerHandle?: string;
+    sellerUserId?: string;
     surface?: string;
     story?: string;
     mode?: string;
@@ -137,6 +140,7 @@ export class Store {
     const listing: Listing = {
       id, slug: id, title, seller,
       sellerHandle: req.sellerHandle ?? seller,
+      sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
       image: "", mode,
       currency, deadline: daysFromNow(14), artworkClose: req.artworkClose ?? "", spots,
