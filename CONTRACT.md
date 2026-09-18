@@ -2,7 +2,7 @@
 
 Base URL: `NEXT_PUBLIC_API_URL` (local default `http://localhost:8080`).
 All bodies/returns are JSON. Errors: `{ "error": string }`.
-Cookie: `spotboard_sid` (httpOnly). POSTs also accept `Authorization: Bearer <Privy access token>`.
+Cookie: `spotboard_sid` (httpOnly, expiring, secure in production). Authenticated mutations require the session-bound `X-CSRF-Token` returned by the session endpoints.
 
 ## Auth
 
@@ -10,11 +10,11 @@ X login: Privy OAuth in the browser, then the access token is exchanged here.
 
 | Method | Path | Auth | Returns |
 |---|---|---|---|
-| POST | `/api/auth/session` | Bearer Privy access token | `SessionUser` + Set-Cookie |
-| GET | `/api/auth/me` | cookie or Bearer | `SessionUser` |
-| POST | `/api/auth/logout` | cookie | `{ ok: true }` |
+| POST | `/api/auth/session` | Bearer Privy access token | `SessionResponse` + Set-Cookie |
+| GET | `/api/auth/me` | cookie | `SessionResponse` |
+| POST | `/api/auth/logout` | cookie + CSRF | `{ ok: true }` |
 
-`SessionUser = { did, handle, name?, avatar? }`. `handle` is `@username` from X.
+`SessionUser = { id, did, handle, name?, avatar? }`. `id` is Spotboard's stable user ID. The immutable Privy DID and X subject are stored server-side; `handle` is mutable profile data. `SessionResponse` adds `{ csrfToken, expiresAt }`.
 
 List/claim/bid **require** a session. Seller/buyer/bidder is always `req.user.handle` — never the request body.
 
