@@ -330,14 +330,14 @@ docker run -p 8080:8080 spotboard-api
 
 Rough priority, not a commitment:
 
-1. Persist listings (Postgres). Same contract.
+1. Image upload + a real mockup editor (place spots on a photo).
 2. Real payments: Solana USDC (and/or Stripe), verify `txSignature`,
    refunds on outbid for `doubleUp` auctions.
-3. Image upload + a real mockup editor (place spots on a photo).
+3. Artwork intake, proof uploads, and buyer notifications.
 4. Align seed `surface` values with the list-form keys so browse filters
    work on demos.
 5. Wallet login via Privy once money moves.
-6. Seller tools: approve a brand, collect artwork, post proof.
+6. Listing pause/close controls and richer seller reporting.
 7. Ship the four demo photos (`/demo/*`) or stop referencing them.
 
 ---
