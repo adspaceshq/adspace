@@ -1,8 +1,5 @@
-import { randomBytes } from "node:crypto";
 import { PrivyClient } from "@privy-io/node";
-import type { SessionUser } from "./types.js";
-
-export type { SessionUser };
+import type { AuthenticatedIdentity } from "./types.js";
 
 const appId = process.env.PRIVY_APP_ID ?? "";
 const appSecret = process.env.PRIVY_APP_SECRET ?? "";
@@ -12,10 +9,6 @@ export const privyConfigured = Boolean(appId && appSecret);
 export const privy = privyConfigured ? new PrivyClient({ appId, appSecret }) : null;
 
 const COOKIE = "spotboard_sid";
-const TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-const sessions = new Map<string, { user: SessionUser; exp: number }>();
-
 export const sessionCookieName = COOKIE;
 
 export function cookieOptions() {
@@ -24,7 +17,7 @@ export function cookieOptions() {
     sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: TTL_MS,
+    maxAge: Number(process.env.SESSION_TTL_HOURS ?? 168) * 60 * 60 * 1000,
   };
 }
 
@@ -46,6 +39,7 @@ type Linked = {
   profile_picture_url?: string | null;
   profilePictureUrl?: string | null;
   pfp?: string | null;
+  subject?: string | null;
 };
 
 function isXAccount(type: string | undefined): boolean {
@@ -57,6 +51,7 @@ function xFromAccounts(accounts: Linked[] | undefined): {
   username?: string;
   name?: string;
   avatar?: string;
+  subject?: string;
 } {
   const tw = (accounts ?? []).find((a) => isXAccount(a.type));
   if (!tw) return {};
@@ -64,6 +59,7 @@ function xFromAccounts(accounts: Linked[] | undefined): {
     username: tw.username || tw.user_name || tw.screen_name || undefined,
     name: tw.name || undefined,
     avatar: tw.profile_picture_url || tw.profilePictureUrl || tw.pfp || undefined,
+    subject: tw.subject || undefined,
   };
 }
 
@@ -72,12 +68,13 @@ function xFromPrivyUser(u: {
   twitter?: Linked;
   linked_accounts?: Linked[];
   linkedAccounts?: Linked[];
-}): { username?: string; name?: string; avatar?: string } {
+}): { username?: string; name?: string; avatar?: string; subject?: string } {
   if (u.twitter && (u.twitter.username || u.twitter.user_name)) {
     return {
       username: u.twitter.username || u.twitter.user_name || undefined,
       name: u.twitter.name || undefined,
       avatar: u.twitter.profile_picture_url || u.twitter.profilePictureUrl || undefined,
+      subject: u.twitter.subject || undefined,
     };
   }
   return xFromAccounts(u.linked_accounts ?? u.linkedAccounts);
@@ -87,14 +84,14 @@ function xFromPrivyUser(u: {
 export async function userFromAccessToken(
   token: string,
   identityToken?: string,
-): Promise<SessionUser> {
+): Promise<AuthenticatedIdentity> {
   if (!privy) throw Object.assign(new Error("privy not configured on the API"), { status: 503 });
 
   const claims = await privy.utils().auth().verifyAccessToken(token);
   const did = claims.user_id ?? "";
   if (!did) throw Object.assign(new Error("invalid token claims"), { status: 401 });
 
-  let profile: { username?: string; name?: string; avatar?: string } = {};
+  let profile: { username?: string; name?: string; avatar?: string; subject?: string } = {};
 
   if (identityToken) {
     try {
@@ -111,7 +108,7 @@ export async function userFromAccessToken(
     }
   }
 
-  if (!profile.username) {
+  if (!profile.username || !profile.subject) {
     try {
       const user = await privy.users()._get(did);
       profile = xFromPrivyUser(user);
@@ -120,10 +117,10 @@ export async function userFromAccessToken(
     }
   }
 
-  if (!profile.username) {
+  if (!profile.username || !profile.subject) {
     throw Object.assign(
       new Error(
-        "Privy verified the session, but no X account was present. Log out, then log in with X again.",
+        "Privy verified the session, but no stable X account identity was present. Log out, then log in with X again.",
       ),
       { status: 422 },
     );
@@ -131,29 +128,9 @@ export async function userFromAccessToken(
 
   return {
     did,
+    xUserId: profile.subject,
     handle: displayHandle(profile.username, did),
     name: profile.name,
     avatar: profile.avatar,
   };
-}
-
-export function createSession(user: SessionUser): string {
-  const id = randomBytes(24).toString("hex");
-  sessions.set(id, { user, exp: Date.now() + TTL_MS });
-  return id;
-}
-
-export function readSession(id: string | undefined): SessionUser | undefined {
-  if (!id) return undefined;
-  const row = sessions.get(id);
-  if (!row) return undefined;
-  if (row.exp < Date.now()) {
-    sessions.delete(id);
-    return undefined;
-  }
-  return row.user;
-}
-
-export function destroySession(id: string | undefined) {
-  if (id) sessions.delete(id);
 }
