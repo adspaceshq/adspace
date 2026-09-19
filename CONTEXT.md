@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-17 (API session after X login).
+Last updated: 2026-09-19 (API-only frontend, dashboard + CSRF session).
 
 ---
 
@@ -30,9 +30,8 @@ laptops, and bodies; Spotboard is the marketplace for that.
 
 ## Reference campaigns (the product brief)
 
-These four live experiments are the UX and pricing spec. Seed data in the
-backend mirrors them. Do not invent a fifth pricing mode until a real
-campaign needs it.
+These four live experiments are the UX and pricing spec. Do not invent a fifth pricing mode until a real
+campaign needs it. The backend no longer ships seed listings — it starts empty and sellers create their own.
 
 | Seller | Surface | Model | Buyer gets | Source |
 |---|---|---|---|---|
@@ -60,7 +59,7 @@ Working **demo marketplace**, not a payments product.
 | List / browse / claim / bid | Real money (USDC on Solana, or Stripe like Marc) |
 | Two pricing modes, including `doubleUp` | Escrow, refunds on outbid, seller payouts |
 | Postgres persistence for users, sessions, listings, spots, claims, and bids | Image upload, real mockup editor |
-| X identity via Privy (optional) | Wallet login, on-chain verification |
+| X identity via Privy (session + CSRF for mutations) | Wallet login, on-chain verification |
 | Generic photo-grid / overlay mockup | Vincent-style sticker overlay editor, Marc-style 3D body |
 | Seller dashboard with approve / reject / fulfill | Artwork intake, proof uploads, buyer notifications |
 
@@ -87,9 +86,9 @@ spotboard/
 Deploys are split. Frontend talks to the API via `NEXT_PUBLIC_API_URL`
 (default `http://localhost:8080`). See `frontend/src/lib/auth-api.ts`.
 
-Git note as of 2026-09-17: `backend/`, `CONTRACT.md`, and `README.md` are
-still untracked. Committed history is the Next.js scaffold and pages.
-Uncommitted frontend work wires those pages to the Express API.
+Git note as of 2026-09-19: `backend/`, `CONTRACT.md`, and `README.md` are
+committed and pushed (`main` ahead of the scaffold). Frontend pages are
+wired to the Express API and pushed with the backend.
 
 ---
 
@@ -106,11 +105,11 @@ browser
                           identity = session handle, never the request body
 ```
 
-If the API is unreachable, the frontend falls back to a local seed
-(currently only Vincent’s MacBook) plus localStorage claims/bids, so the
-demo still runs. API-known listings are **API-first**: 409s and validation
-errors surface to the UI; only a network `TypeError` falls back to local
-state.
+If the API is unreachable or empty, the frontend shows an empty state
+("No live spaces yet") — there is no local seed and no localStorage
+fallback. Mutations are API-only: 409s and validation errors surface to
+the UI and are thrown, never silently applied locally. Mutating calls
+send the session cookie plus the CSRF token issued at login.
 
 ### Frontend routes
 
@@ -120,6 +119,7 @@ state.
 | `/browse` | Search + surface filter over all listings |
 | `/list` | Create a listing (spots, fixed vs auction) |
 | `/listings/[id]` | Detail: spec sheet, claim/bid modal, bid feed |
+| `/dashboard` | Seller view: listings, pending approvals, fulfill |
 
 `id` in the URL is the listing **slug**.
 
@@ -130,8 +130,8 @@ state.
 | `frontend/src/lib/types.ts` | Exact TypeScript mirror of backend types / `CONTRACT.md` |
 | `frontend/src/lib/listings.ts` | UI shapes + adapters (`apiListingToUi`, `applyApiSpotToUi`, `minBidFor`) |
 | `frontend/src/lib/auth-api.ts` | Typed fetch client; POSTs attach Privy Bearer token |
-| `frontend/src/components/StoreProvider.tsx` | Hydration, API-first mutations, local fallback |
-| `frontend/src/components/SpecSheet.tsx` | Spot mockup: photo overlay **or** BrandMyMac-style grid |
+| `frontend/src/components/StoreProvider.tsx` | Hydration, API-only mutations, empty state when API is down |
+| `frontend/src/components/SpecSheet.tsx` | Spot mockup: photo overlay **or** generic grid |
 | `frontend/src/components/PrivyAppProvider.tsx` | X-only Privy; no-ops if App ID missing |
 | `frontend/src/components/AuthButton.tsx` | Login/logout + `XProbe` for pages that need the handle |
 
@@ -169,9 +169,16 @@ Full spec: `CONTRACT.md`. Summary:
 | POST | `/api/spots/{id}/claim` | Fixed-price only. 409 on auction or already taken. |
 | POST | `/api/spots/{id}/bid` | Auction only. Must beat current by `minIncrement`, or double if `doubleUp`. |
 
-Errors: `{ "error": string }`. Auth is optional: valid Privy Bearer attaches
-`req.user`; missing/invalid tokens fall through to demo-mode names so local
-dev works without login.
+| GET | `/api/seller/dashboard` | Seller view: listings + pending approvals |
+| PATCH | `/api/listings/{slug}` | Owner-only title/story edit |
+| POST | `/api/spots/{id}/approve` | Owner approves a claimed spot → `sold` |
+| POST | `/api/spots/{id}/reject` | Owner reopens a claimed spot |
+| POST | `/api/spots/{id}/fulfill` | Owner marks a sold spot fulfilled |
+
+Errors: `{ "error": string }`. List/claim/bid require the session cookie;
+mutating calls additionally require the `X-CSRF-Token` issued at login.
+Identity is always the session user — never the request body. Ownership
+checks compare stable user IDs, not X handles.
 
 `txSignature` is accepted on claim/bid and only logged. Verify on-chain
 before real money.
@@ -210,15 +217,13 @@ Bid { bidder, amount, at }
 
 UI listings add `mockup.views` (photo overlay coordinates or a 12-col grid).
 Backend listings have no mockup yet — the adapter lays spots on a simple
-3-column grid, or a photo grid if `image` is a real URL. Backend seed images
-are `/demo/*.jpg` and the frontend treats those as missing (they are not
-shipped). Vincent’s MacBook is the only listing with real mockup photos
-(`frontend/public/mac/`).
+grid, or a photo view if `image` is a real URL. The backend starts empty
+(no seed images); the frontend treats missing images as a grid. Vincent’s
+MacBook photos (`frontend/public/mac/`) were removed with the demo seed.
 
 Surface keys used by the list form: `gear`, `body`, `physical`, `digital`,
-`reach`. Seeded listings currently store a human sentence in `surface`
-(e.g. `"Suitcase (front / back / sides)"`), so the browse filter by key
-does not match seeds. Worth aligning later.
+`reach`. There are no seed listings left to mismatch — user-created
+listings store the key directly, so the browse filter matches.
 
 ---
 
@@ -235,7 +240,8 @@ does not match seeds. Worth aligning later.
 - **Dashboard:** enable X under Login methods → Socials; add
   `http://localhost:3000` to Allowed origins.
 - **Identity:** seller/buyer/bidder is always `req.user.handle` (`@username`).
-  The client cannot spoof it.
+  The client cannot spoof it. Ownership checks compare stable user IDs,
+  not X handles.
 
 ---
 
@@ -323,6 +329,10 @@ docker run -p 8080:8080 spotboard-api
    currently over-claims (“you approve every claim”, “Spotboard does not
    hold your money”) relative to the code. Treat that as aspirational
    until it is true.
+10. **API-only frontend, no demo seed (2026-09-19).** Reverses 7–8: the
+    in-memory store ships empty (test adapter only), production uses
+    Postgres, and the frontend shows an empty state instead of a local
+    seed/localStorage fallback. Mutations throw instead of falling back.
 
 ---
 
@@ -334,11 +344,8 @@ Rough priority, not a commitment:
 2. Real payments: Solana USDC (and/or Stripe), verify `txSignature`,
    refunds on outbid for `doubleUp` auctions.
 3. Artwork intake, proof uploads, and buyer notifications.
-4. Align seed `surface` values with the list-form keys so browse filters
-   work on demos.
-5. Wallet login via Privy once money moves.
-6. Listing pause/close controls and richer seller reporting.
-7. Ship the four demo photos (`/demo/*`) or stop referencing them.
+4. Wallet login via Privy once money moves.
+5. Listing pause/close controls and richer seller reporting.
 
 ---
 
