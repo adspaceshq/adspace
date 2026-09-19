@@ -30,10 +30,7 @@ export default function ListPage() {
   const [description, setDescription] = useState('')
   const [deadline, setDeadline] = useState('')
   const [priceType, setPriceType] = useState<'fixed' | 'auction'>('fixed')
-  const [spots, setSpots] = useState<SpotDraft[]>([
-    { label: 'Spot 1', size: 'M', price: '150' },
-    { label: 'Spot 2', size: 'S', price: '100' },
-  ])
+  const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
   const [error, setError] = useState<string | null>(null)
   const [x, setX] = useState<XIdentity | null>(null)
 
@@ -61,13 +58,12 @@ export default function ListPage() {
       return
     }
     const id = `user-${Date.now()}`
-    const cols = 3
     const listing: Listing = {
       id,
       title: title.trim(),
       goal: goal.trim() || 'Fund my goal',
       description: description.trim(),
-      image: `https://picsum.photos/seed/${id}/800/500`,
+      image: '',
       surface,
       seller: { name: seller, handle: PRIVY_ENABLED ? seller : '', color: '#4166fb' },
       deadline: deadline.trim() || 'Soon',
@@ -84,18 +80,7 @@ export default function ListPage() {
           {
             id: 'main',
             label: 'Overview',
-            photo: `https://picsum.photos/seed/${id}-view/900/620`,
-            spots: spots.map((_, i) => {
-              const c = i % cols
-              const rows = Math.ceil(spots.length / cols)
-              const r = Math.floor(i / cols)
-              return {
-                id: `${id}-s${i + 1}`,
-                x: ((c + 0.5) / cols) * 100,
-                y: rows === 1 ? 50 : 20 + (r / (rows - 1)) * 60,
-                w: 100 / cols - 5,
-              }
-            }),
+            grid: spots.map((_, i) => [{ spot: `${id}-s${i + 1}`, span: 12 }]),
             dims: { h: '', v: '' },
           },
         ],
@@ -211,7 +196,7 @@ export default function ListPage() {
               <h2 className="text-[22px]">Spots</h2>
               <button
                 type="button"
-                onClick={() => setSpots((prev) => [...prev, { label: `Spot ${prev.length + 1}`, size: 'M', price: '100' }])}
+                onClick={() => setSpots((prev) => [...prev, { label: '', size: '', price: '' }])}
                 className="inline-flex items-center gap-1 rounded-full border border-[#e7e5e0] px-4 py-2 text-[13px] font-medium transition hover:border-[#64748b]"
               >
                 <Plus size={14} /> Add spot

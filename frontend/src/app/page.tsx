@@ -69,7 +69,7 @@ const faqs = [
   },
   {
     q: 'Is real money involved?',
-    a: 'Not yet. This is a demo build — claims are recorded in your browser, and no payment is taken.',
+    a: 'Not yet. Claims and bids are saved to the marketplace, but no payment is taken.',
   },
   {
     q: 'What surfaces can I list?',
@@ -194,13 +194,23 @@ export default function Home() {
                 Browse all <ArrowRight size={16} />
               </Link>
             </div>
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {listings.slice(0, 3).map((listing) => (
-                <Link key={listing.id} href={`/listings/${listing.id}`} className="block">
-                  <ListingCard listing={listing} />
+            {listings.length === 0 ? (
+              <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center">
+                <h3 className="text-xl">No live spaces yet.</h3>
+                <p className="mt-2 text-sm text-[#64748b]">Be the first creator to list a surface.</p>
+                <Link href="/list" className="mt-6 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#0f1a33]">
+                  List your space
                 </Link>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {listings.slice(0, 3).map((listing) => (
+                  <Link key={listing.id} href={`/listings/${listing.id}`} className="block">
+                    <ListingCard listing={listing} />
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 

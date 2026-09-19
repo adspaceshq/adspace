@@ -1,7 +1,6 @@
 import type { Bid, CreateListingRequest, Listing, ListingSummary, SellerDashboard, SessionUser, Spot } from "./types.js";
 
-const daysFromNow = (days: number) =>
-  new Date(Date.now() + days * 86_400_000).toISOString();
+const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
 function fixedSpot(
   listingId: string,
@@ -36,44 +35,10 @@ function auctionSpot(
   return spot;
 }
 
-function seedMacbook(): Listing {
-  const id = "vincent-macbook";
-  return {
-    id, slug: id,
-    title: "Your brand, on my Mac",
-    seller: "Vincent", sellerHandle: "@VynseDev",
-    surface: "gear",
-    story: "The auction buys the MacBook itself. Top bid at close wins the sticker spot — seen online and IRL.",
-    image: "/mac/macbook-open.png", mode: "auction", currency: "EUR",
-    deadline: daysFromNow(7), artworkClose: "At close", minIncrement: 10,
-    spots: [
-      auctionSpot(id, "mac-01", "Top left banner", "Lid", "9.5 × 5.5", 400, "EUR"),
-      auctionSpot(id, "mac-02", "Marquee, above logo", "Lid", "9.5 × 5.5", 400, "EUR"),
-      auctionSpot(id, "mac-03", "Top right banner", "Lid", "9.5 × 5.5", 400, "EUR"),
-      auctionSpot(id, "mac-04", "Middle left", "Lid", "4.5 × 4.5", 150, "EUR"),
-      auctionSpot(id, "mac-05", "Inner left", "Lid", "4.5 × 4.5", 150, "EUR"),
-      auctionSpot(id, "mac-06", "Inner right", "Lid", "4.5 × 4.5", 150, "EUR"),
-      auctionSpot(id, "mac-07", "Middle right", "Lid", "4.5 × 4.5", 150, "EUR"),
-      auctionSpot(id, "mac-08", "Bottom left strip", "Lid", "9.5 × 4", 700, "EUR"),
-      auctionSpot(id, "mac-09", "Bottom center", "Lid", "9.5 × 4", 800, "EUR"),
-      auctionSpot(id, "mac-10", "Bottom right strip", "Lid", "9.5 × 4", 550, "EUR"),
-      auctionSpot(id, "mac-11", "Left palm rest", "Inside", "4 × 4", 59, "EUR"),
-      auctionSpot(id, "mac-12", "Right palm rest", "Inside", "4 × 4", 59, "EUR"),
-    ],
-  };
-}
-
 export class Store {
   private order: string[] = [];
   private listings = new Map<string, Listing>();
   private seq = 0;
-
-  constructor() {
-    for (const l of [seedMacbook()]) {
-      this.listings.set(l.slug, l);
-      this.order.push(l.slug);
-    }
-  }
 
   async migrate(): Promise<void> {}
 

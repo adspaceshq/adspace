@@ -1,12 +1,10 @@
 'use client'
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import {
   apiListingToUi,
   applyApiSpotToUi,
-  listings as seed,
   remapMockupIds,
-  type Bid,
   type Listing,
 } from '@/lib/listings'
 import {
@@ -30,65 +28,26 @@ interface StoreValue {
 
 const StoreContext = createContext<StoreValue | null>(null)
 
-const CLAIMS_KEY = 'spotboard-claims-v3'
-const BIDS_KEY = 'spotboard-bids-v3'
-
-function isNetworkError(e: unknown): boolean {
-  return e instanceof TypeError
-}
-
 export default function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [listings, setListings] = useState<Listing[]>(seed)
+  const [listings, setListings] = useState<Listing[]>([])
   const [claims, setClaims] = useState<Record<string, string>>({})
   const [hydrated, setHydrated] = useState(false)
   const [live, setLive] = useState(false)
-  const apiIds = useRef<Set<string>>(new Set())
-
   useEffect(() => {
     let cancelled = false
-    const hydrateLocal = () => {
-      try {
-        const savedClaims = localStorage.getItem(CLAIMS_KEY)
-        const savedBids = localStorage.getItem(BIDS_KEY)
-        const parsedClaims: Record<string, string> = savedClaims ? JSON.parse(savedClaims) : {}
-        const parsedBids: Record<string, Bid[]> = savedBids ? JSON.parse(savedBids) : {}
-        if (Object.keys(parsedClaims).length > 0 || Object.keys(parsedBids).length > 0) {
-          setClaims(parsedClaims)
-          setListings((prev) =>
-            prev.map((l) => ({
-              ...l,
-              spots: l.spots.map((s) => {
-                const key = `${l.id}:${s.id}`
-                const history = parsedBids[key] ?? s.bids ?? []
-                const top = history[history.length - 1]
-                return {
-                  ...s,
-                  claimedBy: parsedClaims[key] || s.claimedBy,
-                  bids: history,
-                  bid: top ? top.amount : s.bid,
-                  bidBy: top ? top.bidder : s.bidBy,
-                }
-              }),
-            })),
-          )
-        }
-      } catch {
-        // corrupted storage
-      }
-    }
     ;(async () => {
       try {
         const summaries = await fetchListingSummaries()
         const full = await Promise.all(summaries.map((s) => fetchListing(s.slug)))
-        if (!cancelled && full.length > 0) {
-          apiIds.current = new Set(full.map((l) => l.slug))
+        if (!cancelled) {
           setListings(full.map(apiListingToUi))
           setLive(true)
-        } else if (!cancelled) {
-          hydrateLocal()
         }
       } catch {
-        if (!cancelled) hydrateLocal()
+        if (!cancelled) {
+          setListings([])
+          setLive(false)
+        }
       } finally {
         if (!cancelled) setHydrated(true)
       }
@@ -98,114 +57,25 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
     }
   }, [])
 
-  useEffect(() => {
-    if (!hydrated) return
-    try {
-      localStorage.setItem(CLAIMS_KEY, JSON.stringify(claims))
-    } catch {
-      // ignore
-    }
-  }, [claims, hydrated])
-
-  const persistBid = (listingId: string, spotId: string, entry: Bid) => {
-    try {
-      const raw = localStorage.getItem(BIDS_KEY)
-      const parsed: Record<string, Bid[]> = raw ? JSON.parse(raw) : {}
-      const key = `${listingId}:${spotId}`
-      parsed[key] = [...(parsed[key] ?? []), entry]
-      localStorage.setItem(BIDS_KEY, JSON.stringify(parsed))
-    } catch {
-      // ignore
-    }
-  }
-
-  const applyLocalClaim = (listingId: string, spotId: string, name: string) => {
-    setListings((prev) =>
-      prev.map((l) =>
-        l.id === listingId
-          ? { ...l, spots: l.spots.map((s) => (s.id === spotId ? { ...s, claimedBy: name } : s)) }
-          : l,
-      ),
-    )
-    setClaims((prev) => ({ ...prev, [`${listingId}:${spotId}`]: name }))
-  }
-
-  const applyLocalBid = (listingId: string, spotId: string, bidder: string, amount: number) => {
-    const entry: Bid = { bidder, amount, at: new Date().toISOString() }
-    setListings((prev) =>
-      prev.map((l) =>
-        l.id === listingId
-          ? {
-              ...l,
-              spots: l.spots.map((s) =>
-                s.id === spotId ? { ...s, bid: amount, bidBy: bidder, bids: [...(s.bids ?? []), entry] } : s,
-              ),
-            }
-          : l,
-      ),
-    )
-    persistBid(listingId, spotId, entry)
-  }
-
   const claimSpot = async (listingId: string, spotId: string, name: string) => {
-    if (apiIds.current.has(listingId) || live) {
-      try {
-        const updated = await claimApiSpot(spotId)
-        const buyer = updated.buyer ?? name
-        setListings((prev) =>
-          prev.map((l) =>
-            l.id === listingId
-              ? {
-                  ...l,
-                  spots: l.spots.map((s) =>
-                    s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s,
-                  ),
-                }
-              : l,
-          ),
-        )
-        setClaims((prev) => ({ ...prev, [`${listingId}:${spotId}`]: buyer }))
-        return
-      } catch (e) {
-        if (!isNetworkError(e)) throw e
-      }
-    }
-    applyLocalClaim(listingId, spotId, name)
+    const updated = await claimApiSpot(spotId)
+    const buyer = updated.buyer ?? name
+    setListings((prev) => prev.map((l) => l.id === listingId
+      ? { ...l, spots: l.spots.map((s) => s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s) }
+      : l))
+    setClaims((prev) => ({ ...prev, [`${listingId}:${spotId}`]: buyer }))
   }
 
   const placeBid = async (listingId: string, spotId: string, bidder: string, amount: number) => {
-    if (apiIds.current.has(listingId) || live) {
-      try {
-        const updated = await bidApiSpot(spotId, amount)
-        const entry: Bid = {
-          bidder: updated.buyer ?? bidder,
-          amount: updated.currentBid ?? amount,
-          at: new Date().toISOString(),
-        }
-        setListings((prev) =>
-          prev.map((l) =>
-            l.id === listingId
-              ? {
-                  ...l,
-                  spots: l.spots.map((s) =>
-                    s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s,
-                  ),
-                }
-              : l,
-          ),
-        )
-        persistBid(listingId, spotId, entry)
-        return
-      } catch (e) {
-        if (!isNetworkError(e)) throw e
-      }
-    }
-    applyLocalBid(listingId, spotId, bidder, amount)
+    void bidder
+    const updated = await bidApiSpot(spotId, amount)
+    setListings((prev) => prev.map((l) => l.id === listingId
+      ? { ...l, spots: l.spots.map((s) => s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s) }
+      : l))
   }
 
   const addListing = async (listing: Listing): Promise<string> => {
-    try {
-      const api = await createApiListing({
+    const api = await createApiListing({
         title: listing.title,
         surface: listing.surface,
         story: listing.description,
@@ -217,20 +87,14 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
           size: s.size,
           price: s.price,
         })),
-      })
-      const idMap = new Map(listing.spots.map((s, i) => [s.id, api.spots[i]?.id ?? s.id] as const))
-      const adopted: Listing = {
-        ...apiListingToUi(api),
-        mockup: remapMockupIds(listing.mockup, idMap),
-      }
-      apiIds.current.add(adopted.id)
-      setListings((prev) => [adopted, ...prev])
-      return adopted.id
-    } catch (e) {
-      if (!isNetworkError(e)) throw e
+    })
+    const idMap = new Map(listing.spots.map((s, i) => [s.id, api.spots[i]?.id ?? s.id] as const))
+    const adopted: Listing = {
+      ...apiListingToUi(api),
+      mockup: remapMockupIds(listing.mockup, idMap),
     }
-    setListings((prev) => [listing, ...prev])
-    return listing.id
+    setListings((prev) => [adopted, ...prev])
+    return adopted.id
   }
 
   const getListing = (id: string) => listings.find((l) => l.id === id)

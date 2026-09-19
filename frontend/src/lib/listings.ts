@@ -80,87 +80,6 @@ export function minBidFor(listing: Listing, spot: Spot): number {
   return spot.bid + (listing.minIncrement ?? 10);
 }
 
-// Lay spot ids out on a photo in a simple grid (percent coordinates).
-function grid(ids: string[], cols: number, top = 18, bottom = 82): MockupSpot[] {
-  const rows = Math.ceil(ids.length / cols);
-  return ids.map((id, i) => {
-    const c = i % cols;
-    const r = Math.floor(i / cols);
-    return {
-      id,
-      x: ((c + 0.5) / cols) * 100,
-      y: rows === 1 ? (top + bottom) / 2 : top + (r / (rows - 1)) * (bottom - top),
-      w: 100 / cols - 5,
-    };
-  });
-}
-
-const macSpots: Spot[] = [
-  { id: "mac-01", label: "Top left banner", size: "9.5 × 5.5", price: 400 },
-  { id: "mac-02", label: "Marquee, above logo", size: "9.5 × 5.5", price: 400 },
-  { id: "mac-03", label: "Top right banner", size: "9.5 × 5.5", price: 400 },
-  { id: "mac-04", label: "Middle left", size: "4.5 × 4.5", price: 150 },
-  { id: "mac-05", label: "Inner left", size: "4.5 × 4.5", price: 150 },
-  { id: "mac-06", label: "Inner right", size: "4.5 × 4.5", price: 150 },
-  { id: "mac-07", label: "Middle right", size: "4.5 × 4.5", price: 150 },
-  { id: "mac-08", label: "Bottom left strip", size: "9.5 × 4", price: 700 },
-  { id: "mac-09", label: "Bottom center", size: "9.5 × 4", price: 800 },
-  { id: "mac-10", label: "Bottom right strip", size: "9.5 × 4", price: 550 },
-  { id: "mac-11", label: "Left palm rest", size: "4 × 4", price: 59 },
-  { id: "mac-12", label: "Right palm rest", size: "4 × 4", price: 59 },
-];
-
-const vincentMockup: Listing["mockup"] = {
-  views: [
-    {
-      id: "lid", label: "Lid",
-      photo: "/mac/macbook.png",
-      spots: [
-        { id: "mac-02", x: 50, y: 15, w: 30 },
-        { id: "mac-01", x: 20, y: 28, w: 22 },
-        { id: "mac-03", x: 80, y: 28, w: 22 },
-        { id: "mac-04", x: 13, y: 52, w: 15 },
-        { id: "mac-05", x: 31, y: 52, w: 15 },
-        { id: "mac-06", x: 69, y: 52, w: 15 },
-        { id: "mac-07", x: 87, y: 52, w: 15 },
-        { id: "mac-08", x: 21, y: 82, w: 22 },
-        { id: "mac-09", x: 50, y: 82, w: 22 },
-        { id: "mac-10", x: 79, y: 82, w: 22 },
-      ],
-      dims: { h: "32 CM", v: "22 CM" },
-    },
-    {
-      id: "inside", label: "Inside",
-      photo: "/mac/mac-inside.png",
-      spots: [
-        { id: "mac-11", x: 16, y: 76, w: 14 },
-        { id: "mac-12", x: 84, y: 76, w: 14 },
-      ],
-      dims: { h: "32 CM", v: "22 CM" },
-    },
-  ],
-};
-
-export const listings: Listing[] = [
-  {
-    id: "vincent-macbook",
-    title: "Your brand, on my Mac",
-    goal: "Fund my first MacBook",
-    description:
-      "The auction buys the MacBook itself. Top bid at close wins the sticker spot — seen online and IRL.",
-    image: "/mac/macbook-open.png",
-    surface: "gear",
-    seller: { name: "Vincent", handle: "@VynseDev", color: "#10b981" },
-    deadline: "In 7 days",
-    endsAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
-    priceType: "auction",
-    currency: "EUR",
-    minIncrement: 10,
-    spots: macSpots,
-    mockup: vincentMockup,
-  },
-];
-
 const SELLER_COLORS = [
   "#4166fb", "#10b981", "#f59e0b", "#ef4444",
   "#8b5cf6", "#ec4899", "#14b8a6", "#f97316",
@@ -224,20 +143,17 @@ export function apiListingToUi(a: ApiListing): Listing {
     minIncrement: a.minIncrement,
     doubleUp: a.doubleUp,
     spots,
-    mockup: a.slug === "vincent-macbook"
-      ? vincentMockup
-      : {
-          views: image
-            ? [{ id: "main", label: "Overview", photo: image, spots: grid(spots.map((s) => s.id), 3), dims: { h: "", v: "" } }]
-            : [{
-                id: "main",
-                label: "Spots",
-                grid: chunk(spots.map((s) => s.id), 3).map((row) =>
-                  row.map((spot) => ({ spot, span: Math.max(1, Math.floor(12 / row.length)) })),
-                ),
-                dims: { h: "", v: "" },
-              }],
-        },
+    mockup: {
+      views: [{
+        id: "main",
+        label: image ? "Overview" : "Spots",
+        photo: image || undefined,
+        grid: image ? undefined : chunk(spots.map((s) => s.id), 3).map((row) =>
+          row.map((spot) => ({ spot, span: Math.max(1, Math.floor(12 / row.length)) })),
+        ),
+        dims: { h: "", v: "" },
+      }],
+    },
   };
 }
 
