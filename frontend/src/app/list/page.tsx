@@ -1,13 +1,14 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Plus, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import SpecSheet from '@/components/SpecSheet'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { surfaceLabels, type Listing } from '@/lib/listings'
+import { INSIDE_VIEW_ID, formatMoney, gearInsideView, gearPhotoView, type LidPlacement, type Listing } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -17,6 +18,21 @@ interface SpotDraft {
   label: string
   size: string
   price: string
+  /* View the sticker lives on — the deck when set to 'inside'. Absent = the lid, where every spot starts. */
+  view?: string
+  /* Sticker position in % of that view's photo, set by clicking or dragging in the preview. Absent = auto-laid out. */
+  x?: number
+  y?: number
+  /* Sticker width in % of that view's photo, set by dragging the corner handle in the preview. Absent = auto width. */
+  w?: number
+}
+
+const toDateInput = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+const prettyDeadline = (input: string) => {
+  const d = new Date(`${input}T12:00:00`)
+  return Number.isNaN(d.getTime()) ? input : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
 export default function ListPage() {
@@ -25,17 +41,93 @@ export default function ListPage() {
 
   const [sellerName, setSellerName] = useState('')
   const [title, setTitle] = useState('')
-  const [surface, setSurface] = useState('gear')
+  const surface = 'gear'
   const [goal, setGoal] = useState('')
-  const [description, setDescription] = useState('')
-  const [deadline, setDeadline] = useState('')
-  const [priceType, setPriceType] = useState<'fixed' | 'auction'>('fixed')
+  const [deadline, setDeadline] = useState(() => toDateInput(new Date(Date.now() + 14 * 86_400_000)))
+  const priceType = 'auction' as const
   const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
+  // Preview id of the spot whose price panel is open — set by dropping or tapping a sticker.
+  const [editingSpot, setEditingSpot] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [x, setX] = useState<XIdentity | null>(null)
 
   const updateSpot = (i: number, patch: Partial<SpotDraft>) =>
     setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)))
+
+  // Live preview of what buyers will see — rebuilt from the form on every keystroke.
+  const preview: Listing = useMemo(() => {
+    const pid = 'preview'
+    const pspots = spots.map((s, i) => ({
+      id: `${pid}-s${i + 1}`,
+      label: s.label.trim() || `Spot ${i + 1}`,
+      size: s.size.trim() || 'M',
+      price: Number(s.price) || 0,
+    }))
+    // Stickers the seller placed or sized by hand; everything else auto-lays out. Each spot belongs to
+    // one view, so the deck only ever draws the spots actually dropped on it.
+    const lidIds: string[] = []
+    const deckIds: string[] = []
+    const lidPlaced: Record<string, LidPlacement> = {}
+    const deckPlaced: Record<string, LidPlacement> = {}
+    pspots.forEach((p, i) => {
+      const draft = spots[i]
+      const onDeck = draft.view === INSIDE_VIEW_ID
+      const ids = onDeck ? deckIds : lidIds
+      ids.push(p.id)
+      if (draft.x != null || draft.y != null || draft.w != null) {
+        const placed = onDeck ? deckPlaced : lidPlaced
+        placed[p.id] = { x: draft.x, y: draft.y, w: draft.w }
+      }
+    })
+    return {
+      id: pid,
+      title: title.trim() || 'Your listing',
+      goal: '',
+      description: '',
+      image: '',
+      surface,
+      seller: { name: '', handle: '', color: '#4166fb' },
+      deadline: '',
+      endsAt: '',
+      priceType,
+      spots: pspots,
+      // Lid first (the main sticker surface), then the deck. Each view draws only its own spots.
+      mockup: { views: [gearPhotoView(lidIds, lidPlaced), gearInsideView(deckIds, deckPlaced)] },
+    }
+  }, [spots, title, surface, priceType])
+
+  // Seller editor: a click on bare photo drops a spot there — on the view that was clicked — and opens
+  // the side panel so the price is the next thing typed. Preview ids are positional: the new spot is last.
+  const placeSpot = (x: number, y: number, viewId: string) => {
+    setSpots((prev) => [...prev, { label: '', size: '', price: '', view: viewId, x, y }])
+    setEditingSpot(`preview-s${spots.length + 1}`)
+  }
+
+  // Preview ids carry no index, so match the sticker back to its draft by position in the list.
+  const moveSpot = (spotId: string, x: number, y: number) => {
+    const i = preview.spots.findIndex((p) => p.id === spotId)
+    if (i < 0) return
+    setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, x, y } : s)))
+  }
+
+  // Resize from the sticker's corner handle. `null` from a double-click drops back to the auto width.
+  const resizeSpot = (spotId: string, w: number | null) => {
+    const i = preview.spots.findIndex((p) => p.id === spotId)
+    if (i < 0) return
+    setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, w: w ?? undefined } : s)))
+  }
+
+  // Remove from the sticker's dot (or Delete on a focused sticker). Keeps one spot. Removing shifts the
+  // positional preview ids, so close the price panel rather than leave it pointing at the wrong spot.
+  const removeSpot = (spotId: string) => {
+    const i = preview.spots.findIndex((p) => p.id === spotId)
+    if (i < 0 || spots.length <= 1) return
+    setEditingSpot(null)
+    setSpots((prev) => prev.filter((_, j) => j !== i))
+  }
+
+  // Index of the spot the price panel is open for; -1 keeps the panel hidden.
+  const editingIdx = editingSpot ? preview.spots.findIndex((p) => p.id === editingSpot) : -1
 
   const publish = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -52,22 +144,28 @@ export default function ListPage() {
       setError('Your name, a title and at least one spot are required.')
       return
     }
+    if (!deadline) {
+      setError('Pick a deadline for the auction.')
+      return
+    }
     const prices = spots.map((s) => Number(s.price))
     if (prices.some((p) => !p || p <= 0)) {
       setError('Every spot needs a price above zero.')
       return
     }
     const id = `user-${Date.now()}`
+    const spotIds = spots.map((_, i) => `${id}-s${i + 1}`)
+    const onDeck = (i: number) => spots[i].view === INSIDE_VIEW_ID
     const listing: Listing = {
       id,
       title: title.trim(),
       goal: goal.trim() || 'Fund my goal',
-      description: description.trim(),
+      description: '',
       image: '',
       surface,
       seller: { name: seller, handle: PRIVY_ENABLED ? seller : '', color: '#4166fb' },
-      deadline: deadline.trim() || 'Soon',
-      endsAt: new Date(Date.now() + 14 * 86_400_000).toISOString(),
+      deadline: prettyDeadline(deadline),
+      endsAt: new Date(`${deadline}T23:59:00`).toISOString(),
       priceType,
       spots: spots.map((s, i) => ({
         id: `${id}-s${i + 1}`,
@@ -76,13 +174,11 @@ export default function ListPage() {
         price: Number(s.price),
       })),
       mockup: {
+        // The deck keeps the spots the seller dropped there; positions and sizes are preview-only, so
+        // both views auto-lay out on publish (see the note under the preview).
         views: [
-          {
-            id: 'main',
-            label: 'Overview',
-            grid: spots.map((_, i) => [{ spot: `${id}-s${i + 1}`, span: 12 }]),
-            dims: { h: '', v: '' },
-          },
+          gearPhotoView(spotIds.filter((_, i) => !onDeck(i))),
+          gearInsideView(spotIds.filter((_, i) => onDeck(i))),
         ],
       },
     }
@@ -100,7 +196,7 @@ export default function ListPage() {
     <>
       <Header />
       {PRIVY_ENABLED && <XProbe onChange={setX} />}
-      <main className="mx-auto w-full max-w-[760px] px-6 pb-16 pt-8">
+      <main className="mx-auto w-full max-w-[1080px] px-6 pb-16 pt-8">
         <div className="mb-8">
           <h1 className="mb-2" style={{ fontSize: '40px' }}>List your space.</h1>
           <p className="text-[16px] text-[#64748b]">Describe the surface, add the spots, set the prices. Live in under a minute — mock publishing, no charge.</p>
@@ -135,23 +231,6 @@ export default function ListPage() {
               <label className="text-[13px] font-semibold" htmlFor="list-title">Title</label>
               <input id="list-title" className={field} placeholder="Put your brand on my …" value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
-            <div className="mb-5 flex flex-col gap-[6px]">
-              <span className="text-[13px] font-semibold">Surface</span>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(surfaceLabels).map(([key, label]) => (
-                  <button
-                    type="button" key={key} onClick={() => setSurface(key)}
-                    className={`rounded-full border px-4 py-[9px] text-[13px] font-medium transition ${
-                      surface === key
-                        ? 'border-[#020817] bg-[#020817] text-white'
-                        : 'border-[#e7e5e0] bg-white text-[#64748b] hover:border-[#64748b] hover:text-[#020817]'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
             <div className="mb-5 grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-[6px]">
                 <label className="text-[13px] font-semibold" htmlFor="list-goal">Goal</label>
@@ -159,73 +238,96 @@ export default function ListPage() {
               </div>
               <div className="flex flex-col gap-[6px]">
                 <label className="text-[13px] font-semibold" htmlFor="list-deadline">Deadline</label>
-                <input id="list-deadline" className={field} placeholder="Sep 29" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+                <input id="list-deadline" type="date" className={field} value={deadline} min={toDateInput(new Date())} onChange={(e) => setDeadline(e.target.value)} required />
               </div>
-            </div>
-            <div className="flex flex-col gap-[6px]">
-              <label className="text-[13px] font-semibold" htmlFor="list-desc">What does the sponsor get?</label>
-              <textarea id="list-desc" rows={3} className={field} placeholder="Miles, events, content, photos…" value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
           </section>
 
           <section className="rounded-2xl border border-[#e7e5e0] bg-white p-8">
-            <h2 className="mb-6 text-[22px]">How spots sell</h2>
-            <div className="flex flex-wrap gap-2">
-              {(['fixed', 'auction'] as const).map((mode) => (
-                <button
-                  type="button" key={mode} onClick={() => setPriceType(mode)}
-                  className={`rounded-full border px-4 py-[9px] text-[13px] font-medium transition ${
-                    priceType === mode
-                      ? 'border-[#020817] bg-[#020817] text-white'
-                      : 'border-[#e7e5e0] bg-white text-[#64748b] hover:border-[#64748b] hover:text-[#020817]'
-                  }`}
-                >
-                  {mode === 'fixed' ? 'Fixed price' : 'Auction'}
-                </button>
-              ))}
-            </div>
-            <p className="mt-3 text-sm text-[#64748b]">
-              {priceType === 'fixed'
-                ? 'Buyers claim a spot instantly at the price you set.'
-                : 'Buyers bid from the starting price. Highest bid wins at close.'}
+            <h2 className="mb-1 text-[22px]">Spots &amp; preview</h2>
+            <p className="mb-6 text-sm text-[#64748b]">
+              What buyers will see. Click either photo to drop a spot — a panel opens next to it for its
+              starting price. Tap a sticker to reopen it, drag to move it, its corner dot to size it, and
+              hover for a dot to remove it.
             </p>
-          </section>
-
-          <section className="rounded-2xl border border-[#e7e5e0] bg-white p-8">
-            <div className="mb-6 flex items-center justify-between">
-              <h2 className="text-[22px]">Spots</h2>
-              <button
-                type="button"
-                onClick={() => setSpots((prev) => [...prev, { label: '', size: '', price: '' }])}
-                className="inline-flex items-center gap-1 rounded-full border border-[#e7e5e0] px-4 py-2 text-[13px] font-medium transition hover:border-[#64748b]"
-              >
-                <Plus size={14} /> Add spot
-              </button>
-            </div>
-            {spots.map((s, i) => (
-              <div key={i} className="mb-3 grid grid-cols-[2fr_1fr_1fr_auto] items-end gap-3 rounded-xl border border-[#e7e5e0] bg-[#fafaf7] p-4">
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[13px] font-semibold">Label</label>
-                  <input className={field} value={s.label} onChange={(e) => updateSpot(i, { label: e.target.value })} />
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[13px] font-semibold">Size</label>
-                  <input className={field} value={s.size} onChange={(e) => updateSpot(i, { size: e.target.value })} />
-                </div>
-                <div className="flex flex-col gap-[6px]">
-                  <label className="text-[13px] font-semibold">{priceType === 'fixed' ? 'Price' : 'Starts at'}</label>
-                  <input type="number" min={1} className={field} value={s.price} onChange={(e) => updateSpot(i, { price: e.target.value })} />
-                </div>
-                <button
-                  type="button" aria-label="Remove spot"
-                  disabled={spots.length <= 1}
-                  onClick={() => setSpots((prev) => prev.filter((_, j) => j !== i))}
-                  className="grid h-10 w-10 place-items-center rounded-lg border border-[#e7e5e0] text-[#dc2626] transition hover:border-[#fecaca] hover:bg-[#fef2f2] disabled:cursor-not-allowed disabled:opacity-40"
+            <SpecSheet
+              listing={preview}
+              onClaim={() => {}}
+              onBid={() => {}}
+              onPlaceSpot={placeSpot}
+              onMoveSpot={moveSpot}
+              onResizeSpot={resizeSpot}
+              onRemoveSpot={removeSpot}
+              onSelectSpot={setEditingSpot}
+              selectedSpotId={editingSpot}
+              spotPanel={editingIdx >= 0 ? (
+                /* The only field a spot needs. Keyed by spot so it autofocuses on each open. */
+                <div
+                  key={editingSpot}
+                  className="rounded-xl border border-[#e7e5e0] bg-white p-4 shadow-[0_16px_40px_rgba(2,8,23,0.16)]"
                 >
-                  <X size={16} />
-                </button>
-              </div>
-            ))}
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <span className="truncate text-[14px] font-semibold">{preview.spots[editingIdx].label}</span>
+                    <button
+                      type="button"
+                      aria-label="Close price panel"
+                      onClick={() => setEditingSpot(null)}
+                      className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[#64748b] transition hover:bg-[#f1f5f9] hover:text-[#020817]"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <label className="mb-[6px] block text-[13px] font-semibold" htmlFor="spot-price">Starts at</label>
+                  <input
+                    id="spot-price"
+                    type="number"
+                    min={1}
+                    autoFocus
+                    placeholder="0"
+                    className={field}
+                    value={spots[editingIdx]?.price ?? ''}
+                    onChange={(e) => updateSpot(editingIdx, { price: e.target.value })}
+                  />
+                  <p className="mt-2 text-[12px] leading-snug text-[#64748b]">Buyers bid up from here.</p>
+                  {spots.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeSpot(preview.spots[editingIdx].id)}
+                      className="mt-3 inline-flex items-center gap-1 rounded-full border border-[#e7e5e0] px-3 py-[6px] text-[12px] font-medium text-[#dc2626] transition hover:border-[#fecaca] hover:bg-[#fef2f2]"
+                    >
+                      <X size={12} /> Remove spot
+                    </button>
+                  )}
+                </div>
+              ) : undefined}
+            />
+            {/* The spots so far and the price decided for each. Tap a row to reopen its price panel
+                (the panel pops next to the sticker when it's on the photo view in front of you). */}
+            <ul className="mt-5 divide-y divide-[#e7e5e0] rounded-xl border border-[#e7e5e0]">
+              {preview.spots.map((p, i) => (
+                <li key={p.id}>
+                  <button
+                    type="button"
+                    onClick={() => setEditingSpot(p.id)}
+                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-[#fafaf7] ${
+                      editingSpot === p.id ? 'bg-[#f4f7ff]' : ''
+                    }`}
+                  >
+                    <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{p.label}</span>
+                    <span className="whitespace-nowrap rounded-full border border-[#e7e5e0] bg-white px-[8px] py-[2px] font-mono text-[10px] tracking-[0.06em] text-[#64748b]">
+                      {spots[i]?.view === INSIDE_VIEW_ID ? 'INSIDE' : 'LID'}
+                    </span>
+                    <span className={`whitespace-nowrap font-mono text-[13px] ${p.price > 0 ? 'text-[#020817]' : 'text-[#64748b]'}`}>
+                      {p.price > 0 ? `from ${formatMoney(p.price, preview.currency)}` : 'No price yet'}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-4 font-mono text-[11px] leading-relaxed tracking-[0.04em] text-[#64748b]">
+              Placement, sticker size, and which photo a spot sits on are preview-only for now — publishing
+              lays the stickers out automatically.
+            </p>
           </section>
 
           {error && <p className="text-sm font-medium text-[#dc2626]">{error}</p>}
