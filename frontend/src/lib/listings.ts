@@ -68,6 +68,203 @@ export const surfaceLabels: Record<string, string> = {
   reach: "Reach",
 };
 
+/* Mac photos (public/mac/). The lid and the top-down deck shot are both sticker surfaces on the gear
+ * spec sheet; the open shot is only the card hero. */
+export const MAC_LID_PHOTO = "/mac/macbook.png";
+export const MAC_HERO_PHOTO = "/mac/macbook-open.png";
+export const MAC_INSIDE_PHOTO = "/mac/mac-inside.png";
+
+/**
+ * Spec-sheet view ids. A sticker lives on exactly one view — the lid (`LID_VIEW_ID`) or the deck
+ * (`INSIDE_VIEW_ID`) — because the two crops lay out differently, so each view owns its own
+ * coordinates. A spot with no view recorded is a lid spot: that was every spot before the deck view.
+ */
+export const LID_VIEW_ID = "main";
+export const INSIDE_VIEW_ID = "inside";
+
+/**
+ * Sticker slots on the lid photo, in % of the image. Rows sit 34% apart — enough for a
+ * sticker plus its price caption even on a phone — and the Apple logo near 50%/47% stays clear.
+ */
+const MAC_LID_SLOTS = [
+  { x: 50, y: 16 }, // 0  top centre
+  { x: 16, y: 16 }, // 1  top left
+  { x: 84, y: 16 }, // 2  top right
+  { x: 16, y: 50 }, // 3  mid left
+  { x: 84, y: 50 }, // 4  mid right
+  { x: 16, y: 84 }, // 5  bottom left
+  { x: 50, y: 84 }, // 6  bottom centre
+  { x: 84, y: 84 }, // 7  bottom right
+  { x: 33, y: 33 }, // 8  upper left shoulder
+  { x: 67, y: 33 }, // 9  upper right shoulder
+  { x: 33, y: 67 }, // 10 lower left hip
+  { x: 67, y: 67 }, // 11 lower right hip
+];
+
+/** Slot order per spot count, so few spots spread across the lid instead of clustering. */
+const MAC_LID_LAYOUTS = [
+  [0],
+  [1, 2],
+  [1, 0, 2],
+  [1, 2, 3, 4],
+  [1, 0, 2, 3, 4],
+  [1, 2, 3, 4, 5, 7],
+  [1, 2, 0, 3, 4, 5, 7],
+  [1, 2, 0, 3, 4, 5, 6, 7],
+];
+
+const MAC_LID_INNER = [8, 9, 10, 11];
+
+function lidSlots(n: number): { x: number; y: number }[] {
+  if (n <= 0) return [];
+  const order =
+    n <= MAC_LID_LAYOUTS.length
+      ? MAC_LID_LAYOUTS[n - 1]
+      : [...MAC_LID_LAYOUTS[MAC_LID_LAYOUTS.length - 1], ...MAC_LID_INNER];
+  return Array.from({ length: n }, (_, i) => {
+    if (i < order.length) return MAC_LID_SLOTS[order[i]];
+    // Past twelve spots the lid is full — reuse the inner slots, nudged down.
+    const p = MAC_LID_SLOTS[MAC_LID_INNER[i % MAC_LID_INNER.length]];
+    return { x: p.x, y: Math.min(88, p.y + 8) };
+  });
+}
+
+/*
+ * Sticker slots on the deck photo, in % of the image. The deck is the second sticker surface, so it
+ * gets its own preset points the same way the lid does — palm rests first, then the strips beside the
+ * trackpad and the speaker grilles — leaving the keyboard and the trackpad itself clear.
+ */
+const MAC_INSIDE_SLOTS = [
+  { x: 15, y: 80 }, // 0  left palm rest
+  { x: 85, y: 80 }, // 1  right palm rest
+  { x: 14, y: 62 }, // 2  left, beside the trackpad
+  { x: 86, y: 62 }, // 3  right, beside the trackpad
+  { x: 7, y: 28 }, //  4  left speaker strip
+  { x: 93, y: 28 }, // 5  right speaker strip
+];
+
+function insideSlots(n: number): { x: number; y: number }[] {
+  return Array.from({ length: n }, (_, i) => {
+    const slot = MAC_INSIDE_SLOTS[i % MAC_INSIDE_SLOTS.length];
+    const wrap = Math.floor(i / MAC_INSIDE_SLOTS.length);
+    // Past six spots the deck is full — stack the extras just below their slot rather than on top of it.
+    return wrap ? { x: slot.x, y: Math.min(88, slot.y + 5 * wrap) } : slot;
+  });
+}
+
+/* Photo aspect ratios. Stickers are square in pixels, so a width in % of a photo becomes a height in %
+ * of that same photo via the photo's own ratio — and the two Mac shots have different crops. */
+const MAC_LID_AR = 1484 / 1060;
+const MAC_INSIDE_AR = 1402 / 1122;
+
+/**
+ * A sticker the seller positioned or sized by hand, in % of the photo it sits on. Omitted fields fall back
+ * to the auto layout — no `x`/`y` keeps the preset slot, no `w` keeps the auto width — so a sticker can be
+ * moved without being resized, and resized without being moved.
+ */
+export type LidPlacement = { x?: number; y?: number; w?: number };
+
+/** A concrete point on a photo, in % of that photo. */
+type LidPoint = { x: number; y: number };
+
+/** Sticker width bounds, in % of the photo, for the seller's resize handle. */
+export const STICKER_MIN_W = 6;
+export const STICKER_MAX_W = 34;
+
+/** Keep a hand-picked sticker width inside the range a photo can actually hold. */
+export function clampStickerWidth(w: number): number {
+  if (!Number.isFinite(w)) return STICKER_MIN_W;
+  return Math.min(STICKER_MAX_W, Math.max(STICKER_MIN_W, w));
+}
+
+/** Keep a hand-placed sticker (and the price caption under it) on its photo instead of hanging off an edge. */
+function clampToPhoto({ x, y }: LidPoint, w: number, ar: number): LidPoint {
+  const half = w / 2;
+  const halfHeight = (w * ar) / 2;
+  return {
+    x: Math.min(100 - half - 1, Math.max(half + 1, x)),
+    // The caption sits below the sticker, so leave it room at the bottom edge.
+    y: Math.min(100 - halfHeight - 9, Math.max(halfHeight + 1, y)),
+  };
+}
+
+/** Pointer position → % of the photo the seller clicked, for the click-to-place editor. */
+export function lidPointFromPointer(
+  rect: { left: number; top: number; width: number; height: number },
+  clientX: number,
+  clientY: number,
+): LidPoint {
+  const pct = (offset: number, size: number) => (size <= 0 ? 50 : (offset / size) * 100);
+  return {
+    x: Math.min(100, Math.max(0, pct(clientX - rect.left, rect.width))),
+    y: Math.min(100, Math.max(0, pct(clientY - rect.top, rect.height))),
+  };
+}
+
+/**
+ * Auto sticker width, in % of the photo: a single row can be big, but once rows stack the stickers
+ * shrink so each sticker and the price caption under it stay in their lane even on a phone.
+ */
+function autoStickerWidth(count: number): number {
+  const maxW = count <= 3 ? 18 : 13;
+  return Math.min(maxW, Math.max(9, 108 / Math.max(1, count)));
+}
+
+/** Photo mockup: spots as stickers on the MacBook lid, price caption below each. */
+export function gearPhotoView(spotIds: string[], placements?: Record<string, LidPlacement>): MockupView {
+  const slots = lidSlots(spotIds.length);
+  const autoW = autoStickerWidth(spotIds.length);
+  return {
+    id: LID_VIEW_ID,
+    label: "MacBook lid",
+    photo: MAC_LID_PHOTO,
+    // Per spot: a hand-picked width beats the auto width, a hand-picked point beats the preset slot.
+    // Everything untouched auto-lays out exactly as before.
+    spots: spotIds.map((id, i) => {
+      const placed = placements?.[id];
+      const w = clampStickerWidth(placed?.w ?? autoW);
+      const point =
+        placed?.x != null && placed?.y != null
+          ? clampToPhoto({ x: placed.x, y: placed.y }, w, MAC_LID_AR)
+          : slots[i];
+      return { id, x: point.x, y: point.y, w };
+    }),
+    dims: { h: "", v: "" },
+  };
+}
+
+/**
+ * Deck mockup: the same sticker treatment as the lid, on the top-down flat-lay of the keyboard deck.
+ * It is a sticker surface in its own right — the seller can drop spots here — so it always carries a
+ * `spots` list, empty when nothing lives on the deck. That list is what tells `SpecSheet` a view
+ * accepts clicks (and, on a buyer's page, that a view has a claimed count to report).
+ */
+export function gearInsideView(spotIds: string[] = [], placements?: Record<string, LidPlacement>): MockupView {
+  const slots = insideSlots(spotIds.length);
+  const autoW = autoStickerWidth(spotIds.length);
+  return {
+    id: INSIDE_VIEW_ID,
+    label: "MacBook inside",
+    photo: MAC_INSIDE_PHOTO,
+    spots: spotIds.map((id, i) => {
+      const placed = placements?.[id];
+      const w = clampStickerWidth(placed?.w ?? autoW);
+      const point =
+        placed?.x != null && placed?.y != null
+          ? clampToPhoto({ x: placed.x, y: placed.y }, w, MAC_INSIDE_AR)
+          : slots[i];
+      return { id, x: point.x, y: point.y, w };
+    }),
+    dims: { h: "", v: "" },
+  };
+}
+
+/** Card thumbnail: the listing's own photo, else the MacBook hero shot (gear is the only surface the listing flow creates today). */
+export function cardPhoto(listing: { image: string; surface?: string }): string {
+  if (listing.image) return listing.image;
+  return !listing.surface || listing.surface === "gear" ? MAC_HERO_PHOTO : "";
+}
+
 export function formatMoney(n: number, currency?: string): string {
   if ((currency ?? "USD").toUpperCase() === "EUR") return "€" + n.toLocaleString("en-US");
   return "$" + n.toLocaleString("en-US");
