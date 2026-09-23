@@ -63,6 +63,7 @@ export interface ApiCreateListingRequest {
   story?: string;
   mode?: string;
   currency?: string;
+  deadline?: string;
   artworkClose?: string;
   spots?: ApiCreateSpotRequest[];
 }
