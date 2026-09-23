@@ -81,6 +81,7 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
         story: listing.description,
         mode: listing.priceType,
         currency: listing.currency ?? 'USD',
+        deadline: listing.endsAt,
         spots: listing.spots.map((s) => ({
           label: s.label,
           location: s.location,
