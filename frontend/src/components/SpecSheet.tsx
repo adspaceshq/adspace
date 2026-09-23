@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
-import { Apple } from 'lucide-react'
-import { formatMoney, type GridCell, type Listing, type Spot } from '@/lib/listings'
+import { useRef, useState, type ReactNode } from 'react'
+import { Apple, X } from 'lucide-react'
+import { formatMoney, clampStickerWidth, lidPointFromPointer, type GridCell, type Listing, type Spot } from '@/lib/listings'
 
 /*
  * Spec sheets. Two view kinds:
@@ -72,16 +72,57 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
   )
 }
 
-export default function SpecSheet({ listing, onClaim, onBid }: {
+/*
+ * Sticker corner handles. A small dot with a big grab area: the ::before box widens
+ * the hit target without adding ink, so the photo still reads as a clean mockup.
+ */
+const dotBase =
+  "absolute h-3 w-3 touch-none select-none rounded-full border border-[#020817] bg-white shadow-[0_1px_3px_rgba(2,8,23,0.3)] transition before:absolute before:-inset-2 before:content-[''] hover:scale-125"
+
+export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMoveSpot, onResizeSpot, onRemoveSpot, onSelectSpot, selectedSpotId, spotPanel }: {
   listing: Listing
   onClaim: (spot: Spot) => void
   onBid: (spot: Spot) => void
+  /** Seller editor: click bare photo to drop a spot where you clicked, on that view. */
+  onPlaceSpot?: (x: number, y: number, viewId: string) => void
+  /** Seller editor: drag a sticker, or nudge it with the arrow keys, to move it. */
+  onMoveSpot?: (spotId: string, x: number, y: number) => void
+  /** Seller editor: drag a sticker's corner handle, or use the arrow keys on it, to resize it. `null` = back to auto. */
+  onResizeSpot?: (spotId: string, w: number | null) => void
+  /** Seller editor: drop a spot from the preview. The spot rows above stay in sync; the last spot stays. */
+  onRemoveSpot?: (spotId: string) => void
+  /** Seller editor: tap a sticker (press without dragging) to select it — opens the price panel. */
+  onSelectSpot?: (spotId: string) => void
+  /** Seller editor: the sticker currently being priced — drawn with a ring so the panel's target is obvious. */
+  selectedSpotId?: string | null
+  /** Seller editor: panel content (e.g. the price form) rendered right next to the selected sticker. */
+  spotPanel?: ReactNode
 }) {
   const views = listing.mockup?.views || []
   const [activeIdx, setActiveIdx] = useState(0)
+  const photoRef = useRef<HTMLDivElement | null>(null)
+  // sx/sy mark where the press started: a press that barely moves is a tap (select), not a drag.
+  const dragRef = useRef<{ id: string; dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const resizeRef = useRef<string | null>(null)
+  const [resizingId, setResizingId] = useState<string | null>(null)
 
   if (!views.length) return null
   const active = views[activeIdx] || views[0]
+
+  // Hand-placed stickers only ever exist in the seller's own preview, never on a buyer's page.
+  // A `spots` list is what marks a sticker surface: the lid and the deck both carry one, and a photo
+  // view without one (a listing's own Overview image) stays read-only. Coordinates are % of whichever
+  // photo is on screen, so the view id travels back with the click — each view keeps its own layout.
+  const editing = !!onPlaceSpot && !!active.spots
+  // Resizing shares the sticker's corner handle; a preview can offer it without click-to-place.
+  const canResize = !!onResizeSpot
+  // Removing mirrors the row button on /list: offered only while more than one spot remains.
+  const canRemove = !!onRemoveSpot && listing.spots.length > 1
+  const pointFromPointer = (e: { clientX: number; clientY: number }) => {
+    const rect = photoRef.current?.getBoundingClientRect()
+    return rect ? lidPointFromPointer(rect, e.clientX, e.clientY) : null
+  }
 
   const spots: StickerSpot[] = (active.spots || [])
     .map((pos) => {
@@ -94,6 +135,12 @@ export default function SpecSheet({ listing, onClaim, onBid }: {
     ? active.grid.flat().map((c) => c.spot).filter(Boolean)
     : spots.map((s) => s.id)
   const claimedOnView = listing.spots.filter((s) => s.claimedBy && viewSpotIds.includes(s.id)).length
+  // An empty view has no count to report — in the seller's preview, point at the editor instead.
+  const footerNote = viewSpotIds.length
+    ? `${claimedOnView}/${viewSpotIds.length} CLAIMED`
+    : onPlaceSpot
+      ? 'CLICK THE PHOTO TO ADD A SPOT'
+      : ''
 
   return (
     <div className="w-full">
