@@ -341,15 +341,18 @@ export function apiListingToUi(a: ApiListing): Listing {
     doubleUp: a.doubleUp,
     spots,
     mockup: {
-      views: [{
-        id: "main",
-        label: image ? "Overview" : "Spots",
-        photo: image || undefined,
-        grid: image ? undefined : chunk(spots.map((s) => s.id), 3).map((row) =>
-          row.map((spot) => ({ spot, span: Math.max(1, Math.floor(12 / row.length)) })),
-        ),
-        dims: { h: "", v: "" },
-      }],
+      views: image
+        ? [{ id: "main", label: "Overview", photo: image, dims: { h: "", v: "" } }]
+        : a.surface === "gear"
+          ? [gearPhotoView(spots.map((s) => s.id)), gearInsideView()]
+          : [{
+              id: "main",
+              label: "Spots",
+              grid: chunk(spots.map((s) => s.id), 3).map((row) =>
+                row.map((spot) => ({ spot, span: Math.max(1, Math.floor(12 / row.length)) })),
+              ),
+              dims: { h: "", v: "" },
+            }],
     },
   };
 }
