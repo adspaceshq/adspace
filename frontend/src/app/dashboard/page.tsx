@@ -7,6 +7,7 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { approveApiSpot, fetchSellerDashboard, fulfillApiSpot, rejectApiSpot } from '@/lib/auth-api'
+import { cardPhoto } from '@/lib/listings'
 import type { SellerDashboard } from '@/lib/types'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
@@ -28,7 +29,15 @@ export default function DashboardPage() {
     try { setData(await fetchSellerDashboard()); setError(undefined) }
     catch (e) { setError(e instanceof Error ? e.message : 'Could not load your dashboard.') }
   }, [auth.authenticated])
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    if (!auth.authenticated) return
+    let cancelled = false
+    fetchSellerDashboard().then(
+      (d) => { if (!cancelled) { setData(d); setError(undefined) } },
+      (e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load your dashboard.') },
+    )
+    return () => { cancelled = true }
+  }, [auth.authenticated])
 
   const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill') => {
     setBusy(spotId); setError(undefined)
@@ -71,7 +80,7 @@ export default function DashboardPage() {
                 <table className="w-full min-w-[820px] border-collapse text-left text-sm">
                   <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Listing','Status','Spots sold / open','Pricing mode','Revenue','Action'].map(x=><th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
                   <tbody>{data.listings.map(l=><tr key={l.id} className="border-b border-[#e7e5e0] last:border-0">
-                    <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="h-11 w-16 overflow-hidden bg-[#f1f0ec]">{l.image && <img src={l.image} alt="" className="h-full w-full object-cover"/>}</div><span className="font-medium">{l.title}</span></div></td>
+                    <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="h-11 w-16 overflow-hidden bg-[#f1f0ec]">{cardPhoto(l) && <img src={cardPhoto(l)} alt="" className="h-full w-full object-cover"/>}</div><span className="font-medium">{l.title}</span></div></td>
                     <td className="px-4 py-4"><span className={`inline-flex items-center gap-2 text-xs font-medium ${l.status==='active'?'text-emerald-700':'text-[#64748b]'}`}><span className={`h-1.5 w-1.5 rounded-full ${l.status==='active'?'bg-emerald-500':'bg-slate-400'}`}/>{l.status==='active'?'Active':'Closed'}</span></td>
                     <td className="px-4 py-4 font-mono text-xs">{l.sold} / {l.open}</td><td className="px-4 py-4 capitalize">{l.mode==='fixed'?'Fixed price':'Auction'}</td><td className="px-4 py-4 font-mono text-xs">{money(l.revenue,l.currency)}</td>
                     <td className="px-4 py-4"><Link href={`/listings/${l.slug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link></td>
