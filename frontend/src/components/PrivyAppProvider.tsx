@@ -25,7 +25,7 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
           theme: 'light',
           accentColor: '#4166fb',
           landingHeader: 'Log in with X',
-          loginMessage: 'Your X handle is your identity on Spotboard.',
+          loginMessage: 'Your X handle is your identity on Adspaces.',
           showWalletLoginFirst: false,
         },
         embeddedWallets: {
