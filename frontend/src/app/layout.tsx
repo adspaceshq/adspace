@@ -5,7 +5,7 @@ import AuthSessionProvider from "@/components/AuthSessionProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Spotboard — peer-to-peer ad space",
+  title: "Adspaces — peer-to-peer ad space",
   description: "Sell ad space on anything. Buyers claim spots and fund what you are building.",
 };
 

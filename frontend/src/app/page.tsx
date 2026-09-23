@@ -268,8 +268,8 @@ export default function Home() {
           <div className="mx-auto w-full max-w-[1340px] px-6">
             <div className="mb-12 max-w-[640px]">
               <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">You stay in control</span>
-              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>Spotboard helps you sell. It does not hold your money.</h2>
-              <p className="text-[17px] text-[#64748b]">Spotboard prepares the listing and keeps the records. The deal stays between you and the buyer.</p>
+              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>Adspaces helps you sell. It does not hold your money.</h2>
+              <p className="text-[17px] text-[#64748b]">Adspaces prepares the listing and keeps the records. The deal stays between you and the buyer.</p>
             </div>
             <div className="grid gap-6 md:grid-cols-3">
               <div className="flex flex-col gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-8">
@@ -277,7 +277,7 @@ export default function Home() {
                   <ShieldCheck size={20} />
                 </span>
                 <h3 className="text-xl">You approve every claim</h3>
-                <p className="text-[15px] text-[#64748b]">You see who claimed what. Spotboard cannot move money by itself.</p>
+                <p className="text-[15px] text-[#64748b]">You see who claimed what. Adspaces cannot move money by itself.</p>
               </div>
               <div className="flex flex-col gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-8">
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#e9edfe] text-[#4166fb]">
