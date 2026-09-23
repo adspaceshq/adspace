@@ -183,79 +183,221 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
           </div>
           <div className="mt-4 flex items-center justify-between px-1 font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
             <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
-            <span>
-              {claimedOnView}/{viewSpotIds.length} CLAIMED
-            </span>
+            <span>{footerNote}</span>
           </div>
         </div>
       ) : (
-        <div className="relative overflow-hidden rounded-3xl border border-[#e7e5e0] bg-white p-4 sm:p-8">
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{
-              backgroundImage:
-                'linear-gradient(rgba(199,199,199,0.45) 1px, transparent 1px), linear-gradient(90deg, rgba(199,199,199,0.45) 1px, transparent 1px)',
-              backgroundSize: '24px 24px',
-            }}
-          />
-          <div className="relative z-10 flex min-h-[320px] items-center justify-center">
-            <div className="relative inline-block leading-[0]">
+        <div className="rounded-[28px] bg-[#e3e4e8] p-4 sm:p-6">
+          <div className="flex min-h-[420px] items-center justify-center">
+            <div ref={photoRef} className="relative inline-block leading-[0]">
               <img
                 src={active.photo}
                 alt={`${listing.title} — ${active.label}`}
-                className="block h-auto max-h-[520px] w-auto max-w-full"
+                className="block h-auto max-h-[680px] w-auto max-w-full rounded-2xl"
               />
+              {/* Seller editor: a transparent sibling *behind* the stickers, so a press on bare photo
+                  drops a spot there while a press that lands on a sticker still reaches the sticker. */}
+              {editing && (
+                <button
+                  type="button"
+                  aria-label={`Add a spot on the ${active.label}`}
+                  onClick={(e) => {
+                    // Keyboard "clicks" carry no coordinates — fall back to the top-centre slot.
+                    const p = e.clientX || e.clientY ? pointFromPointer(e) : null
+                    onPlaceSpot?.(p?.x ?? 50, p?.y ?? 16, active.id)
+                  }}
+                  className="absolute inset-0 z-[1] cursor-crosshair rounded-2xl"
+                />
+              )}
               {spots.map((spot) => {
                 const isClaimed = !!spot.claimedBy
                 const isWinning = !isClaimed && !!spot.bidBy
+                const taken = isClaimed || isWinning
+                const who = isClaimed ? spot.claimedBy : spot.bidBy
+                const amount = spot.bid ?? spot.price
+                const price = spot.bid != null
+                  ? formatMoney(spot.bid, listing.currency)
+                  : listing.priceType === 'auction'
+                    ? `from ${formatMoney(amount, listing.currency)}`
+                    : formatMoney(amount, listing.currency)
                 return (
-                  <button
+                  <div
                     key={spot.id}
-                    onClick={() => {
-                      if (isClaimed) return
-                      if (listing.priceType === 'auction') onBid(spot)
-                      else onClaim(spot)
-                    }}
-                    aria-label={
-                      isClaimed
-                        ? `${spot.label} claimed by ${spot.claimedBy}`
-                        : isWinning
-                          ? `${spot.label}, top bid ${formatMoney(spot.bid ?? spot.price, listing.currency)} by ${spot.bidBy}`
-                          : `${spot.label}, ${spot.size}, ${formatMoney(spot.bid || spot.price, listing.currency)}`
-                    }
-                    className={`absolute z-[2] flex min-h-[46px] min-w-[46px] max-w-[180px] -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-[1px] rounded-[10px] px-2 py-[6px] font-mono leading-normal transition ${
-                      isClaimed || isWinning
-                        ? 'cursor-default text-white shadow-[0_6px_18px_rgba(0,0,0,0.28)]'
-                        : 'cursor-pointer border-[1.5px] border-dashed border-[#94a3b8] bg-transparent text-[#020817] hover:z-[3] hover:scale-[1.07] hover:border-[#4166fb] hover:bg-white/40 hover:shadow-[0_8px_24px_rgba(65,102,251,0.28)]'
+                    className={`absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-[6px] ${
+                      editing && (draggingId === spot.id || resizingId === spot.id) ? 'z-[5]' : 'z-[2]'
                     }`}
-                    style={{
-                      left: `${spot.x}%`,
-                      top: `${spot.y}%`,
-                      width: `${spot.w}%`,
-                      ...((isClaimed || isWinning) ? { background: spot.logoColor || '#3b82f6' } : {}),
-                    }}
+                    style={{ left: `${spot.x}%`, top: `${spot.y}%`, width: `${spot.w}%` }}
                   >
-                    {isClaimed || isWinning ? (
-                      <>
-                        <span className="text-center text-xs font-bold leading-tight">{isClaimed ? spot.claimedBy : spot.bidBy}</span>
-                        <span className="text-[10px] font-medium opacity-90">{formatMoney(spot.bid ?? spot.price, listing.currency)}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-[11px] font-bold tracking-wide">{spot.size}</span>
-                        <span className="text-[10px] font-medium">{formatMoney(spot.bid || spot.price, listing.currency)}</span>
-                      </>
-                    )}
-                  </button>
+                    {/* Wrapper exists so the handles can hug the sticker instead of the caption under it.
+                        It is also the hover group that reveals the remove dot. */}
+                    <div className="group relative w-full">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (editing) return
+                          if (taken) return
+                          if (listing.priceType === 'auction') onBid(spot)
+                          else onClaim(spot)
+                        }}
+                        onPointerDown={editing ? (e) => {
+                          const p = pointFromPointer(e)
+                          if (!p) return
+                          // Remember where the sticker was grabbed, so it moves with the cursor instead of jumping to it.
+                          dragRef.current = { id: spot.id, dx: spot.x - p.x, dy: spot.y - p.y, sx: p.x, sy: p.y, moved: false }
+                          setDraggingId(spot.id)
+                          e.currentTarget.setPointerCapture(e.pointerId)
+                        } : undefined}
+                        onPointerMove={editing ? (e) => {
+                          const drag = dragRef.current
+                          if (!drag || drag.id !== spot.id) return
+                          const p = pointFromPointer(e)
+                          if (!p) return
+                          // Ignore sub-pixel jitter: only real movement turns the press into a drag.
+                          if (!drag.moved && Math.hypot(p.x - drag.sx, p.y - drag.sy) < 1.5) return
+                          drag.moved = true
+                          onMoveSpot?.(spot.id, p.x + drag.dx, p.y + drag.dy)
+                        } : undefined}
+                        onPointerUp={editing ? (e) => {
+                          if (dragRef.current?.id !== spot.id) return
+                          // A press that never became a drag is a tap — select the sticker for pricing.
+                          if (!dragRef.current.moved) onSelectSpot?.(spot.id)
+                          dragRef.current = null
+                          setDraggingId(null)
+                          e.currentTarget.releasePointerCapture(e.pointerId)
+                        } : undefined}
+                        onKeyDown={editing ? (e) => {
+                          // Delete (or Backspace, which is the key Macs label Delete) drops the spot.
+                          if (canRemove && (e.key === 'Delete' || e.key === 'Backspace')) {
+                            e.preventDefault()
+                            onRemoveSpot?.(spot.id)
+                            return
+                          }
+                          // Arrow keys nudge; hold shift for bigger steps. Clamping happens in gearPhotoView.
+                          const step = e.shiftKey ? 5 : 1.5
+                          const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+                          const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+                          if (!dx && !dy) return
+                          e.preventDefault()
+                          onMoveSpot?.(spot.id, spot.x + dx, spot.y + dy)
+                        } : undefined}
+                        aria-label={
+                          editing
+                            ? `${spot.label}, ${spot.size} — drag or arrow-key to move it${canRemove ? ', Delete to remove it' : ''}`
+                            : isClaimed
+                              ? `${spot.label} claimed by ${spot.claimedBy}`
+                              : isWinning
+                                ? `${spot.label}, top bid ${formatMoney(amount, listing.currency)} by ${spot.bidBy}`
+                                : `${spot.label}, ${spot.size}, ${formatMoney(amount, listing.currency)}`
+                        }
+                        className={`flex aspect-square w-full flex-col items-center justify-center gap-[3px] rounded-xl px-1 py-2 font-mono leading-normal transition ${
+                          taken
+                            ? 'text-white shadow-[0_6px_18px_rgba(0,0,0,0.28)]'
+                            : 'border-[1.5px] border-dashed border-[#94a3b8] text-[#020817] hover:z-[3] hover:border-[#4166fb] hover:shadow-[0_8px_24px_rgba(65,102,251,0.28)]'
+                        } ${
+                          editing
+                            ? `touch-none select-none ${draggingId === spot.id ? 'cursor-grabbing scale-[1.06] ring-2 ring-[#4166fb]' : 'cursor-grab'} ${selectedSpotId === spot.id ? 'ring-2 ring-[#4166fb]' : ''}`
+                            : taken
+                              ? 'cursor-default'
+                              : 'cursor-pointer hover:scale-[1.06]'
+                        }`}
+                        style={taken ? { background: spot.logoColor || '#3b82f6' } : undefined}
+                      >
+                        {taken ? (
+                          <>
+                            <span className="text-[16px] font-bold leading-none">{(who ?? '?').charAt(0).toUpperCase()}</span>
+                            <span className="w-full truncate px-1 text-center text-[10px] font-medium leading-tight">{who}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-[13px] font-bold leading-none tracking-wide">{spot.size}</span>
+                            <span className="text-[9px] font-medium uppercase leading-none tracking-[0.08em] text-[#64748b]">
+                              {spot.bid != null ? 'bid' : 'open'}
+                            </span>
+                          </>
+                        )}
+                      </button>
+                      {canResize && (
+                        <button
+                          type="button"
+                          aria-label={`Resize ${spot.label} — drag the handle or use the arrow keys, double-click to reset`}
+                          onPointerDown={(e) => {
+                            resizeRef.current = spot.id
+                            setResizingId(spot.id)
+                            e.currentTarget.setPointerCapture(e.pointerId)
+                          }}
+                          onPointerMove={(e) => {
+                            if (resizeRef.current !== spot.id) return
+                            const p = pointFromPointer(e)
+                            // The handle rides the sticker's right edge, so the width is twice the centre-to-pointer run.
+                            if (p) onResizeSpot?.(spot.id, clampStickerWidth(2 * (p.x - spot.x)))
+                          }}
+                          onPointerUp={(e) => {
+                            if (resizeRef.current !== spot.id) return
+                            resizeRef.current = null
+                            setResizingId(null)
+                            e.currentTarget.releasePointerCapture(e.pointerId)
+                          }}
+                          onKeyDown={(e) => {
+                            // Arrow keys widen/narrow from the current width; shift for bigger steps.
+                            const step = e.shiftKey ? 4 : 1.5
+                            const dw = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+                            if (!dw) return
+                            e.preventDefault()
+                            onResizeSpot?.(spot.id, clampStickerWidth(spot.w + dw))
+                          }}
+                          onDoubleClick={() => onResizeSpot?.(spot.id, null)}
+                          className={`${dotBase} -bottom-1.5 -right-1.5 cursor-nwse-resize hover:bg-[#e9edfe] ${
+                            resizingId === spot.id ? 'scale-125 ring-2 ring-[#4166fb]' : ''
+                          }`}
+                        />
+                      )}
+                      {canRemove && (
+                        <button
+                          type="button"
+                          aria-label={`Remove ${spot.label} from the ${active.label}`}
+                          onClick={() => onRemoveSpot?.(spot.id)}
+                          // Hover-revealed so the photo reads clean, and always on for touch, where there is no hover.
+                          className={`${dotBase} -right-1.5 -top-1.5 pointer-events-none grid cursor-pointer place-items-center text-[#dc2626] opacity-0 hover:bg-[#fef2f2] group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 pointer-coarse:pointer-events-auto pointer-coarse:opacity-100`}
+                        >
+                          <X size={8} strokeWidth={3} />
+                        </button>
+                      )}
+                    </div>
+                    <span className="w-full text-center">
+                      <span className="block truncate text-[13px] font-semibold leading-tight">{spot.label}</span>
+                      <span className="block truncate font-mono text-[12px] leading-tight text-[#64748b]">
+                        {amount > 0 ? price : 'No price yet'}
+                      </span>
+                    </span>
+                  </div>
                 )
               })}
+              {/* Seller editor: the price panel rides next to the sticker that opened it, so it
+                  follows the sticker when it's dragged and lives on the same photo view. */}
+              {editing && spotPanel && selectedSpotId && (() => {
+                const sel = spots.find((s) => s.id === selectedSpotId)
+                if (!sel) return null
+                // Sit right of the sticker, flipped left when it's on the right half of the photo,
+                // and vertically clamped, so the panel never spills off the photo.
+                const flipX = sel.x > 55
+                return (
+                  <div
+                    className="absolute z-[6] w-[230px] leading-normal"
+                    style={{
+                      left: `${sel.x + (flipX ? -sel.w / 2 : sel.w / 2)}%`,
+                      top: `${Math.min(Math.max(sel.y, 18), 82)}%`,
+                      transform: `translate(${flipX ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
+                    }}
+                  >
+                    {spotPanel}
+                  </div>
+                )
+              })()}
             </div>
           </div>
-          <div className="mt-4 flex items-center justify-between font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
+          <div className="mt-4 flex items-center justify-between px-1 font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
             <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
-            <span>
-              {claimedOnView}/{viewSpotIds.length} CLAIMED
-            </span>
+            <span>{footerNote}</span>
           </div>
         </div>
       )}
