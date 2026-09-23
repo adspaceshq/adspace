@@ -1,6 +1,6 @@
 'use client'
 
-import { formatMoney, surfaceLabels, type Listing } from '@/lib/listings'
+import { cardPhoto, formatMoney, surfaceLabels, type Listing } from '@/lib/listings'
 
 function SpotProgress({ spots }: { spots: Listing['spots'] }) {
   const claimed = spots.filter((s) => s.claimedBy).length
@@ -29,12 +29,13 @@ export default function ListingCard({ listing }: { listing: Listing }) {
   const minPrice = Math.min(...listing.spots.map((s) => s.price))
   const isAuction = listing.priceType === 'auction'
   const badge = soldOut ? 'closed' : isAuction ? 'auction' : 'live'
+  const photo = cardPhoto(listing)
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white transition duration-200 hover:-translate-y-1 hover:border-[#c3cdfd] hover:shadow-[0_16px_40px_rgba(2,8,23,0.1)]">
       <div className="relative aspect-[16/10] bg-[#f1f0ec]">
-        {listing.image ? (
-          <img src={listing.image} alt={listing.title} loading="lazy" className="h-full w-full object-cover" />
+        {photo ? (
+          <img src={photo} alt={listing.title} loading="lazy" className="h-full w-full object-cover" />
         ) : (
           <div
             aria-hidden="true"
