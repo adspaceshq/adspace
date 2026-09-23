@@ -30,6 +30,7 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
   const isClaimed = !!spot.claimedBy
   return (
     <button
+      type="button"
       onClick={() => {
         if (isClaimed) return
         if (listing.priceType === 'auction') onBid(spot)
