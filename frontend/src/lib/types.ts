@@ -17,6 +17,8 @@ export interface ApiSpot {
   size: string;
   price: number;
   currency: string;
+  /** Which Mac photo the sticker lives on: "lid" or "inside". */
+  view: string;
   status: ApiSpotStatus;
   currentBid?: number;
   buyer?: string;
@@ -73,6 +75,7 @@ export interface ApiCreateSpotRequest {
   location?: string;
   size?: string;
   price?: number;
+  view?: string;
 }
 
 export interface SessionUser {
