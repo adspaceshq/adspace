@@ -39,7 +39,7 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
       aria-label={
         isClaimed
           ? `${spot.label} claimed by ${spot.claimedBy}`
-          : `${spot.label}, ${spot.size}, ${formatMoney(spot.bid || spot.price, listing.currency)}`
+          : `${spot.label}, ${formatMoney(spot.bid || spot.price, listing.currency)}`
       }
       className={`flex min-h-[120px] flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-[#9aa0aa] bg-[#ececee] p-4 text-center transition sm:min-h-[150px] ${
         isClaimed ? 'cursor-default' : 'cursor-pointer hover:border-[#4166fb] hover:bg-white hover:shadow-[0_8px_24px_rgba(65,102,251,0.2)]'
@@ -61,8 +61,7 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
         </>
       ) : (
         <>
-          <span className="font-mono text-xs font-bold tracking-wide text-[#020817]">{spot.size}</span>
-          <span className="font-mono text-sm text-[#020817]">{formatMoney(spot.bid || spot.price, listing.currency)}</span>
+          <span className="font-mono text-sm font-bold text-[#020817]">{formatMoney(spot.bid || spot.price, listing.currency)}</span>
           <span className="font-mono text-[11px] text-[#64748b]">
             {spot.bid ? 'top bid · tap to outbid' : 'open · tap to bid'}
           </span>
@@ -79,7 +78,7 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
 const dotBase =
   "absolute h-3 w-3 touch-none select-none rounded-full border border-[#020817] bg-white shadow-[0_1px_3px_rgba(2,8,23,0.3)] transition before:absolute before:-inset-2 before:content-[''] hover:scale-125"
 
-export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMoveSpot, onResizeSpot, onRemoveSpot, onSelectSpot, selectedSpotId, spotPanel }: {
+export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMoveSpot, onResizeSpot, onRemoveSpot, onSelectSpot, selectedSpotId, spotPanel, activeViewId, onActiveViewChange, hideTabs }: {
   listing: Listing
   onClaim: (spot: Spot) => void
   onBid: (spot: Spot) => void
@@ -209,8 +208,8 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
           </div>
         </div>
       ) : (
-        <div className="rounded-[28px] bg-[#e3e4e8] p-4 sm:p-6">
-          <div className="flex min-h-[420px] items-center justify-center">
+        <div>
+          <div className="flex min-h-[320px] items-center justify-center">
             <div ref={photoRef} className="relative inline-block leading-[0]">
               <img
                 src={active.photo}
@@ -226,7 +225,7 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                   onClick={(e) => {
                     // Keyboard "clicks" carry no coordinates — fall back to the top-centre slot.
                     const p = e.clientX || e.clientY ? pointFromPointer(e) : null
-                    onPlaceSpot?.(p?.x ?? 50, p?.y ?? 16, active.id)
+                    onPlaceSpot?.(p?.x ?? 50, p?.y ?? 20, active.id)
                   }}
                   className="absolute inset-0 z-[1] cursor-crosshair rounded-2xl"
                 />
@@ -242,10 +241,12 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                   : listing.priceType === 'auction'
                     ? `from ${formatMoney(amount, listing.currency)}`
                     : formatMoney(amount, listing.currency)
+                // Center the *sticker* on its point — not the sticker-plus-caption column — so the
+                // top-row slots sit fully on the lid instead of hanging off the photo's top edge.
                 return (
                   <div
                     key={spot.id}
-                    className={`absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-[6px] ${
+                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${
                       editing && (draggingId === spot.id || resizingId === spot.id) ? 'z-[5]' : 'z-[2]'
                     }`}
                     style={{ left: `${spot.x}%`, top: `${spot.y}%`, width: `${spot.w}%` }}
@@ -304,12 +305,12 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                         } : undefined}
                         aria-label={
                           editing
-                            ? `${spot.label}, ${spot.size} — drag or arrow-key to move it${canRemove ? ', Delete to remove it' : ''}`
+                            ? `${spot.label} — drag or arrow-key to move it${canRemove ? ', Delete to remove it' : ''}`
                             : isClaimed
                               ? `${spot.label} claimed by ${spot.claimedBy}`
                               : isWinning
                                 ? `${spot.label}, top bid ${formatMoney(amount, listing.currency)} by ${spot.bidBy}`
-                                : `${spot.label}, ${spot.size}, ${formatMoney(amount, listing.currency)}`
+                                : `${spot.label}, ${formatMoney(amount, listing.currency)}`
                         }
                         className={`flex aspect-square w-full flex-col items-center justify-center gap-[3px] rounded-xl px-1 py-2 font-mono leading-normal transition ${
                           taken
@@ -331,9 +332,13 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                           </>
                         ) : (
                           <>
-                            <span className="text-[13px] font-bold leading-none tracking-wide">{spot.size}</span>
+                            <span className="text-[13px] font-bold leading-none tracking-wide">
+                              {spot.bid != null ? 'BID' : 'OPEN'}
+                            </span>
                             <span className="text-[9px] font-medium uppercase leading-none tracking-[0.08em] text-[#64748b]">
-                              {spot.bid != null ? 'bid' : 'open'}
+                              {editing
+                                ? (spot.bid != null ? 'top bid' : 'open')
+                                : (spot.bid != null ? 'tap to outbid' : 'tap to bid')}
                             </span>
                           </>
                         )}
@@ -385,7 +390,8 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                         </button>
                       )}
                     </div>
-                    <span className="w-full text-center">
+                    {/* Caption hangs below the sticker out of flow, so it never shifts the sticker off its point. */}
+                    <span className="absolute left-0 top-full mt-[6px] w-full text-center">
                       <span className="block truncate text-[13px] font-semibold leading-tight">{spot.label}</span>
                       <span className="block truncate font-mono text-[12px] leading-tight text-[#64748b]">
                         {amount > 0 ? price : 'No price yet'}
@@ -417,7 +423,7 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
               })()}
             </div>
           </div>
-          <div className="mt-4 flex items-center justify-between px-1 font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
+          <div className="mt-3 flex items-center justify-between font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
             <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
             <span>{footerNote}</span>
           </div>
