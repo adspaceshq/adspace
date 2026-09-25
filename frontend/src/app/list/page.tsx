@@ -4,11 +4,10 @@ import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 import Header from '@/components/Header'
-import Footer from '@/components/Footer'
 import SpecSheet from '@/components/SpecSheet'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { INSIDE_VIEW_ID, formatMoney, gearInsideView, gearPhotoView, type LidPlacement, type Listing } from '@/lib/listings'
+import { INSIDE_VIEW_ID, LID_VIEW_ID, formatMoney, gearInsideView, gearPhotoView, sellerListings, sellerUrl, type LidPlacement, type Listing } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -36,7 +35,7 @@ const prettyDeadline = (input: string) => {
 }
 
 export default function ListPage() {
-  const { addListing } = useStore()
+  const { listings, addListing } = useStore()
   const router = useRouter()
 
   const [sellerName, setSellerName] = useState('')
@@ -172,6 +171,7 @@ export default function ListPage() {
         label: s.label.trim() || `Spot ${i + 1}`,
         size: s.size.trim() || 'M',
         price: Number(s.price),
+        view: onDeck(i) ? 'inside' : 'lid',
       })),
       mockup: {
         // The deck keeps the spots the seller dropped there; positions and sizes are preview-only, so
@@ -182,14 +182,19 @@ export default function ListPage() {
         ],
       },
     }
-    let newId: string
     try {
-      newId = await addListing(listing)
+      await addListing(listing)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not publish. Try again.')
+      setReviewing(false)
+      setPublishing(false)
       return
     }
-    router.push(`/listings/${newId}`)
+    // New space goes live as the seller's newest — oldest-first it lands last,
+    // so its short key is mac-N (or plain mac for their first).
+    const existingCount = sellerListings(listings, seller).length
+    const shortKey = existingCount === 0 ? 'mac' : `mac-${existingCount + 1}`
+    router.push(`${sellerUrl(seller)}/${shortKey}`)
   }
 
   return (
