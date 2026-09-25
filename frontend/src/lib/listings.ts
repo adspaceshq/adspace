@@ -13,6 +13,8 @@ export interface Spot {
   size: string;
   price: number;
   currency?: string;
+  /** Which Mac photo the sticker lives on: "lid" or "inside". */
+  view?: string;
   bid?: number;
   bidBy?: string;
   bids?: Bid[];
@@ -309,6 +311,7 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
     size: s.size,
     price: s.price,
     currency: s.currency,
+    view: s.view === "inside" ? "inside" : "lid",
     bid: topBid ?? (claimed ? s.price : undefined),
     bidBy: mode === "auction" ? s.buyer : undefined,
     bids: s.bids?.map((b) => ({ bidder: b.bidder, amount: b.amount, at: b.at })),
@@ -325,6 +328,9 @@ export function apiListingToUi(a: ApiListing): Listing {
   const image = usableImage(a.image);
   const spots = a.spots.map((s) => apiSpotToUi(s, a.mode));
   const description = a.artworkClose ? `${a.story} (Artwork: ${a.artworkClose}.)` : a.story;
+  // Stickers live on exactly one photo: the lid gets every non-inside spot, the deck only its own.
+  const lidIds = spots.filter((s) => s.view !== "inside").map((s) => s.id);
+  const deckIds = spots.filter((s) => s.view === "inside").map((s) => s.id);
   return {
     id: a.slug,
     title: a.title,
@@ -344,7 +350,7 @@ export function apiListingToUi(a: ApiListing): Listing {
       views: image
         ? [{ id: "main", label: "Overview", photo: image, dims: { h: "", v: "" } }]
         : a.surface === "gear"
-          ? [gearPhotoView(spots.map((s) => s.id)), gearInsideView()]
+          ? [gearPhotoView(lidIds), gearInsideView(deckIds)]
           : [{
               id: "main",
               label: "Spots",
