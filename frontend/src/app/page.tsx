@@ -16,6 +16,7 @@ import {
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import ListingCard from '@/components/ListingCard'
+import { listingUrl } from '@/lib/listings'
 import { useStore } from '@/components/StoreProvider'
 
 const steps = [
@@ -205,7 +206,7 @@ export default function Home() {
             ) : (
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {listings.slice(0, 3).map((listing) => (
-                  <Link key={listing.id} href={`/listings/${listing.id}`} className="block">
+                  <Link key={listing.id} href={listingUrl(listing, listings)} className="block">
                     <ListingCard listing={listing} />
                   </Link>
                 ))}
