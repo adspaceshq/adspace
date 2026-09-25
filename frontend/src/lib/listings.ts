@@ -85,18 +85,20 @@ export const LID_VIEW_ID = "main";
 export const INSIDE_VIEW_ID = "inside";
 
 /**
- * Sticker slots on the lid photo, in % of the image. Rows sit 34% apart — enough for a
- * sticker plus its price caption even on a phone — and the Apple logo near 50%/47% stays clear.
+ * Sticker slots on the lid photo, in % of the image. Rows sit 30% apart — enough for a
+ * sticker plus its price caption even on a phone — the top row keeps a clear gap below the
+ * lid's top edge, the bottom row keeps the caption on the lid, and the Apple logo near
+ * 50%/47% stays clear.
  */
 const MAC_LID_SLOTS = [
-  { x: 50, y: 16 }, // 0  top centre
-  { x: 16, y: 16 }, // 1  top left
-  { x: 84, y: 16 }, // 2  top right
+  { x: 50, y: 20 }, // 0  top centre
+  { x: 16, y: 20 }, // 1  top left
+  { x: 84, y: 20 }, // 2  top right
   { x: 16, y: 50 }, // 3  mid left
   { x: 84, y: 50 }, // 4  mid right
-  { x: 16, y: 84 }, // 5  bottom left
-  { x: 50, y: 84 }, // 6  bottom centre
-  { x: 84, y: 84 }, // 7  bottom right
+  { x: 16, y: 77 }, // 5  bottom left
+  { x: 50, y: 77 }, // 6  bottom centre
+  { x: 84, y: 77 }, // 7  bottom right
   { x: 33, y: 33 }, // 8  upper left shoulder
   { x: 67, y: 33 }, // 9  upper right shoulder
   { x: 33, y: 67 }, // 10 lower left hip
@@ -125,9 +127,9 @@ function lidSlots(n: number): { x: number; y: number }[] {
       : [...MAC_LID_LAYOUTS[MAC_LID_LAYOUTS.length - 1], ...MAC_LID_INNER];
   return Array.from({ length: n }, (_, i) => {
     if (i < order.length) return MAC_LID_SLOTS[order[i]];
-    // Past twelve spots the lid is full — reuse the inner slots, nudged down.
+    // Past twelve spots the lid is full — reuse the inner slots, nudged down but still clear of the bottom edge.
     const p = MAC_LID_SLOTS[MAC_LID_INNER[i % MAC_LID_INNER.length]];
-    return { x: p.x, y: Math.min(88, p.y + 8) };
+    return { x: p.x, y: Math.min(78, p.y + 8) };
   });
 }
 
@@ -137,10 +139,10 @@ function lidSlots(n: number): { x: number; y: number }[] {
  * trackpad and the speaker grilles — leaving the keyboard and the trackpad itself clear.
  */
 const MAC_INSIDE_SLOTS = [
-  { x: 15, y: 80 }, // 0  left palm rest
-  { x: 85, y: 80 }, // 1  right palm rest
-  { x: 14, y: 62 }, // 2  left, beside the trackpad
-  { x: 86, y: 62 }, // 3  right, beside the trackpad
+  { x: 15, y: 73 }, // 0  left palm rest
+  { x: 85, y: 73 }, // 1  right palm rest
+  { x: 14, y: 58 }, // 2  left, beside the trackpad
+  { x: 86, y: 58 }, // 3  right, beside the trackpad
   { x: 7, y: 28 }, //  4  left speaker strip
   { x: 93, y: 28 }, // 5  right speaker strip
 ];
@@ -149,8 +151,8 @@ function insideSlots(n: number): { x: number; y: number }[] {
   return Array.from({ length: n }, (_, i) => {
     const slot = MAC_INSIDE_SLOTS[i % MAC_INSIDE_SLOTS.length];
     const wrap = Math.floor(i / MAC_INSIDE_SLOTS.length);
-    // Past six spots the deck is full — stack the extras just below their slot rather than on top of it.
-    return wrap ? { x: slot.x, y: Math.min(88, slot.y + 5 * wrap) } : slot;
+    // Past six spots the deck is full — stack the extras just below their slot, still clear of the bottom edge.
+    return wrap ? { x: slot.x, y: Math.min(76, slot.y + 5 * wrap) } : slot;
   });
 }
 
@@ -179,14 +181,14 @@ export function clampStickerWidth(w: number): number {
   return Math.min(STICKER_MAX_W, Math.max(STICKER_MIN_W, w));
 }
 
-/** Keep a hand-placed sticker (and the price caption under it) on its photo instead of hanging off an edge. */
+/** Keep a sticker (and the two-line price caption under it) on its photo instead of hanging off an edge. */
 function clampToPhoto({ x, y }: LidPoint, w: number, ar: number): LidPoint {
   const half = w / 2;
   const halfHeight = (w * ar) / 2;
   return {
     x: Math.min(100 - half - 1, Math.max(half + 1, x)),
     // The caption sits below the sticker, so leave it room at the bottom edge.
-    y: Math.min(100 - halfHeight - 9, Math.max(halfHeight + 1, y)),
+    y: Math.min(100 - halfHeight - 12, Math.max(halfHeight + 1, y)),
   };
 }
 
@@ -221,14 +223,15 @@ export function gearPhotoView(spotIds: string[], placements?: Record<string, Lid
     label: "MacBook lid",
     photo: MAC_LID_PHOTO,
     // Per spot: a hand-picked width beats the auto width, a hand-picked point beats the preset slot.
-    // Everything untouched auto-lays out exactly as before.
+    // Every point — placed or preset — goes through the photo clamp, so stickers and their
+    // captions never hang off an edge (the bottom row used to spill past the lid).
     spots: spotIds.map((id, i) => {
       const placed = placements?.[id];
       const w = clampStickerWidth(placed?.w ?? autoW);
       const point =
         placed?.x != null && placed?.y != null
           ? clampToPhoto({ x: placed.x, y: placed.y }, w, MAC_LID_AR)
-          : slots[i];
+          : clampToPhoto(slots[i], w, MAC_LID_AR);
       return { id, x: point.x, y: point.y, w };
     }),
     dims: { h: "", v: "" },
@@ -254,7 +257,7 @@ export function gearInsideView(spotIds: string[] = [], placements?: Record<strin
       const point =
         placed?.x != null && placed?.y != null
           ? clampToPhoto({ x: placed.x, y: placed.y }, w, MAC_INSIDE_AR)
-          : slots[i];
+          : clampToPhoto(slots[i], w, MAC_INSIDE_AR);
       return { id, x: point.x, y: point.y, w };
     }),
     dims: { h: "", v: "" },
