@@ -6,7 +6,7 @@ export default function Footer() {
       <div className="mx-auto max-w-[1340px] px-6 pb-8 pt-12">
         <div className="mb-12 grid gap-8 md:grid-cols-[2fr_1fr_1fr_1fr]">
           <div>
-            <p className="mb-3 font-display text-[22px]">adspaces</p>
+            <p className="mb-3 font-display text-[22px] font-semibold tracking-tight">adspaces</p>
             <p className="max-w-[32ch] text-sm text-[#64748b]">
               A peer-to-peer marketplace for selling ad space on anything — your body, your gear,
               your reach.
