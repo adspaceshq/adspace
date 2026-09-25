@@ -264,6 +264,70 @@ export function gearInsideView(spotIds: string[] = [], placements?: Record<strin
   };
 }
 
+/** URL handle without the leading @, e.g. `@notcodesid` → `notcodesid`. */
+export function handleSlug(handleOrName: string): string {
+  return (handleOrName ?? '').trim().replace(/^@+/, '') || 'seller';
+}
+
+/** Seller profile path, e.g. `/notcodesid`. */
+export function sellerUrl(handleOrName: string): string {
+  return `/${encodeURIComponent(handleSlug(handleOrName))}`;
+}
+
+/** All listings belonging to one seller (handle or name, with/without @, case-insensitive). */
+export function sellerListings(listings: Listing[], handleParam: string): Listing[] {
+  const clean = (handleParam ?? '').trim().replace(/^@+/, '').toLowerCase();
+  return listings.filter((l) => {
+    const h = (l.seller.handle ?? '').replace(/^@+/, '').toLowerCase();
+    const n = (l.seller.name ?? '').replace(/^@+/, '').toLowerCase();
+    return h === clean || n === clean;
+  });
+}
+
+/**
+ * Short per-seller listing key. The store is newest-first, so reverse to
+ * oldest-first: the seller's first Mac space is `mac`, the next `mac-2`,
+ * and so on — new listings never steal an existing URL.
+ */
+export function listingShortKey(listing: Listing, allListings?: Listing[]): string {
+  if (listing.surface && listing.surface !== 'gear') return listing.id;
+  const scope = allListings ?? [listing];
+  const oldestFirst = sellerListings(scope, listing.seller.handle || listing.seller.name).slice().reverse();
+  const idx = oldestFirst.findIndex((l) => l.id === listing.id);
+  return idx <= 0 ? 'mac' : `mac-${idx + 1}`;
+}
+
+/** Nested listing path, e.g. `/notcodesid/mac`. */
+export function listingUrl(listing: Listing, allListings?: Listing[]): string {
+  const handle = listing.seller.handle || listing.seller.name;
+  return `${sellerUrl(handle)}/${listingShortKey(listing, allListings)}`;
+}
+
+/**
+ * Resolve a nested `/:handle/:listing` URL. `mac` / `mac-2` … map to the
+ * seller's spaces oldest-first; the full slug still resolves (and the page
+ * redirects it to the short canonical URL).
+ */
+export function resolveNestedListing(
+  listings: Listing[],
+  handleParam: string,
+  listingParam: string,
+): Listing | undefined {
+  const mine = sellerListings(listings, handleParam);
+  if (mine.length === 0) return undefined;
+  const key = decodeURIComponent(listingParam ?? '').trim().toLowerCase();
+  const macMatch = key.match(/^mac(?:-(\d+))?$/);
+  if (macMatch) {
+    const oldestFirst = mine.slice().reverse();
+    const idx = macMatch[1] ? Number(macMatch[1]) - 1 : 0;
+    return oldestFirst[idx];
+  }
+  return (
+    mine.find((l) => l.id.toLowerCase() === key) ??
+    mine.find((l) => l.id.toLowerCase().endsWith(key))
+  );
+}
+
 /** Card thumbnail: the listing's own photo, else the MacBook hero shot (gear is the only surface the listing flow creates today). */
 export function cardPhoto(listing: { image: string; surface?: string }): string {
   if (listing.image) return listing.image;
