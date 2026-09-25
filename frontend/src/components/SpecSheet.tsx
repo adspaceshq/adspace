@@ -97,9 +97,23 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
   selectedSpotId?: string | null
   /** Seller editor: panel content (e.g. the price form) rendered right next to the selected sticker. */
   spotPanel?: ReactNode
+  /** Controlled tab: when set, the Mac shows this view (parent drives it, e.g. row click jumps to the sticker's view). */
+  activeViewId?: string | null
+  /** Fires when the buyer/seller switches tabs, so the parent can stay in sync. */
+  onActiveViewChange?: (viewId: string) => void
+  /** Hide the built-in Lid/Inside tabs (the parent renders its own toolbar tabs instead). */
+  hideTabs?: boolean
 }) {
   const views = listing.mockup?.views || []
-  const [activeIdx, setActiveIdx] = useState(0)
+  const [internalIdx, setInternalIdx] = useState(0)
+  // A parent-provided view wins; otherwise the local tab state rules. Setter keeps both in sync.
+  const propIdx = activeViewId ? views.findIndex((v) => v.id === activeViewId) : -1
+  const activeIdx = propIdx >= 0 ? propIdx : internalIdx
+  const setActiveIdx = (i: number) => {
+    setInternalIdx(i)
+    const id = views[i]?.id
+    if (id) onActiveViewChange?.(id)
+  }
   const photoRef = useRef<HTMLDivElement | null>(null)
   // sx/sy mark where the press started: a press that barely moves is a tap (select), not a drag.
   const dragRef = useRef<{ id: string; dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null)
@@ -108,17 +122,22 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
   const [resizingId, setResizingId] = useState<string | null>(null)
 
   if (!views.length) return null
-  const active = views[activeIdx] || views[0]
 
   // Hand-placed stickers only ever exist in the seller's own preview, never on a buyer's page.
   // A `spots` list is what marks a sticker surface: the lid and the deck both carry one, and a photo
   // view without one (a listing's own Overview image) stays read-only. Coordinates are % of whichever
   // photo is on screen, so the view id travels back with the click — each view keeps its own layout.
-  const editing = !!onPlaceSpot && !!active.spots
+  const editing = !!onPlaceSpot && !!(views[activeIdx] || views[0]).spots
   // Resizing shares the sticker's corner handle; a preview can offer it without click-to-place.
   const canResize = !!onResizeSpot
   // Removing mirrors the row button on /list: offered only while more than one spot remains.
   const canRemove = !!onRemoveSpot && listing.spots.length > 1
+  // Buyer pages hide sticker surfaces with nothing on them — an empty deck tab is a dead end
+  // when the seller never placed a sticker there. The seller preview keeps every view: the
+  // deck is a drop target there. Grids and Overview photos always stay visible.
+  const shownViews = editing ? views : views.filter((v) => v.grid || !v.spots || v.spots.length > 0)
+  const shown = shownViews.length ? shownViews : views
+  const active = shown[activeIdx] || shown[0]
   const pointFromPointer = (e: { clientX: number; clientY: number }) => {
     const rect = photoRef.current?.getBoundingClientRect()
     return rect ? lidPointFromPointer(rect, e.clientX, e.clientY) : null
@@ -135,20 +154,23 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
     ? active.grid.flat().map((c) => c.spot).filter(Boolean)
     : spots.map((s) => s.id)
   const claimedOnView = listing.spots.filter((s) => s.claimedBy && viewSpotIds.includes(s.id)).length
-  // An empty view has no count to report — in the seller's preview, point at the editor instead.
-  const footerNote = viewSpotIds.length
-    ? `${claimedOnView}/${viewSpotIds.length} CLAIMED`
+  // An empty view has no count to report — in the seller's own preview, point at the editor instead.
+  // The creator never needs a claimed count (nothing can be claimed before publishing), so it only
+  // shows on buyer pages; the seller preview leaves that corner empty.
+  const footerNote = !viewSpotIds.length
+    ? (onPlaceSpot ? 'CLICK THE PHOTO TO ADD A SPOT' : '')
     : onPlaceSpot
-      ? 'CLICK THE PHOTO TO ADD A SPOT'
-      : ''
+      ? ''
+      : `${claimedOnView}/${viewSpotIds.length} CLAIMED`
 
   return (
     <div className="w-full">
-      {views.length > 1 && (
-        <div className="mb-3 flex flex-wrap gap-2" role="tablist" aria-label="Product views">
-          {views.map((v, i) => (
+      {shown.length > 1 && !hideTabs && (
+        <div className="mb-4 flex flex-wrap justify-center gap-2" role="tablist" aria-label="Product views">
+          {shown.map((v, i) => (
             <button
               key={v.id}
+              type="button"
               role="tab"
               aria-selected={i === activeIdx}
               onClick={() => setActiveIdx(i)}
