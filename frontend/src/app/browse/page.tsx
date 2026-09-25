@@ -7,7 +7,7 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import ListingCard from '@/components/ListingCard'
 import { useStore } from '@/components/StoreProvider'
-import { surfaceLabels } from '@/lib/listings'
+import { listingUrl, surfaceLabels } from '@/lib/listings'
 
 export default function BrowsePage() {
   const { listings } = useStore()
@@ -77,7 +77,7 @@ export default function BrowsePage() {
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {filtered.map((listing) => (
-              <Link key={listing.id} href={`/listings/${listing.id}`} className="block">
+              <Link key={listing.id} href={listingUrl(listing, listings)} className="block">
                 <ListingCard listing={listing} />
               </Link>
             ))}
