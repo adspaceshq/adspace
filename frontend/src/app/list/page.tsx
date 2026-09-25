@@ -19,10 +19,10 @@ interface SpotDraft {
   price: string
   /* View the sticker lives on — the deck when set to 'inside'. Absent = the lid, where every spot starts. */
   view?: string
-  /* Sticker position in % of that view's photo, set by clicking or dragging in the preview. Absent = auto-laid out. */
+  /* Sticker position in % of that view's photo, set by clicking or dragging. Absent = auto-laid out. */
   x?: number
   y?: number
-  /* Sticker width in % of that view's photo, set by dragging the corner handle in the preview. Absent = auto width. */
+  /* Sticker width in % of that view's photo, set by dragging the corner handle. Absent = auto width. */
   w?: number
 }
 
@@ -45,15 +45,21 @@ export default function ListPage() {
   const [deadline, setDeadline] = useState(() => toDateInput(new Date(Date.now() + 14 * 86_400_000)))
   const priceType = 'auction' as const
   const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
-  // Preview id of the spot whose price panel is open — set by dropping or tapping a sticker.
+  // Id of the spot whose price panel is open — set by dropping or tapping a sticker.
   const [editingSpot, setEditingSpot] = useState<string | null>(null)
+  // Which Mac view is on screen. Row clicks drive it so the Mac jumps to the tapped sticker's view.
+  const [activeView, setActiveView] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Review gate: submitting the form (button or Enter) only opens the confirm dialog —
+  // nothing goes live until "Go live" is clicked there.
+  const [reviewing, setReviewing] = useState(false)
+  const [publishing, setPublishing] = useState(false)
   const [x, setX] = useState<XIdentity | null>(null)
 
   const updateSpot = (i: number, patch: Partial<SpotDraft>) =>
     setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)))
 
-  // Live preview of what buyers will see — rebuilt from the form on every keystroke.
+  // Live view of what buyers will see — rebuilt from the form on every keystroke.
   const preview: Listing = useMemo(() => {
     const pid = 'preview'
     const pspots = spots.map((s, i) => ({
@@ -95,10 +101,11 @@ export default function ListPage() {
     }
   }, [spots, title, surface, priceType])
 
-  // Seller editor: a click on bare photo drops a spot there — on the view that was clicked — and opens
+  // A click on bare photo drops a spot there — on the view that was clicked — and opens
   // the side panel so the price is the next thing typed. Preview ids are positional: the new spot is last.
   const placeSpot = (x: number, y: number, viewId: string) => {
     setSpots((prev) => [...prev, { label: '', size: '', price: '', view: viewId, x, y }])
+    setActiveView(viewId)
     setEditingSpot(`preview-s${spots.length + 1}`)
   }
 
@@ -128,9 +135,36 @@ export default function ListPage() {
   // Index of the spot the price panel is open for; -1 keeps the panel hidden.
   const editingIdx = editingSpot ? preview.spots.findIndex((p) => p.id === editingSpot) : -1
 
-  const publish = async (e: React.FormEvent) => {
-    e.preventDefault()
-    // Seller: verified X handle when Privy is configured, manual name in demo mode.
+  // BrandMyMac-style summary strip: count · floor price · close date. Floor ignores
+  // unpriced stickers so "from" always reflects a real starting bid.
+  const priced = spots.map((s) => Number(s.price)).filter((p) => p > 0)
+  const floor = priced.length ? Math.min(...priced) : 0
+  const total = priced.reduce((a, b) => a + b, 0)
+  const currency = preview.currency ?? 'USD'
+
+  const addSticker = () => {
+    if (spots.length >= 60) {
+      setError('Max 60 spots per listing.')
+      return
+    }
+    setSpots((prev) => [...prev, { label: '', size: '', price: '' }])
+    setActiveView(LID_VIEW_ID)
+    setEditingSpot(`preview-s${spots.length + 1}`)
+  }
+
+  // Row click jumps the Mac to that sticker: switch to its view (lid/inside), select it so the
+  // price panel opens next to it, and bring the Mac into view on small screens.
+  const focusSticker = (rowId: string, i: number) => {
+    setEditingSpot(rowId)
+    setActiveView(spots[i]?.view === INSIDE_VIEW_ID ? INSIDE_VIEW_ID : LID_VIEW_ID)
+    document.getElementById('mac-preview')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }
+
+  // Review gate: only the Publish CTA opens the confirm dialog — Enter anywhere
+  // in the form (basics or the sticker popover) must not submit.
+  const review = () => {
+    // Seller: verified X session when Privy is configured, manual name in demo mode.
+    // The API derives the seller from the session — the form never sends a name.
     if (PRIVY_ENABLED) {
       if (!x?.ready || x.loggingIn) return
       if (!x.authenticated || !x.handle) {
@@ -201,45 +235,60 @@ export default function ListPage() {
     <>
       <Header />
       {PRIVY_ENABLED && <XProbe onChange={setX} />}
-      <main className="mx-auto w-full max-w-[1080px] px-6 pb-16 pt-8">
-        <div className="mb-8">
-          <h1 className="mb-2" style={{ fontSize: '40px' }}>List your space.</h1>
-          <p className="text-[16px] text-[#64748b]">Describe the surface, add the spots, set the prices. Live in under a minute — mock publishing, no charge.</p>
+      <main className="mx-auto w-full max-w-[1240px] px-6 pb-16 pt-8">
+        <div className="mb-6 text-center">
+          <p className="mb-3 flex items-center justify-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-[#64748b]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
+            Mac-only · auction · mock — no money moves
+          </p>
+          <h1 className="mb-2" style={{ fontSize: '40px' }}>List your Mac lid.</h1>
+          <p className="text-[16px] text-[#64748b]">
+            {spots.length} sticker{spots.length === 1 ? '' : 's'}
+            {floor > 0 ? ` · from ${formatMoney(floor, currency)}` : ' · set a starting bid below'}
+            {' '}· ends {prettyDeadline(deadline)}
+          </p>
         </div>
 
-        <form onSubmit={publish} className="flex flex-col gap-8">
-          <section className="rounded-2xl border border-[#e7e5e0] bg-white p-8">
-            <h2 className="mb-6 text-[22px]">The basics</h2>
+        <form onSubmit={(e) => e.preventDefault()} className="flex flex-col gap-8">
+          <section className="mx-auto max-w-[640px]">
+            <h2 className="mb-6 text-center text-[22px]">The basics</h2>
             <div className="mb-5 flex flex-col gap-[6px]">
-              <label className="text-[13px] font-semibold" htmlFor="list-name">Your name</label>
-              {PRIVY_ENABLED ? (
-                x?.authenticated && x.handle ? (
-                  <input id="list-name" className={field} value={x.handle} readOnly aria-readonly />
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => x?.login()}
-                      disabled={!x?.ready || x?.loggingIn}
-                      className="rounded-lg bg-[#020817] px-4 py-3 text-[15px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
-                    >
-                      {x?.loggingIn ? 'Redirecting to X…' : 'Log in with X to list'}
-                    </button>
-                    {x?.error && <p className="text-sm font-medium text-[#dc2626]">{x.error}</p>}
-                  </>
-                )
-              ) : (
-                <input id="list-name" className={field} placeholder="vana" value={sellerName} onChange={(e) => setSellerName(e.target.value)} required />
-              )}
+              <span className="text-[13px] font-semibold">Surface</span>
+              <p className="text-[15px] text-[#020817]">
+                MacBook lid <span className="text-[#64748b]">· auction · only surface for now</span>
+              </p>
             </div>
+            {/* Seller identity comes from the X session — never a typed name — so there is
+                no "Your name" field when Privy login is on. Demo mode (no Privy) keeps it. */}
+            {PRIVY_ENABLED ? (
+              !(x?.authenticated && x.handle) && (
+                <div className="mb-5 flex flex-col gap-[6px]">
+                  <p className="text-[14px] text-[#64748b]">Log in with X to list. Your handle becomes the seller.</p>
+                  <button
+                    type="button"
+                    onClick={() => x?.login()}
+                    disabled={!x?.ready || x?.loggingIn}
+                    className="rounded-lg bg-[#020817] px-4 py-3 text-[15px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
+                  >
+                    {x?.loggingIn ? 'Redirecting to X…' : 'Log in with X to list'}
+                  </button>
+                  {x?.error && <p className="text-sm font-medium text-[#dc2626]">{x.error}</p>}
+                </div>
+              )
+            ) : (
+              <div className="mb-5 flex flex-col gap-[6px]">
+                <label className="text-[13px] font-semibold" htmlFor="list-name">Your name</label>
+                <input id="list-name" className={field} placeholder="vana" value={sellerName} onChange={(e) => setSellerName(e.target.value)} required />
+              </div>
+            )}
             <div className="mb-5 flex flex-col gap-[6px]">
               <label className="text-[13px] font-semibold" htmlFor="list-title">Title</label>
-              <input id="list-title" className={field} placeholder="Put your brand on my …" value={title} onChange={(e) => setTitle(e.target.value)} required />
+              <input id="list-title" className={field} placeholder="Put your brand on my MacBook lid" value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
             <div className="mb-5 grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-[6px]">
                 <label className="text-[13px] font-semibold" htmlFor="list-goal">Goal</label>
-                <input id="list-goal" className={field} placeholder="Fund my trip" value={goal} onChange={(e) => setGoal(e.target.value)} />
+                <input id="list-goal" className={field} placeholder="Fund my MacBook" value={goal} onChange={(e) => setGoal(e.target.value)} />
               </div>
               <div className="flex flex-col gap-[6px]">
                 <label className="text-[13px] font-semibold" htmlFor="list-deadline">Deadline</label>
@@ -248,40 +297,124 @@ export default function ListPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-[#e7e5e0] bg-white p-8">
-            <h2 className="mb-1 text-[22px]">Spots &amp; preview</h2>
-            <p className="mb-6 text-sm text-[#64748b]">
-              What buyers will see. Click either photo to drop a spot — a panel opens next to it for its
-              starting price. Tap a sticker to reopen it, drag to move it, its corner dot to size it, and
-              hover for a dot to remove it.
-            </p>
-            <SpecSheet
-              listing={preview}
-              onClaim={() => {}}
-              onBid={() => {}}
-              onPlaceSpot={placeSpot}
-              onMoveSpot={moveSpot}
-              onResizeSpot={resizeSpot}
-              onRemoveSpot={removeSpot}
-              onSelectSpot={setEditingSpot}
-              selectedSpotId={editingSpot}
-              spotPanel={editingIdx >= 0 ? (
-                /* The only field a spot needs. Keyed by spot so it autofocuses on each open. */
+          <section>
+            <h2 className="mb-2 text-center text-[22px]">Stickers</h2>
+            <p className="mx-auto mb-8 max-w-[560px] text-center text-[14px] text-[#64748b]">Click the lid to drop a sticker, or add one below. Tap a sticker to name and price it.</p>
+            {/* One toolbar for the whole section: count left, Lid/Inside center, add right —
+                so the row reads as a single line instead of two half-headers. */}
+            <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-3">
+              <span className="mr-auto font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-[#64748b]">
+                {spots.length} sticker{spots.length === 1 ? '' : 's'}
+              </span>
+              <div className="flex gap-2 max-sm:order-3 max-sm:w-full max-sm:justify-center" role="tablist" aria-label="Product views">
+                {preview.mockup.views.map((v) => {
+                  const selected = (activeView ?? LID_VIEW_ID) === v.id
+                  return (
+                    <button
+                      key={v.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={selected}
+                      onClick={() => setActiveView(v.id)}
+                      className={`rounded-full border px-[14px] py-[6px] font-mono text-xs font-medium transition ${
+                        selected
+                          ? 'border-[#020817] bg-[#020817] text-white'
+                          : 'border-[#e7e5e0] bg-white text-[#64748b] hover:border-[#c3cdfd] hover:text-[#020817]'
+                      }`}
+                    >
+                      {v.label}
+                    </button>
+                  )
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={addSticker}
+                disabled={spots.length >= 60}
+                className="ml-auto text-[13px] font-semibold text-[#4166fb] transition hover:text-[#3558e8] disabled:opacity-50 max-sm:ml-auto"
+              >
+                + Add sticker
+              </button>
+            </div>
+            <div className="grid items-start gap-8 lg:grid-cols-[400px_minmax(0,1fr)] xl:gap-12">
+              {/* Sticker list — BrandMyMac-style Spot / Size / Bid rows. */}
+              <div className="order-2 lg:order-1">
+                <ul className="space-y-1">
+                  {preview.spots.map((p, i) => (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        onClick={() => focusSticker(p.id, i)}
+                        className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition hover:bg-[#f1f0ec]/70 ${
+                          editingSpot === p.id ? 'bg-[#e9edfe]/60' : ''
+                        }`}
+                      >
+                        <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-[#020817] font-mono text-[11px] font-semibold text-white">
+                          {i + 1}
+                        </span>
+                        <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{p.label}</span>
+                        <span className="hidden shrink-0 font-mono text-[10px] tracking-[0.06em] text-[#64748b] sm:inline">
+                          {spots[i]?.view === INSIDE_VIEW_ID ? 'INSIDE' : 'LID'}
+                        </span>
+                        <span className={`shrink-0 whitespace-nowrap font-mono text-[13px] ${p.price > 0 ? 'text-[#020817]' : 'text-[#64748b]'}`}>
+                          {p.price > 0 ? `from ${formatMoney(p.price, preview.currency)}` : 'No price yet'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 flex items-center justify-between border-t border-[#e7e5e0] px-4 py-3">
+                  <span className="text-[14px] font-semibold">Total asking</span>
+                  <span className="whitespace-nowrap font-mono text-[13px] text-[#020817]">
+                    {total > 0 ? formatMoney(total, currency) : '—'}
+                    {priced.length < spots.length && total > 0 ? ` + ${spots.length - priced.length} unpriced` : ''}
+                  </span>
+                </div>
+                <p className="mt-4 font-mono text-[11px] leading-relaxed tracking-[0.04em] text-[#64748b]">
+                  Publishing auto-lays out.
+                </p>
+              </div>
+              {/* Live Mac — sticky on desktop like the auction visual. */}
+              <div id="mac-preview" className="order-1 scroll-mt-20 lg:order-2 lg:sticky lg:top-20 lg:self-start">
+                <SpecSheet
+                  listing={preview}
+                  onClaim={() => {}}
+                  onBid={() => {}}
+                  activeViewId={activeView}
+                  onActiveViewChange={setActiveView}
+                  hideTabs
+                  onPlaceSpot={placeSpot}
+                  onMoveSpot={moveSpot}
+                  onResizeSpot={resizeSpot}
+                  onRemoveSpot={removeSpot}
+                  onSelectSpot={setEditingSpot}
+                  selectedSpotId={editingSpot}
+                  spotPanel={editingIdx >= 0 ? (
+                /* Spot editor: name + starting bid. Keyed by spot so it autofocuses on each open. */
                 <div
                   key={editingSpot}
-                  className="rounded-xl border border-[#e7e5e0] bg-white p-4 shadow-[0_16px_40px_rgba(2,8,23,0.16)]"
+                  className="rounded-2xl bg-white p-4 shadow-[0_16px_40px_rgba(2,8,23,0.18)]"
                 >
                   <div className="mb-3 flex items-center justify-between gap-2">
-                    <span className="truncate text-[14px] font-semibold">{preview.spots[editingIdx].label}</span>
+                    <span className="truncate text-[14px] font-semibold">Spot {editingIdx + 1}</span>
                     <button
                       type="button"
-                      aria-label="Close price panel"
+                      aria-label="Close sticker panel"
                       onClick={() => setEditingSpot(null)}
                       className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-[#64748b] transition hover:bg-[#f1f5f9] hover:text-[#020817]"
                     >
                       <X size={14} />
                     </button>
                   </div>
+                  <label className="mb-[6px] block text-[13px] font-semibold" htmlFor="spot-label">Name</label>
+                  <input
+                    id="spot-label"
+                    placeholder={`Spot ${editingIdx + 1}`}
+                    className={`${field} mb-3`}
+                    value={spots[editingIdx]?.label ?? ''}
+                    onChange={(e) => updateSpot(editingIdx, { label: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
+                  />
                   <label className="mb-[6px] block text-[13px] font-semibold" htmlFor="spot-price">Starts at</label>
                   <input
                     id="spot-price"
