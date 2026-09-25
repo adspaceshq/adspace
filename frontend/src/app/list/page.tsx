@@ -174,7 +174,11 @@ export default function ListPage() {
     }
     const seller = PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()
     if (!seller || !title.trim() || spots.length === 0) {
-      setError('Your name, a title and at least one spot are required.')
+      setError(
+        PRIVY_ENABLED
+          ? 'A title and at least one spot are required.'
+          : 'Your name, a title and at least one spot are required.',
+      )
       return
     }
     if (!deadline) {
@@ -186,6 +190,15 @@ export default function ListPage() {
       setError('Every spot needs a price above zero.')
       return
     }
+    setError(null)
+    setReviewing(true)
+  }
+
+  // Fired only from the review dialog's "Go live" button — this is the point of no return.
+  const goLive = async () => {
+    if (publishing) return
+    setPublishing(true)
+    const seller = PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()
     const id = `user-${Date.now()}`
     const spotIds = spots.map((_, i) => `${id}-s${i + 1}`)
     const onDeck = (i: number) => spots[i].view === INSIDE_VIEW_ID
@@ -425,65 +438,110 @@ export default function ListPage() {
                     className={field}
                     value={spots[editingIdx]?.price ?? ''}
                     onChange={(e) => updateSpot(editingIdx, { price: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Enter') e.preventDefault() }}
                   />
-                  <p className="mt-2 text-[12px] leading-snug text-[#64748b]">Buyers bid up from here.</p>
+                  <p className="mt-2 text-[12px] leading-snug text-[#64748b]">Buyers bid up from here. First bid ≥ this.</p>
                   {spots.length > 1 && (
                     <button
                       type="button"
                       onClick={() => removeSpot(preview.spots[editingIdx].id)}
-                      className="mt-3 inline-flex items-center gap-1 rounded-full border border-[#e7e5e0] px-3 py-[6px] text-[12px] font-medium text-[#dc2626] transition hover:border-[#fecaca] hover:bg-[#fef2f2]"
+                      className="mt-3 text-[12px] font-medium text-[#dc2626] transition hover:text-[#991b1b]"
                     >
-                      <X size={12} /> Remove spot
+                      Remove spot
                     </button>
                   )}
                 </div>
               ) : undefined}
             />
-            {/* The spots so far and the price decided for each. Tap a row to reopen its price panel
-                (the panel pops next to the sticker when it's on the photo view in front of you). */}
-            <ul className="mt-5 divide-y divide-[#e7e5e0] rounded-xl border border-[#e7e5e0]">
-              {preview.spots.map((p, i) => (
-                <li key={p.id}>
-                  <button
-                    type="button"
-                    onClick={() => setEditingSpot(p.id)}
-                    className={`flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-[#fafaf7] ${
-                      editingSpot === p.id ? 'bg-[#f4f7ff]' : ''
-                    }`}
-                  >
-                    <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{p.label}</span>
-                    <span className="whitespace-nowrap rounded-full border border-[#e7e5e0] bg-white px-[8px] py-[2px] font-mono text-[10px] tracking-[0.06em] text-[#64748b]">
-                      {spots[i]?.view === INSIDE_VIEW_ID ? 'INSIDE' : 'LID'}
-                    </span>
-                    <span className={`whitespace-nowrap font-mono text-[13px] ${p.price > 0 ? 'text-[#020817]' : 'text-[#64748b]'}`}>
-                      {p.price > 0 ? `from ${formatMoney(p.price, preview.currency)}` : 'No price yet'}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-4 font-mono text-[11px] leading-relaxed tracking-[0.04em] text-[#64748b]">
-              Placement, sticker size, and which photo a spot sits on are preview-only for now — publishing
-              lays the stickers out automatically.
-            </p>
+              </div>
+            </div>
           </section>
 
-          {error && <p className="text-sm font-medium text-[#dc2626]">{error}</p>}
+          {error && <p className="text-center text-sm font-medium text-[#dc2626]">{error}</p>}
 
-          <div className="flex justify-end">
-            <button type="submit" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-7 py-[15px] text-[16px] font-medium text-white shadow-sm transition hover:-translate-y-px hover:bg-[#3558e8]">
-              {PRIVY_ENABLED && (!x?.authenticated || !x.handle) ? 'Log in with X to publish' : 'Publish space'}
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="font-mono text-[11px] tracking-[0.04em] text-[#64748b]">
+              MOCK PUBLISHING · SELLER = X SESSION · LAYOUT AUTO ON PUBLISH
+            </p>
+            <button type="button" onClick={review} className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-7 py-[15px] text-[16px] font-medium text-white shadow-sm transition hover:-translate-y-px hover:bg-[#3558e8]">
+              {PRIVY_ENABLED && (!x?.authenticated || !x.handle) ? 'Log in with X to publish' : 'Publish Mac space'}
             </button>
           </div>
         </form>
       </main>
-      <Footer />
+
+      {/* Review gate — the only path to `goLive`. Only the Publish CTA opens this;
+          the listing goes live only when "Go live" is clicked here. */}
+      {reviewing && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="review-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#020817]/50 p-6"
+          onClick={() => { if (!publishing) setReviewing(false) }}
+        >
+          <div
+            className="max-h-[85vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="review-title" className="mb-1 text-[22px]">Review before it goes live</h2>
+            <p className="mb-6 text-[14px] text-[#64748b]">Nothing is public yet. Check every detail — this is the last step.</p>
+            <dl className="mb-4 space-y-3 text-[14px]">
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="shrink-0 text-[#64748b]">Surface</dt>
+                <dd className="truncate font-medium">MacBook lid · auction</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="shrink-0 text-[#64748b]">Seller</dt>
+                <dd className="truncate font-medium">{PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="shrink-0 text-[#64748b]">Title</dt>
+                <dd className="truncate font-medium">{title.trim()}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="shrink-0 text-[#64748b]">Goal</dt>
+                <dd className="truncate font-medium">{goal.trim() || 'Fund my goal'}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="shrink-0 text-[#64748b]">Deadline</dt>
+                <dd className="font-medium">{prettyDeadline(deadline)}</dd>
+              </div>
+            </dl>
+            <ul className="mb-2 space-y-3">
+              {preview.spots.map((p) => (
+                <li key={p.id} className="flex items-center gap-3 text-[14px]">
+                  <span className="min-w-0 flex-1 truncate font-semibold">{p.label}</span>
+                  <span className="whitespace-nowrap font-mono text-[13px] text-[#64748b]">from {formatMoney(p.price, preview.currency)}</span>
+                </li>
+              ))}
+            </ul>
+            <div className="mb-6 flex items-center justify-between border-t border-[#e7e5e0] pt-3 text-[14px]">
+              <span className="font-semibold">Total asking</span>
+              <span className="whitespace-nowrap font-mono text-[13px]">{formatMoney(total, preview.currency)}</span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => setReviewing(false)}
+                disabled={publishing}
+                className="text-[14px] font-medium text-[#020817] transition hover:text-[#64748b] disabled:opacity-60"
+              >
+                Keep editing
+              </button>
+              <button
+                type="button"
+                onClick={goLive}
+                disabled={publishing}
+                className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-6 py-[10px] text-[14px] font-medium text-white shadow-sm transition hover:bg-[#3558e8] disabled:opacity-60"
+              >
+                {publishing ? 'Publishing…' : 'Go live'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </>
   )
 }
-  // BrandMyMac-style summary strip: count · floor price · close date. Floor ignores
-  // unpriced stickers so "from" always reflects a real starting bid.
-  const priced = spots.map((s) => Number(s.price)).filter((p) => p > 0)
-  const floor = priced.length ? Math.min(...priced) : 0
-  const total = priced.reduce((a, b) => a + b, 0)
-  const currency = preview.currency ?? 'USD'
