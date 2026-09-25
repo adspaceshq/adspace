@@ -23,62 +23,39 @@ const steps = [
   {
     icon: Sparkles,
     title: 'List your surface',
-    text: 'A suitcase, a bike, your body, a billboard — anything with a spot to put a logo.',
-    checks: ['Pick the surface and the spots', 'Set a fixed price or auction', 'Choose your deadline'],
+    text: 'Suitcase, bike, laptop, body, physical or digital — split into spots with prices.',
+    checks: ['Fixed price or auction', 'Every price above zero', 'Deadline in the future'],
   },
   {
     icon: Target,
-    title: 'Buyers claim spots',
-    text: 'Your listing goes live and buyers claim the spots they want.',
-    checks: ['They see the price or bid', 'They claim in one tap', 'You see who claimed what'],
+    title: 'Buyers claim or bid',
+    text: 'Fixed spots get claimed. Auction spots get bid up. X login required.',
+    checks: ['Claim fixed, bid auctions only', 'Taken spots return 409', 'Min increment or double-up'],
   },
   {
     icon: Zap,
-    title: 'Fund your goal',
-    text: 'Every claim funds what you are building. Your logo travels and gets seen.',
-    checks: ['You get funded', 'Buyers get exposure', 'No payroll maze'],
-  },
-]
-
-const gettingStarted = [
-  {
-    num: '01',
-    title: 'Browse spaces',
-    text: 'Look through live listings and find a surface that fits your brand and budget.',
-  },
-  {
-    num: '02',
-    title: 'Claim a spot',
-    text: 'Pick the spot you want and claim it with your name or brand. Mock checkout for now.',
-  },
-  {
-    num: '03',
-    title: 'List your own',
-    text: 'Got a surface people see? Publish it with spots, prices, and a deadline.',
-  },
-  {
-    num: '04',
-    title: 'Get funded',
-    text: 'Buyers claim your spots and fund what you are building. That is the whole loop.',
+    title: 'You approve (mock)',
+    text: 'Approve, reject, or mark fulfilled from your dashboard. No money moves yet.',
+    checks: ['Approve / reject / fulfill', 'Records stay in Postgres', 'USDC + Stripe later'],
   },
 ]
 
 const faqs = [
   {
     q: 'Do I need an account to browse?',
-    a: 'No. You can browse every listing and claim a spot with just your name or brand. Accounts and real payments come later.',
+    a: 'No to browse. Yes with X to list, claim, or bid — seller and buyer come from the session, never a typed name.',
   },
   {
     q: 'Is real money involved?',
-    a: 'Not yet. Claims and bids are saved to the marketplace, but no payment is taken.',
+    a: 'No. Mock only. Spots get marked, nothing is charged, txSignature is just logged.',
   },
   {
     q: 'What surfaces can I list?',
-    a: 'Anything with a spot to put a logo: gear, your body, physical space, or digital space. If people see it, you can sell it.',
+    a: 'Gear, body, physical, digital, reach. Suitcase, bike, laptop, tattoos — if people see it, list it.',
   },
   {
     q: 'How do auctions work?',
-    a: 'Auction listings show a starting bid. Buyers place bids and the highest bid wins when the listing closes.',
+    a: 'First bid at or above the price. Later bids beat it by the min increment — or double it when double-up is on.',
   },
 ]
 
@@ -105,16 +82,15 @@ export default function Home() {
           />
           <div className="relative mx-auto flex w-full max-w-[1340px] flex-col items-center px-6 pb-16 pt-20 text-center">
             <span className="animate-fade-up mb-8 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-[14px] py-[6px] font-mono text-xs tracking-wide text-slate-200 backdrop-blur">
-              <span className="rounded-full bg-[#28e7b5] px-2 py-[2px] font-semibold text-[#061a38]">New</span>
-              Peer-to-peer ad marketplace
+              <span className="rounded-full bg-[#28e7b5] px-2 py-[2px] font-semibold text-[#061a38]">Demo</span>
+              Mock money · no card
               <ArrowRight size={13} className="opacity-70" />
             </span>
             <h1 className="animate-fade-up max-w-[16ch] text-white" style={{ animationDelay: '60ms', fontSize: 'clamp(44px, 7vw, 84px)' }}>
-              Sell ad space on <em className="italic text-[#28e7b5]">anything</em>.
+              Suitcases, bikes, laptops, bodies — <em className="italic text-[#28e7b5]">sell the space</em>.
             </h1>
             <p className="animate-fade-up mt-6 max-w-[48ch] text-lg text-slate-300" style={{ animationDelay: '120ms' }}>
-              List the spots on your suitcase, your bike, your body, your reach. Buyers claim them
-              and fund what you are building.
+              List spots at a price or as an auction. Buyers claim with X login. You approve. Nothing is charged yet.
             </p>
             <div className="animate-fade-up mt-8 flex flex-wrap justify-center gap-3" style={{ animationDelay: '180ms' }}>
               <Link href="/browse" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[#e7e5e0] bg-white px-7 py-[15px] text-[16px] font-medium text-[#020817] transition hover:-translate-y-px hover:bg-[#f1f0ec]">
@@ -125,7 +101,7 @@ export default function Home() {
               </Link>
             </div>
             <p className="animate-fade-up mt-5 font-mono text-xs tracking-wide text-slate-400" style={{ animationDelay: '220ms' }}>
-              Demo today · no card · no long setup
+              X login to list · fixed or auction · seller approves
             </p>
             <div className="animate-fade-up mt-16 w-full max-w-[960px] overflow-hidden rounded-3xl border border-white/15 bg-[#111b34] shadow-[0_40px_80px_rgba(0,0,0,0.45)]" style={{ animationDelay: '260ms' }}>
               <img
@@ -140,7 +116,7 @@ export default function Home() {
         {/* Stats strip */}
         <div className="border-b border-[#e7e5e0] bg-[#fafaf7]">
           <div className="mx-auto flex w-full max-w-[1340px] flex-wrap items-center gap-8 px-6 py-5">
-            <span className="text-sm font-medium text-[#64748b]">From list to claimed, in one simple flow.</span>
+            <span className="text-sm font-medium text-[#64748b]">Fixed price or auction. Session-owned, always.</span>
             <div className="ml-auto flex flex-wrap gap-8">
               <span className="flex items-center gap-2 text-sm font-medium">
                 <Users size={15} className="text-[#16a34a]" /> {live.length} live listings
@@ -149,7 +125,7 @@ export default function Home() {
                 <Check size={15} className="text-[#16a34a]" /> {openSpots} open spots
               </span>
               <span className="flex items-center gap-2 text-sm font-medium">
-                <Clock size={15} className="text-[#16a34a]" /> Claims recorded instantly
+                <Clock size={15} className="text-[#16a34a]" /> Seller approves every claim
               </span>
             </div>
           </div>
@@ -160,8 +136,8 @@ export default function Home() {
           <div className="mx-auto w-full max-w-[1340px] px-6">
             <div className="mb-12 max-w-[640px]">
               <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">How it works</span>
-              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>From listed to claimed, in under a minute.</h2>
-              <p className="text-[17px] text-[#64748b]">List the surface, let buyers claim the spots, and fund your goal. No marketplace maze.</p>
+              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>List it, sell it, approve it.</h2>
+              <p className="text-[17px] text-[#64748b]">Seller comes from your X session — never a typed name.</p>
             </div>
             <div className="grid gap-6 md:grid-cols-3">
               {steps.map((s) => (
@@ -189,7 +165,7 @@ export default function Home() {
               <div className="max-w-[640px]">
                 <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">Live now</span>
                 <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>Spaces you can claim today.</h2>
-                <p className="text-[17px] text-[#64748b]">Real listings from real people. Pick a spot and fund what they&apos;re building.</p>
+                <p className="text-[17px] text-[#64748b]">Suitcases, kits, lids, tattoos. Pick a spot — X login to claim or bid.</p>
               </div>
               <Link href="/browse" className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#e7e5e0] px-[22px] py-[13px] text-[15px] font-medium transition hover:border-[#64748b] hover:bg-[#f1f0ec]">
                 Browse all <ArrowRight size={16} />
@@ -215,84 +191,36 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Getting started */}
-        <section id="start" className="py-20">
-          <div className="mx-auto w-full max-w-[1340px] px-6">
-            <div className="mb-12 max-w-[640px]">
-              <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">Getting started</span>
-              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>What you do before the first claim.</h2>
-              <p className="text-[17px] text-[#64748b]">Set it up once. After that, listing and claiming is a short review.</p>
-            </div>
-            <div className="grid gap-6 md:grid-cols-2">
-              {gettingStarted.map((g) => (
-                <div className="flex gap-5 rounded-2xl border border-[#e7e5e0] bg-white p-6" key={g.num}>
-                  <span className="shrink-0 pt-[3px] font-mono text-[13px] text-[#64748b]">{g.num}</span>
-                  <div>
-                    <h3 className="mb-2 text-lg">{g.title}</h3>
-                    <p className="text-sm text-[#64748b]">{g.text}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-8">
-              <Link href="/list" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-7 py-[15px] text-[16px] font-medium text-white shadow-sm transition hover:-translate-y-px hover:bg-[#3558e8] hover:shadow-[0_8px_24px_rgba(65,102,251,0.35)]">
-                List your space <ArrowRight size={18} />
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        {/* Stats band */}
-        <section className="bg-[#020817] py-16 text-white">
-          <div className="mx-auto grid w-full max-w-[1340px] grid-cols-2 gap-8 px-6 lg:grid-cols-4">
-            <div className="text-center">
-              <p className="font-display text-5xl text-white">{live.length}</p>
-              <p className="mt-2 text-sm text-[#94a3b8]">Live listings</p>
-            </div>
-            <div className="text-center">
-              <p className="font-display text-5xl text-white">{openSpots}</p>
-              <p className="mt-2 text-sm text-[#94a3b8]">Open spots</p>
-            </div>
-            <div className="text-center">
-              <p className="font-display text-5xl text-white">1</p>
-              <p className="mt-2 text-sm text-[#94a3b8]">Tap to claim</p>
-            </div>
-            <div className="text-center">
-              <p className="font-display text-5xl text-white">24/7</p>
-              <p className="mt-2 text-sm text-[#94a3b8]">Listings stay live</p>
-            </div>
-          </div>
-        </section>
-
+        {/* Mock money, real approvals — replaces the duplicate getting-started + fake stats band. */}
         {/* You stay in control */}
         <section className="py-20">
           <div className="mx-auto w-full max-w-[1340px] px-6">
             <div className="mb-12 max-w-[640px]">
-              <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">You stay in control</span>
-              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>Adspaces helps you sell. It does not hold your money.</h2>
-              <p className="text-[17px] text-[#64748b]">Adspaces prepares the listing and keeps the records. The deal stays between you and the buyer.</p>
+              <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">Demo truth</span>
+              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>Mock money. Real approvals.</h2>
+              <p className="text-[17px] text-[#64748b]">Claims and bids only mark spots. Approvals are real and seller-owned.</p>
             </div>
             <div className="grid gap-6 md:grid-cols-3">
               <div className="flex flex-col gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-8">
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#e9edfe] text-[#4166fb]">
                   <ShieldCheck size={20} />
                 </span>
-                <h3 className="text-xl">You approve every claim</h3>
-                <p className="text-[15px] text-[#64748b]">You see who claimed what. Adspaces cannot move money by itself.</p>
+                <h3 className="text-xl">Approve, reject, fulfill</h3>
+                <p className="text-[15px] text-[#64748b]">From your dashboard. Compared by user ID, not handle.</p>
               </div>
               <div className="flex flex-col gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-8">
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#e9edfe] text-[#4166fb]">
                   <Globe size={20} />
                 </span>
-                <h3 className="text-xl">Checked before sending</h3>
-                <p className="text-[15px] text-[#64748b]">A risky listing stops the claim before money moves.</p>
+                <h3 className="text-xl">No escrow yet</h3>
+                <p className="text-[15px] text-[#64748b]">Adspaces moves no money. txSignature is logged, never verified.</p>
               </div>
               <div className="flex flex-col gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-8">
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#e9edfe] text-[#4166fb]">
                   <Wallet size={20} />
                 </span>
-                <h3 className="text-xl">Clear receipts</h3>
-                <p className="text-[15px] text-[#64748b]">Every claim keeps a record you can review later.</p>
+                <h3 className="text-xl">Receipts in Postgres</h3>
+                <p className="text-[15px] text-[#64748b]">Listings, spots, claims, bids survive restarts.</p>
               </div>
             </div>
           </div>
@@ -327,14 +255,14 @@ export default function Home() {
                 className="pointer-events-none absolute inset-0"
                 style={{ background: 'radial-gradient(circle at 20% 0%, rgba(245,138,231,0.3), transparent 40%), radial-gradient(circle at 80% 0%, rgba(39,135,255,0.35), transparent 45%)' }}
               />
-              <h2 className="relative text-white" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>Got a surface people see?</h2>
-              <p className="relative text-[17px] text-slate-300">Turn it into funding. It takes under a minute to list.</p>
+              <h2 className="relative text-white" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>Got a suitcase, bike, laptop, or body?</h2>
+              <p className="relative text-[17px] text-slate-300">List spots in under a minute. Mock publishing, no charge.</p>
               <div className="relative mt-4 flex flex-wrap justify-center gap-3">
-                <Link href="/list" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[#e7e5e0] bg-white px-7 py-[15px] text-[16px] font-medium text-[#020817] transition hover:-translate-y-px hover:bg-[#f1f0ec]">
-                  List your space
+                <Link href="/browse" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-white/25 bg-white/10 px-7 py-[15px] text-[16px] font-medium text-white transition hover:-translate-y-px hover:bg-white/[0.14]">
+                  Browse live spaces
                 </Link>
                 <Link href="/list" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-7 py-[15px] text-[16px] font-medium text-white shadow-sm transition hover:-translate-y-px hover:bg-[#3558e8]">
-                  Get started <ArrowRight size={18} />
+                  List your space <ArrowRight size={18} />
                 </Link>
               </div>
             </div>
