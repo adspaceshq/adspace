@@ -348,3 +348,9 @@ export default function ListPage() {
     </>
   )
 }
+  // BrandMyMac-style summary strip: count · floor price · close date. Floor ignores
+  // unpriced stickers so "from" always reflects a real starting bid.
+  const priced = spots.map((s) => Number(s.price)).filter((p) => p > 0)
+  const floor = priced.length ? Math.min(...priced) : 0
+  const total = priced.reduce((a, b) => a + b, 0)
+  const currency = preview.currency ?? 'USD'
