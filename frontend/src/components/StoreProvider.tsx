@@ -87,6 +87,7 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
           location: s.location,
           size: s.size,
           price: s.price,
+          view: s.view ?? 'lid',
         })),
     })
     const idMap = new Map(listing.spots.map((s, i) => [s.id, api.spots[i]?.id ?? s.id] as const))
