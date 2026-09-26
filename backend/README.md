@@ -1,4 +1,4 @@
-# Spotboard API (TypeScript + Express)
+# Adspaces API (TypeScript + Express)
 
 Listings, claims, and bids. X identity is verified here: the browser logs in with Privy,
 then the access token is exchanged for an httpOnly session cookie. Mutations never trust
