@@ -23,7 +23,9 @@ type ListingRow = {
 };
 type SpotRow = {
   id: string; listing_id: string; label: string; location: string; size: string; price: string;
-  currency: string; status: "open" | "claimed" | "sold"; buyer_handle: string | null;
+  currency: string; view: string | null; website_url: string | null; logo_url: string | null;
+  x: string | null; y: string | null; w: string | null;
+  status: "open" | "claimed" | "sold"; buyer_handle: string | null;
   current_bid: string | null; claimed_at: Date | null; fulfilled_at: Date | null;
 };
 
@@ -114,12 +116,13 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const mode = body.mode === "auction" ? "auction" : "fixed";
       const currency = body.currency?.trim().toUpperCase() || "USD";
       await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,mode,currency,deadline,artwork_close)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,now()+interval '14 days',$10)`,
-      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",mode,currency,body.artworkClose?.trim() ?? ""]);
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",mode,currency,deadlineIso,body.artworkClose?.trim() ?? ""]);
       for (let i=0;i<drafts.length;i++) {
         const spot=drafts[i];
-        await client.query(`INSERT INTO spots(id,listing_id,label,location,size,price,currency) VALUES($1,$2,$3,$4,$5,$6,$7)`,
-          [randomUUID(),id,spot.label?.trim() || `Spot ${i+1}`,spot.location?.trim() ?? "",spot.size?.trim() ?? "",Number(spot.price),currency]);
+        const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" ? spot.view : "lid";
+        await client.query(`INSERT INTO spots(id,listing_id,label,location,size,price,currency,view,x,y,w) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [randomUUID(),id,spot.label?.trim() || `Spot ${i+1}`,spot.location?.trim() ?? "",spot.size?.trim() ?? "",Number(spot.price),currency,view,placementNumber(spot.x),placementNumber(spot.y),placementNumber(spot.w)]);
       }
       await client.query("COMMIT");
       return (await this.get(slug))!;
@@ -153,7 +156,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const current=n(spot.current_bid); const required=current == null ? Number(spot.price) : spot.double_up ? current*2 : current+Number(spot.min_increment ?? 0);
       if (amount<required) throw httpError(`bid must be at least ${required} ${spot.currency}`,409);
       await client.query("INSERT INTO bids(id,spot_id,bidder_user_id,bidder_handle,amount) VALUES($1,$2,$3,$4,$5)",[randomUUID(),spotId,bidder.id,bidder.handle,amount]);
-      await client.query("UPDATE spots SET current_bid=$2,buyer_user_id=$3,buyer_handle=$4,claimed_at=now(),updated_at=now() WHERE id=$1",[spotId,amount,bidder.id,bidder.handle]);
+      await client.query("UPDATE spots SET current_bid=$2,buyer_user_id=$3,buyer_handle=$4,claimed_at=now(),updated_at=now(),website_url=$5,logo_url=$6 WHERE id=$1",[spotId,amount,bidder.id,bidder.handle,brand.website ?? "",brand.logoUrl ?? ""]);
       await client.query("COMMIT");
       return (await this.getSpot(spotId))!;
     } catch(error){await client.query("ROLLBACK");throw error;} finally{client.release();}

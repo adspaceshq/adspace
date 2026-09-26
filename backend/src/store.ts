@@ -13,7 +13,7 @@ function fixedSpot(
   status: Spot["status"] = "open",
   buyer = "",
 ): Spot {
-  return { id, listingId, label, location, size, price, currency, status, buyer: buyer || undefined };
+  return { id, listingId, label, location, size, price, currency, view: "lid", status, buyer: buyer || undefined };
 }
 
 function auctionSpot(
@@ -26,7 +26,7 @@ function auctionSpot(
   currency: string,
   bids: Bid[] = [],
 ): Spot {
-  const spot: Spot = { id, listingId, label, location, size, price: start, currency, status: "open", bids: [] };
+  const spot: Spot = { id, listingId, label, location, size, price: start, currency, view: "lid", status: "open", bids: [] };
   for (const b of bids) {
     spot.bids!.push(b);
     spot.currentBid = b.amount;
@@ -73,8 +73,9 @@ export class Store {
     story?: string;
     mode?: string;
     currency?: string;
+    deadline?: string;
     artworkClose?: string;
-    spots?: Array<{ label?: string; location?: string; size?: string; price?: number }>;
+    spots?: Array<{ label?: string; location?: string; size?: string; price?: number; view?: string; x?: number; y?: number; w?: number }>;
   }): Listing {
     const title = req.title.trim();
     const seller = req.seller.trim();
@@ -105,13 +106,23 @@ export class Store {
     });
     this.seq++;
     const id = `user-${this.seq}`;
+    const spotView = (s: { view?: string }) =>
+      s.view === "inside" || s.view === "tee-front" || s.view === "tee-back" ? s.view : "lid";
+    const spotPlacement = (s: { x?: number; y?: number; w?: number }) => ({
+      x: typeof s.x === "number" && Number.isFinite(s.x) ? Math.min(100, Math.max(0, s.x)) : undefined,
+      y: typeof s.y === "number" && Number.isFinite(s.y) ? Math.min(100, Math.max(0, s.y)) : undefined,
+      w: typeof s.w === "number" && Number.isFinite(s.w) ? Math.min(100, Math.max(0, s.w)) : undefined,
+    });
     const spots: Spot[] = drafts.map((s, i) => {
       const label = s.label?.trim() || `Spot ${i + 1}`;
       const price = Number(s.price);
       const spotId = `${id}-s${i + 1}`;
-      return mode === "auction"
+      const spot = mode === "auction"
         ? auctionSpot(id, spotId, label, s.location ?? "", s.size ?? "", price, currency)
         : fixedSpot(id, spotId, label, s.location ?? "", s.size ?? "", price, currency);
+      spot.view = spotView(s);
+      Object.assign(spot, spotPlacement(s));
+      return spot;
     });
     const listing: Listing = {
       id, slug: id, title, seller,
@@ -228,4 +239,3 @@ export class Store {
     return {summary:{activeListings:listings.length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),currency:listings[0]?.currency??"USD"},listings,attention};
   }
 }
-    deadline?: string;
