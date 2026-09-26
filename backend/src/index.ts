@@ -85,7 +85,12 @@ export function createApp({
     next();
   };
 
-  app.get("/health", (_req, res) => res.json({ status: "ok", auth: privyConfigured ? "privy" : "unconfigured", sessions: "postgres" }));
+  app.get("/health", (_req, res) => res.json({
+    status: "ok",
+    auth: privyConfigured ? "privy" : "unconfigured",
+    sessions: "postgres",
+    chain: { cluster: chain.cluster, programId: chain.programId, integration: "pending-idl" },
+  }));
   app.post("/api/auth/session", authLimiter, async (req, res) => {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
     if (!token) return void res.status(401).json({ error: "missing access token" });
