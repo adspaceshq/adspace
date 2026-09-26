@@ -89,6 +89,12 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       CREATE INDEX IF NOT EXISTS spots_buyer_user_id_idx ON spots(buyer_user_id);
       CREATE INDEX IF NOT EXISTS bids_spot_created_idx ON bids(spot_id, created_at);
       CREATE INDEX IF NOT EXISTS bids_bidder_user_id_idx ON bids(bidder_user_id);
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS view text NOT NULL DEFAULT 'lid';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS website_url text NOT NULL DEFAULT '';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS logo_url text NOT NULL DEFAULT '';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS x numeric(6,2);
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS y numeric(6,2);
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS w numeric(6,2);
       ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
       ALTER TABLE spots ENABLE ROW LEVEL SECURITY;
       ALTER TABLE bids ENABLE ROW LEVEL SECURITY;
