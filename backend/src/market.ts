@@ -21,7 +21,7 @@ export interface MarketplaceRepository {
 
 type ListingRow = {
   id: string; slug: string; title: string; seller_user_id: string; seller_handle: string;
-  surface: string; story: string; image_url: string; mode: "fixed" | "auction"; currency: string;
+  surface: string; story: string; image_url: string; fabric: string; mode: "fixed" | "auction"; currency: string;
   deadline: Date; artwork_close: string; min_increment: string | null; double_up: boolean; status: "active" | "closed";
 };
 type SpotRow = {
@@ -37,6 +37,10 @@ const slugify = (title: string) => title.toLowerCase().trim().replace(/[^a-z0-9]
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
 
 const MAX_LOGO_URL_LENGTH = 3_000_000;
+
+/** Tee base color. Strict #rrggbb — anything else falls back to the default white. */
+const parseFabric = (value: unknown): string =>
+  typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : "#f6f6f7";
 
 /** Seller placement in % of the photo. Non-finite values fall back to auto layout. */
 const placementNumber = (value: unknown): number | null =>
@@ -98,6 +102,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS x numeric(6,2);
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS y numeric(6,2);
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS w numeric(6,2);
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS fabric text NOT NULL DEFAULT '#f6f6f7';
       ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
       ALTER TABLE spots ENABLE ROW LEVEL SECURITY;
       ALTER TABLE bids ENABLE ROW LEVEL SECURITY;
@@ -147,9 +152,10 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const slug = `${slugify(title)}-${id.slice(0, 8)}`;
       const mode = body.mode === "auction" ? "auction" : "fixed";
       const currency = body.currency?.trim().toUpperCase() || "USD";
-      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,mode,currency,deadline,artwork_close)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",mode,currency,deadlineIso,body.artworkClose?.trim() ?? ""]);
+      const fabric = parseFabric(body.fabric);
+      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,mode,currency,deadline,artwork_close,fabric)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",mode,currency,deadlineIso,body.artworkClose?.trim() ?? "",fabric]);
       for (let i=0;i<drafts.length;i++) {
         const spot=drafts[i];
         const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" ? spot.view : "lid";
@@ -264,7 +270,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const spotsResult=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE listing_id=$1 ORDER BY created_at,id",[row.id]);
     const ids=spotsResult.rows.map(s=>s.id); const bids=new Map<string,Bid[]>();
     if(ids.length){const br=await this.pool.query("SELECT spot_id,bidder_handle,amount,created_at FROM bids WHERE spot_id=ANY($1) ORDER BY created_at",[ids]);for(const b of br.rows)bids.set(b.spot_id,[...(bids.get(b.spot_id)??[]),{bidder:b.bidder_handle,amount:Number(b.amount),at:new Date(b.created_at).toISOString()}]);}
-    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
+    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
   }
   private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString()};}
   private async getSpot(id:string):Promise<Spot|undefined>{const r=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE id=$1",[id]);if(!r.rows[0])return undefined;const b=await this.pool.query("SELECT bidder_handle,amount,created_at FROM bids WHERE spot_id=$1 ORDER BY created_at",[id]);return this.mapSpot(r.rows[0],b.rows.map(x=>({bidder:x.bidder_handle,amount:Number(x.amount),at:new Date(x.created_at).toISOString()})));}

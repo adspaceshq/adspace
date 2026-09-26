@@ -97,6 +97,7 @@ export class Store {
     sellerUserId?: string;
     surface?: string;
     story?: string;
+    fabric?: string;
     mode?: string;
     currency?: string;
     deadline?: string;
@@ -134,6 +135,7 @@ export class Store {
     const id = `user-${this.seq}`;
     const spotView = (s: { view?: string }) =>
       s.view === "inside" || s.view === "tee-front" || s.view === "tee-back" ? s.view : "lid";
+    const fabric = typeof req.fabric === "string" && /^#[0-9a-fA-F]{6}$/.test(req.fabric.trim()) ? req.fabric.trim() : "#f6f6f7";
     const spotPlacement = (s: { x?: number; y?: number; w?: number }) => ({
       x: typeof s.x === "number" && Number.isFinite(s.x) ? Math.min(100, Math.max(0, s.x)) : undefined,
       y: typeof s.y === "number" && Number.isFinite(s.y) ? Math.min(100, Math.max(0, s.y)) : undefined,
@@ -155,7 +157,7 @@ export class Store {
       sellerHandle: req.sellerHandle ?? seller,
       sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
-      image: "", mode,
+      image: "", mode, fabric,
       currency, deadline, artworkClose: req.artworkClose ?? "", status: "active", spots,
     };
     this.listings.set(id, listing);
