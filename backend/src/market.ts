@@ -8,8 +8,11 @@ export interface MarketplaceRepository {
   get(slug: string): Promise<Listing | undefined>;
   create(body: CreateListingRequest, seller: SessionUser): Promise<Listing>;
   update(slug: string, actorUserId: string, patch: { title?: string; story?: string }): Promise<Listing>;
-  claim(spotId: string, buyer: SessionUser): Promise<Spot>;
-  placeBid(spotId: string, bidder: SessionUser, amount: number): Promise<Spot>;
+  claim(spotId: string, buyer: SessionUser, assets?: PurchaseAssets): Promise<Spot>;
+  placeBid(spotId: string, bidder: SessionUser, amount: number, assets?: PurchaseAssets): Promise<Spot>;
+  close(slug: string, actorUserId: string): Promise<Listing>;
+  reopen(slug: string, actorUserId: string): Promise<Listing>;
+  remove(slug: string, actorUserId: string): Promise<{ ok: true }>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
   fulfill(spotId: string, actorUserId: string): Promise<Spot>;
@@ -166,14 +169,45 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return (await this.get(slug))!;
   }
 
-  async claim(spotId: string, buyer: SessionUser): Promise<Spot> {
-    const result = await this.pool.query(`UPDATE spots s SET status='claimed',buyer_user_id=$2,buyer_handle=$3,claimed_at=now(),updated_at=now()
-      FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.mode='fixed' AND l.status='active' AND s.status='open' AND l.seller_user_id<>$2 RETURNING s.id`, [spotId,buyer.id,buyer.handle]);
+  private async setStatus(slug: string, actorUserId: string, status: "active" | "closed"): Promise<Listing> {
+    const result = await this.pool.query(`UPDATE listings SET status=$3,updated_at=now()
+      WHERE slug=$1 AND seller_user_id=$2 RETURNING slug`, [slug,actorUserId,status]);
+    if (!result.rows[0]) await this.throwListingAccess(slug, actorUserId);
+    return (await this.get(slug))!;
+  }
+
+  async close(slug: string, actorUserId: string): Promise<Listing> {
+    return this.setStatus(slug, actorUserId, "closed");
+  }
+
+  async reopen(slug: string, actorUserId: string): Promise<Listing> {
+    return this.setStatus(slug, actorUserId, "active");
+  }
+
+  async remove(slug: string, actorUserId: string): Promise<{ ok: true }> {
+    const owned = await this.pool.query("SELECT id, seller_user_id FROM listings WHERE slug=$1", [slug]);
+    if (!owned.rows[0]) throw httpError("listing not found", 404);
+    if (owned.rows[0].seller_user_id !== actorUserId) throw httpError("forbidden", 403);
+    const activity = await this.pool.query(
+      `SELECT 1 FROM spots WHERE listing_id=$1 AND (buyer_user_id IS NOT NULL OR current_bid IS NOT NULL) LIMIT 1`,
+      [owned.rows[0].id],
+    );
+    if (activity.rows[0]) throw httpError("cannot delete a listing with buyers or bids — close it instead", 409);
+    await this.pool.query("DELETE FROM listings WHERE id=$1", [owned.rows[0].id]);
+    return { ok: true };
+  }
+
+  async claim(spotId: string, buyer: SessionUser, assets?: PurchaseAssets): Promise<Spot> {
+    const brand = parseBrandAssets(assets);
+    const result = await this.pool.query(`UPDATE spots s SET status='claimed',buyer_user_id=$2,buyer_handle=$3,claimed_at=now(),updated_at=now(),
+      website_url=$4,logo_url=$5
+      FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.mode='fixed' AND l.status='active' AND s.status='open' AND l.seller_user_id<>$2 RETURNING s.id`, [spotId,buyer.id,buyer.handle,brand.website ?? "",brand.logoUrl ?? ""]);
     if (!result.rows[0]) throw httpError("spot is unavailable or belongs to you", 409);
     return (await this.getSpot(spotId))!;
   }
 
-  async placeBid(spotId: string, bidder: SessionUser, amount: number): Promise<Spot> {
+  async placeBid(spotId: string, bidder: SessionUser, amount: number, assets?: PurchaseAssets): Promise<Spot> {
+    const brand = parseBrandAssets(assets);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -230,9 +264,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const spotsResult=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE listing_id=$1 ORDER BY created_at,id",[row.id]);
     const ids=spotsResult.rows.map(s=>s.id); const bids=new Map<string,Bid[]>();
     if(ids.length){const br=await this.pool.query("SELECT spot_id,bidder_handle,amount,created_at FROM bids WHERE spot_id=ANY($1) ORDER BY created_at",[ids]);for(const b of br.rows)bids.set(b.spot_id,[...(bids.get(b.spot_id)??[]),{bidder:b.bidder_handle,amount:Number(b.amount),at:new Date(b.created_at).toISOString()}]);}
-    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
+    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
   }
-  private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString()};}
+  private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString()};}
   private async getSpot(id:string):Promise<Spot|undefined>{const r=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE id=$1",[id]);if(!r.rows[0])return undefined;const b=await this.pool.query("SELECT bidder_handle,amount,created_at FROM bids WHERE spot_id=$1 ORDER BY created_at",[id]);return this.mapSpot(r.rows[0],b.rows.map(x=>({bidder:x.bidder_handle,amount:Number(x.amount),at:new Date(x.created_at).toISOString()})));}
   private async ownerTransition(id:string,userId:string,from:string,to:string):Promise<Spot>{const r=await this.pool.query(`UPDATE spots s SET status=$4,updated_at=now() FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.seller_user_id=$2 AND s.status=$3 RETURNING s.id`,[id,userId,from,to]);if(!r.rows[0])await this.throwSpotAccess(id,userId);return(await this.getSpot(id))!;}
   private async throwListingAccess(slug:string,userId:string):Promise<never>{const r=await this.pool.query("SELECT seller_user_id FROM listings WHERE slug=$1",[slug]);throw httpError(!r.rows[0]?"listing not found":r.rows[0].seller_user_id!==userId?"forbidden":"listing cannot be updated",!r.rows[0]?404:r.rows[0].seller_user_id!==userId?403:409);}

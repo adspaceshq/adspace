@@ -119,25 +119,17 @@ export function createApp({
     try { res.status(201).json(await repo.create({ ...body, title: body.title }, req.user!)); } catch (e) { sendErr(res, e); }
   });
   app.patch("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.update(req.params.slug, req.user!.id, req.body as { title?: string; story?: string })); } catch (e) { sendErr(res, e); } });
-  app.post("/api/spots/:id/claim", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.claim(req.params.id, req.user!)); } catch (e) { sendErr(res, e); } });
+  app.post("/api/listings/:slug/close", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.close(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
+  app.post("/api/listings/:slug/reopen", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reopen(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
+  app.delete("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.remove(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
+  app.post("/api/spots/:id/claim", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.claim(req.params.id, req.user!, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/bid", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const amount = Number((req.body as { amount?: number } | null)?.amount);
     if (!(amount > 0)) return void res.status(400).json({ error: "positive amount is required" });
-    try { res.json(await repo.placeBid(req.params.id, req.user!, amount)); } catch (e) { sendErr(res, e); }
+    try { res.json(await repo.placeBid(req.params.id, req.user!, amount, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/fulfill", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.fulfill(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   return app;
 }
-
-async function start() {
-  const pool = createDatabasePool();
-  const auth = new PostgresAuthRepository(pool);
-  const market = new PostgresMarketplaceRepository(pool);
-  await auth.migrate();
-  await market.migrate();
-  const port = Number(process.env.PORT ?? 8080);
-  createApp({ auth, market }).listen(port, () => console.log(`spotboard api listening on :${port} (postgres persistence on)`));
-}
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) start().catch((error) => { console.error(error); process.exit(1); });

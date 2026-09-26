@@ -68,8 +68,9 @@ export class Store {
   async migrate(): Promise<void> {}
 
   summaries(): ListingSummary[] {
-    return this.order.map((slug) => {
+    return this.order.flatMap((slug) => {
       const l = this.listings.get(slug)!;
+      if (l.status !== "active") return [];
       const sum: ListingSummary = {
         id: l.id, slug: l.slug, title: l.title, seller: l.seller,
         surface: l.surface, image: l.image, mode: l.mode, currency: l.currency,
@@ -81,7 +82,7 @@ export class Store {
         else if (sp.currentBid) sum.raised += sp.currentBid;
         else sum.open++;
       }
-      return sum;
+      return [sum];
     });
   }
 
@@ -155,7 +156,7 @@ export class Store {
       sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
       image: "", mode,
-      currency, deadline: daysFromNow(14), artworkClose: req.artworkClose ?? "", spots,
+      currency, deadline, artworkClose: req.artworkClose ?? "", status: "active", spots,
     };
     this.listings.set(id, listing);
     this.order.unshift(id);
@@ -196,6 +197,28 @@ export class Store {
     if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
     if (!listing.sellerUserId || listing.sellerUserId !== actorUserId) throw Object.assign(new Error("forbidden"), { status: 403 });
     return listing;
+  }
+
+  close(slug: string, actorUserId: string): Listing {
+    const listing = this.ownedListing(slug, actorUserId);
+    listing.status = "closed";
+    return listing;
+  }
+
+  reopen(slug: string, actorUserId: string): Listing {
+    const listing = this.ownedListing(slug, actorUserId);
+    listing.status = "active";
+    return listing;
+  }
+
+  remove(slug: string, actorUserId: string): { ok: true } {
+    const listing = this.ownedListing(slug, actorUserId);
+    if (listing.spots.some((s) => s.buyer || s.currentBid != null || (s.bids?.length ?? 0) > 0)) {
+      throw Object.assign(new Error("cannot delete a listing with buyers or bids — close it instead"), { status: 409 });
+    }
+    this.listings.delete(slug);
+    this.order = this.order.filter((s) => s !== slug);
+    return { ok: true };
   }
 
   private ownedSpot(spotId: string, actorUserId: string): { listing: Listing; spot: Spot } {
