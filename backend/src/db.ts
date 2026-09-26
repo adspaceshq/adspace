@@ -15,13 +15,22 @@ export interface AuthRepository {
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 
-export function createDatabasePool(connectionString = process.env.DATABASE_URL): Pool {
+export function createDatabasePool(
+  connectionString = process.env.DATABASE_URL,
+  options: { max?: number } = {},
+): Pool {
   if (!connectionString) throw new Error("DATABASE_URL is required for persistence");
   const databaseUrl = new URL(connectionString);
   for (const parameter of ["sslmode", "sslcert", "sslkey", "sslrootcert"]) databaseUrl.searchParams.delete(parameter);
   const caPath = process.env.DATABASE_CA_CERT;
   const ssl = process.env.DATABASE_SSL === "disable" ? false : { rejectUnauthorized: true, ...(caPath ? { ca: readFileSync(caPath, "utf8") } : {}) };
-  return new Pool({ connectionString: databaseUrl.toString(), ssl, max: Number(process.env.DATABASE_POOL_SIZE ?? 10), idleTimeoutMillis: 30_000, connectionTimeoutMillis: 10_000 });
+  return new Pool({
+    connectionString: databaseUrl.toString(),
+    ssl,
+    max: options.max ?? Number(process.env.DATABASE_POOL_SIZE ?? 10),
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 10_000,
+  });
 }
 
 export class PostgresAuthRepository implements AuthRepository {

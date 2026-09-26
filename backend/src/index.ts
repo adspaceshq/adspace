@@ -1,43 +1,66 @@
-import "dotenv/config";
 import express, { type NextFunction, type Request, type Response } from "express";
 import cookieParser from "cookie-parser";
 import { rateLimit } from "express-rate-limit";
-import { pathToFileURL } from "node:url";
 import { Store } from "./store.js";
 import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken } from "./auth.js";
-import { csrfMatches, PostgresAuthRepository, type AuthRepository, type StoredSession } from "./db.js";
-import { createDatabasePool } from "./db.js";
-import { PostgresMarketplaceRepository, type MarketplaceRepository } from "./market.js";
-import type { AuthenticatedIdentity, CreateListingRequest, SessionUser } from "./types.js";
+import { csrfMatches, type AuthRepository, type StoredSession } from "./db.js";
+import type { MarketplaceRepository } from "./market.js";
+import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser } from "./types.js";
+import { adspacesProgramId, type SolanaCluster } from "./config.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
-export interface AppDependencies { auth: AuthRepository; verifyToken?: (token: string, identityToken?: string) => Promise<AuthenticatedIdentity>; market?: MarketplaceRepository; store?: Store }
+export interface AppDependencies {
+  auth: AuthRepository;
+  verifyToken?: (token: string, identityToken?: string) => Promise<AuthenticatedIdentity>;
+  market?: MarketplaceRepository;
+  store?: Store;
+  frontendUrl?: string;
+  trustProxy?: number;
+  chain?: { cluster: SolanaCluster; programId: string };
+}
 
 const sendErr = (res: Response, e: unknown) => {
   const status = (e as { status?: number }).status ?? 500;
   res.status(status).json({ error: status === 500 ? "internal error" : e instanceof Error ? e.message : "request failed" });
 };
 
-export function createApp({ auth, verifyToken = userFromAccessToken, market, store = new Store() }: AppDependencies) {
+/** Buyer brand assets ride the claim/bid body; the repo validates them. */
+const purchaseAssets = (body: unknown): PurchaseAssets => {
+  const b = (body ?? {}) as Partial<PurchaseAssets>;
+  return {
+    ...(typeof b.website === "string" ? { website: b.website } : {}),
+    ...(typeof b.logoUrl === "string" ? { logoUrl: b.logoUrl } : {}),
+  };
+};
+
+export function createApp({
+  auth,
+  verifyToken = userFromAccessToken,
+  market,
+  store = new Store(),
+  frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000",
+  trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
+  chain = { cluster: "devnet", programId: adspacesProgramId },
+}: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
     create: async (body, seller) => store.createForUser(body, seller), update: async (slug,user,patch) => store.update(slug,user,patch),
-    claim: async (id,user) => store.claim(id,user), placeBid: async (id,user,amount) => store.placeBid(id,user,amount),
+    claim: async (id,user,assets) => store.claim(id,user,assets), placeBid: async (id,user,amount,assets) => store.placeBid(id,user,amount,assets),
+    close: async (slug,user) => store.close(slug,user), reopen: async (slug,user) => store.reopen(slug,user), remove: async (slug,user) => store.remove(slug,user),
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
   };
   const app = express();
-  if (process.env.TRUST_PROXY) app.set("trust proxy", Number(process.env.TRUST_PROXY));
+  if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
   app.disable("x-powered-by");
   app.use(express.json({ limit: "100kb" }));
   app.use(cookieParser());
-  const frontend = process.env.FRONTEND_URL ?? "http://localhost:3000";
   app.use((req, res, next) => {
-    if (req.headers.origin === frontend) res.header("Access-Control-Allow-Origin", frontend);
+    if (req.headers.origin === frontendUrl) res.header("Access-Control-Allow-Origin", frontendUrl);
     res.header("Vary", "Origin");
     res.header("Access-Control-Allow-Credentials", "true");
-    res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, privy-id-token");
     if (req.method === "OPTIONS") return void res.sendStatus(204);
     next();
