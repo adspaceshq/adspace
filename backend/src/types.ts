@@ -15,6 +15,15 @@ export interface Spot {
   size: string;
   price: number;
   currency: string;
+  /** Which photo the sticker lives on: "lid" | "inside" (Mac) or "tee-front" | "tee-back" (T-shirt). */
+  view: string;
+  /** Seller hand placement in % of the photo (position + width). Absent → auto layout. */
+  x?: number;
+  y?: number;
+  w?: number;
+  /** Buyer brand assets attached at purchase; replaced on takeover. */
+  website?: string;
+  logoUrl?: string;
   status: SpotStatus;
   currentBid?: number;
   buyer?: string;
@@ -38,6 +47,7 @@ export interface Listing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  status: "active" | "closed";
   spots: Spot[];
 }
 
@@ -62,6 +72,7 @@ export interface CreateListingRequest {
   story?: string;
   mode?: string;
   currency?: string;
+  deadline?: string;
   artworkClose?: string;
   spots?: CreateSpotRequest[];
 }
@@ -71,6 +82,16 @@ export interface CreateSpotRequest {
   location?: string;
   size?: string;
   price?: number;
+  view?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+}
+
+/** Brand assets a buyer attaches when claiming or bidding. */
+export interface PurchaseAssets {
+  website?: string;
+  logoUrl?: string;
 }
 
 export interface SessionUser {
