@@ -83,6 +83,17 @@ export class Store {
     }
     const mode: Listing["mode"] = req.mode === "auction" ? "auction" : "fixed";
     const currency = req.currency?.trim() || "USD";
+    let deadline = daysFromNow(14);
+    if (req.deadline !== undefined && req.deadline !== "") {
+      const parsed = new Date(req.deadline);
+      if (Number.isNaN(parsed.getTime())) {
+        throw Object.assign(new Error("deadline must be a valid date"), { status: 400 });
+      }
+      if (parsed.getTime() <= Date.now()) {
+        throw Object.assign(new Error("deadline must be in the future"), { status: 400 });
+      }
+      deadline = parsed.toISOString();
+    }
     const drafts = req.spots ?? [];
     if (drafts.length > 60) {
       throw Object.assign(new Error("at most 60 spots per listing"), { status: 400 });
@@ -217,3 +228,4 @@ export class Store {
     return {summary:{activeListings:listings.length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),currency:listings[0]?.currency??"USD"},listings,attention};
   }
 }
+    deadline?: string;

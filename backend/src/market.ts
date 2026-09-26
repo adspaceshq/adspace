@@ -99,6 +99,13 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const drafts = body.spots ?? [];
     if (drafts.length > 60) throw httpError("at most 60 spots per listing", 400);
     drafts.forEach((spot, i) => { if (!(Number(spot.price) > 0)) throw httpError(`spot ${i + 1}: price must be above zero`, 400); });
+    let deadlineIso = new Date(Date.now() + 14 * 86_400_000).toISOString();
+    if (body.deadline !== undefined && body.deadline !== "") {
+      const parsed = new Date(body.deadline);
+      if (Number.isNaN(parsed.getTime())) throw httpError("deadline must be a valid date", 400);
+      if (parsed.getTime() <= Date.now()) throw httpError("deadline must be in the future", 400);
+      deadlineIso = parsed.toISOString();
+    }
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
