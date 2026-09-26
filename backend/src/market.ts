@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 export interface MarketplaceRepository {
   migrate(): Promise<void>;
@@ -32,6 +32,29 @@ type SpotRow = {
 const n = (value: string | number | null | undefined) => value == null ? undefined : Number(value);
 const slugify = (title: string) => title.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "listing";
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
+
+const MAX_LOGO_URL_LENGTH = 3_000_000;
+
+/** Seller placement in % of the photo. Non-finite values fall back to auto layout. */
+const placementNumber = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : null;
+
+/** Validate buyer brand assets. Empty/absent stays absent; anything malformed is a 400. */
+function parseBrandAssets(assets?: PurchaseAssets): { website?: string; logoUrl?: string } {
+  const out: { website?: string; logoUrl?: string } = {};
+  const website = assets?.website?.trim() ?? "";
+  if (website) {
+    if (!/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(website)) throw httpError("website must be an http(s) URL", 400);
+    out.website = website;
+  }
+  const logoUrl = assets?.logoUrl?.trim() ?? "";
+  if (logoUrl) {
+    if (!logoUrl.startsWith("data:image/")) throw httpError("logo must be an image upload", 400);
+    if (logoUrl.length > MAX_LOGO_URL_LENGTH) throw httpError("logo is too large", 400);
+    out.logoUrl = logoUrl;
+  }
+  return out;
+}
 
 export class PostgresMarketplaceRepository implements MarketplaceRepository {
   constructor(private readonly pool: Pool) {}

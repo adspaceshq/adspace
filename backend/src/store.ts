@@ -1,6 +1,31 @@
-import type { Bid, CreateListingRequest, Listing, ListingSummary, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
+
+const MAX_LOGO_URL_LENGTH = 3_000_000;
+
+/** Validate buyer brand assets. Empty/absent stays absent; anything malformed is a 400. */
+function parseBrandAssets(assets?: PurchaseAssets): { website?: string; logoUrl?: string } {
+  const out: { website?: string; logoUrl?: string } = {};
+  const website = assets?.website?.trim() ?? "";
+  if (website) {
+    if (!/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(website)) {
+      throw Object.assign(new Error("website must be an http(s) URL"), { status: 400 });
+    }
+    out.website = website;
+  }
+  const logoUrl = assets?.logoUrl?.trim() ?? "";
+  if (logoUrl) {
+    if (!logoUrl.startsWith("data:image/")) {
+      throw Object.assign(new Error("logo must be an image upload"), { status: 400 });
+    }
+    if (logoUrl.length > MAX_LOGO_URL_LENGTH) {
+      throw Object.assign(new Error("logo is too large"), { status: 400 });
+    }
+    out.logoUrl = logoUrl;
+  }
+  return out;
+}
 
 function fixedSpot(
   listingId: string,
@@ -189,21 +214,26 @@ export class Store {
     return undefined;
   }
 
-  claim(spotId: string, buyer: SessionUser | string): Spot {
+  claim(spotId: string, buyer: SessionUser | string, assets?: PurchaseAssets): Spot {
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
+    if (listing.status !== "active") throw Object.assign(new Error("listing is closed"), { status: 409 });
     if (listing.mode === "auction") throw Object.assign(new Error("auction spot: place a bid instead"), { status: 409 });
     if (spot.status !== "open") throw Object.assign(new Error("spot already taken"), { status: 409 });
+    const brand = parseBrandAssets(assets);
     spot.status = "claimed";
     spot.buyer = typeof buyer === "string" ? buyer : buyer.handle;
+    spot.website = brand.website;
+    spot.logoUrl = brand.logoUrl;
     return spot;
   }
 
-  placeBid(spotId: string, bidder: SessionUser | string, amount: number): Spot {
+  placeBid(spotId: string, bidder: SessionUser | string, amount: number, assets?: PurchaseAssets): Spot {
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
+    if (listing.status !== "active") throw Object.assign(new Error("listing is closed"), { status: 409 });
     if (listing.mode !== "auction") throw Object.assign(new Error("fixed-price spot: claim it instead"), { status: 409 });
     if (spot.status !== "open") throw Object.assign(new Error("spot closed"), { status: 409 });
     const hasBids = (spot.bids?.length ?? 0) > 0;
@@ -215,10 +245,13 @@ export class Store {
     if (amount < required) {
       throw Object.assign(new Error(`bid must be at least ${required} ${listing.currency}`), { status: 409 });
     }
+    const brand = parseBrandAssets(assets);
     const handle = typeof bidder === "string" ? bidder : bidder.handle;
     spot.bids!.push({ bidder: handle, amount, at: new Date().toISOString() });
     spot.currentBid = amount;
     spot.buyer = handle;
+    spot.website = brand.website;
+    spot.logoUrl = brand.logoUrl;
     return spot;
   }
 
