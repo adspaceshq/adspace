@@ -20,8 +20,10 @@ Never put it in the frontend env.
 
 ```sh
 npm run build
-docker build -t spotboard-api .
-docker run -p 8080:8080 --env-file .env spotboard-api
+docker build -t adspaces-api .
+docker run -p 8080:8080 --env-file .env adspaces-api
 ```
 
 Endpoints: see `../CONTRACT.md`.
+
+The runtime entrypoint is `src/server.ts`; `src/index.ts` only composes the Express app so tests and future workers can import it without starting a listener. Startup validates database, frontend, pool, session, and Solana configuration before accepting traffic. Chain health remains `pending-idl` until the pinned contract IDL is integrated.
