@@ -8,7 +8,7 @@ export const privyConfigured = Boolean(appId && appSecret);
 
 export const privy = privyConfigured ? new PrivyClient({ appId, appSecret }) : null;
 
-const COOKIE = "spotboard_sid";
+const COOKIE = "adspaces_sid";
 export const sessionCookieName = COOKIE;
 
 export function cookieOptions() {
