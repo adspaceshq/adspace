@@ -41,6 +41,8 @@ export interface Listing {
   surface: string;
   story: string;
   image: string;
+  /** Tee base color as #rrggbb (apparel surface). Anything else → default white. */
+  fabric: string;
   mode: Mode;
   currency: string;
   deadline: string;
@@ -70,6 +72,7 @@ export interface CreateListingRequest {
   title: string;
   surface?: string;
   story?: string;
+  fabric?: string;
   mode?: string;
   currency?: string;
   deadline?: string;
