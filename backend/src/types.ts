@@ -47,6 +47,8 @@ export interface Spot {
   buyer?: string;
   bids?: Bid[];
   fulfilledAt?: string;
+  /** When the buyer submitted final artwork (Step 7 intake). */
+  artworkSubmittedAt?: string;
 }
 
 export interface Listing {
@@ -155,6 +157,7 @@ export interface SellerDashboardListing {
   title: string;
   image: string;
   status: "active" | "approved" | "submitted" | "closed";
+  deadline: string;
   reviewNote?: string;
   mode: Mode;
   currency: string;
@@ -175,6 +178,7 @@ export interface SellerAttentionItem {
   currency: string;
   submittedAt: string;
   status: "pending" | "approved";
+  artworkReceived: boolean;
 }
 
 export interface SellerDashboard {
