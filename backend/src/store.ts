@@ -97,6 +97,7 @@ export class Store {
     sellerUserId?: string;
     surface?: string;
     story?: string;
+    image?: string;
     fabric?: string;
     mode?: string;
     currency?: string;
@@ -134,7 +135,7 @@ export class Store {
     this.seq++;
     const id = `user-${this.seq}`;
     const spotView = (s: { view?: string }) =>
-      s.view === "inside" || s.view === "tee-front" || s.view === "tee-back" ? s.view : "lid";
+      s.view === "inside" || s.view === "tee-front" || s.view === "tee-back" || s.view === "tee-left" || s.view === "tee-right" ? s.view : "lid";
     const fabric = typeof req.fabric === "string" && /^#[0-9a-fA-F]{6}$/.test(req.fabric.trim()) ? req.fabric.trim() : "#f6f6f7";
     const spotPlacement = (s: { x?: number; y?: number; w?: number }) => ({
       x: typeof s.x === "number" && Number.isFinite(s.x) ? Math.min(100, Math.max(0, s.x)) : undefined,
@@ -152,13 +153,19 @@ export class Store {
       Object.assign(spot, spotPlacement(s));
       return spot;
     });
+    const image = typeof req.image === "string" ? req.image.trim() : "";
+    if (image) {
+      if (!image.startsWith("data:image/")) throw Object.assign(new Error("image must be an image upload"), { status: 400 });
+      if (image.length > MAX_LOGO_URL_LENGTH) throw Object.assign(new Error("image is too large"), { status: 400 });
+    }
     const listing: Listing = {
       id, slug: id, title, seller,
       sellerHandle: req.sellerHandle ?? seller,
       sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
-      image: "", mode, fabric,
-      currency, deadline, artworkClose: req.artworkClose ?? "", status: "active", spots,
+      image, mode, fabric,
+      // Step 2: submissions land as submitted — platform review activates them.
+      currency, deadline, artworkClose: req.artworkClose ?? "", status: "submitted", spots,
     };
     this.listings.set(id, listing);
     this.order.unshift(id);
@@ -209,7 +216,35 @@ export class Store {
 
   reopen(slug: string, actorUserId: string): Listing {
     const listing = this.ownedListing(slug, actorUserId);
+    // Reopening resubmits for review — it must never self-publish.
+    if (listing.status === "submitted") throw Object.assign(new Error("listing is already submitted for review"), { status: 409 });
+    if (listing.status === "active") return listing;
+    listing.status = "submitted";
+    listing.reviewNote = undefined;
+    return listing;
+  }
+
+  reviewQueue(): Listing[] {
+    return this.order.map((slug) => this.listings.get(slug)!).filter((l) => l.status === "submitted");
+  }
+
+  approveReview(slug: string): Listing {
+    const listing = this.listings.get(slug);
+    if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
+    if (listing.status !== "submitted") throw Object.assign(new Error("listing is not awaiting review"), { status: 409 });
     listing.status = "active";
+    listing.reviewNote = undefined;
+    return listing;
+  }
+
+  rejectReview(slug: string, reason: string): Listing {
+    const listing = this.listings.get(slug);
+    if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
+    if (listing.status !== "submitted") throw Object.assign(new Error("listing is not awaiting review"), { status: 409 });
+    const note = typeof reason === "string" ? reason.trim() : "";
+    if (note.length > 500) throw Object.assign(new Error("reason must be at most 500 characters"), { status: 400 });
+    listing.status = "closed";
+    listing.reviewNote = note || undefined;
     return listing;
   }
 
@@ -240,13 +275,13 @@ export class Store {
   }
 
   claim(spotId: string, buyer: SessionUser | string, assets?: PurchaseAssets): Spot {
+    const brand = parseBrandAssets(assets);
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
     if (listing.status !== "active") throw Object.assign(new Error("listing is closed"), { status: 409 });
     if (listing.mode === "auction") throw Object.assign(new Error("auction spot: place a bid instead"), { status: 409 });
     if (spot.status !== "open") throw Object.assign(new Error("spot already taken"), { status: 409 });
-    const brand = parseBrandAssets(assets);
     spot.status = "claimed";
     spot.buyer = typeof buyer === "string" ? buyer : buyer.handle;
     spot.website = brand.website;
@@ -255,6 +290,7 @@ export class Store {
   }
 
   placeBid(spotId: string, bidder: SessionUser | string, amount: number, assets?: PurchaseAssets): Spot {
+    const brand = parseBrandAssets(assets);
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
@@ -270,7 +306,6 @@ export class Store {
     if (amount < required) {
       throw Object.assign(new Error(`bid must be at least ${required} ${listing.currency}`), { status: 409 });
     }
-    const brand = parseBrandAssets(assets);
     const handle = typeof bidder === "string" ? bidder : bidder.handle;
     spot.bids!.push({ bidder: handle, amount, at: new Date().toISOString() });
     spot.currentBid = amount;
@@ -289,7 +324,7 @@ export class Store {
 
   dashboard(actorUserId: string): SellerDashboard {
     const listings = this.order.map(slug => this.listings.get(slug)!).filter(l => l.sellerUserId === actorUserId).map(l => ({
-      id:l.id,slug:l.slug,title:l.title,image:l.image,status:"active" as const,mode:l.mode,currency:l.currency,
+      id:l.id,slug:l.slug,title:l.title,image:l.image,status:l.status,reviewNote:l.reviewNote,mode:l.mode,currency:l.currency,
       sold:l.spots.filter(s=>s.status!=="open").length,open:l.spots.filter(s=>s.status==="open").length,total:l.spots.length,
       revenue:l.spots.filter(s=>s.status==="sold").reduce((sum,s)=>sum+(s.currentBid??s.price),0),
     }));
