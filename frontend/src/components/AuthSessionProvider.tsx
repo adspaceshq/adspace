@@ -11,6 +11,8 @@ export interface AuthSession {
   authenticated: boolean;
   /** Stable Adspaces user ID — compare this, never handles, for owner UI. */
   userId: string | undefined;
+  /** Whether the platform allowlist names this user as a reviewer. */
+  isReviewer: boolean;
   handle: string | undefined;
   name: string | undefined;
   avatar: string | undefined;
@@ -24,6 +26,7 @@ const guest: AuthSession = {
   ready: true,
   authenticated: false,
   userId: undefined,
+  isReviewer: false,
   handle: undefined,
   name: undefined,
   avatar: undefined,
@@ -111,6 +114,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     ready: ready && !exchanging,
     authenticated: Boolean(authenticated && me?.handle),
     userId: me?.id,
+    isReviewer: me?.isReviewer ?? false,
     handle: me?.handle,
     name: me?.name ?? user?.twitter?.name ?? undefined,
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,

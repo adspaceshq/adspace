@@ -149,6 +149,18 @@ export function fetchSellerDashboard(): Promise<SellerDashboard> {
   return apiGet<SellerDashboard>("/api/seller/dashboard");
 }
 
+export function fetchReviewQueue(): Promise<ApiListing[]> {
+  return apiGet<ApiListing[]>("/api/review/queue");
+}
+
+export function approveReviewListing(slug: string): Promise<ApiListing> {
+  return apiPostEmpty<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`);
+}
+
+export function rejectReviewListing(slug: string, reason: string): Promise<ApiListing> {
+  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/reject`, { reason });
+}
+
 export function approveApiSpot(spotId: string): Promise<ApiSpot> {
   return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/approve`, {});
 }
