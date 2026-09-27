@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-27 (Step 1: real seller profile at /{username}).
+Last updated: 2026-09-27 (Step 3: platform review with allowlist).
 
 ---
 
@@ -180,6 +180,8 @@ Full spec: `CONTRACT.md`. Summary:
 
 Errors: `{ "error": string }`. List/claim/bid require the session cookie;
 mutating calls additionally require the `X-CSRF-Token` issued at login.
+A valid Privy Bearer with no session cookie is a 401 (log in again), never
+a 403 — retrying CSRF without a session cannot succeed.
 Identity is always the session user — never the request body. Ownership
 checks compare stable user IDs, not X handles.
 
@@ -485,6 +487,35 @@ docker run -p 8080:8080 adspaces-api
     new) and shows an incomplete-profile nudge until bio + wallet are
     set. Wallet format is validated, ownership is not verified — that
     lands with real payments (gap 2).
+25. **Submit listing lands as `submitted` (2026-09-27, workflow Step 2).**
+    Jev picked strand over interim-publish/auto-approve (0.99), no draft
+    state (0.30), data-URL images (0.77), guarded reopen (0.94).
+    `Listing.status` is `"active" | "submitted" | "closed"` in `CONTRACT.md`,
+    both `types.ts` mirrors, Postgres (CHECK migrated), and the in-memory
+    store. `POST /api/listings` creates `submitted` (hidden from summaries
+    and claim/bid, owner-visible via dashboard + direct link); closing
+    withdraws from any status; reopen resubmits (`closed` → `submitted`,
+    `submitted` → 409, `active` → no-op) so nothing self-publishes before
+    platform review (Step 3). `image` is a `data:image/*` URL ≤ ~3 MB
+    (same mock-grade pattern as buyer logos; `express.json` raised to 4 MB),
+    client-shrunk to 1200px JPEG on `/list`, whose dialog now reads
+    “Submit for review” and lands on `/dashboard` (Submitted badge +
+    Close/Delete, closed rows offer Resubmit). Submissions stay PATCH-editable
+    while pending. Buyer happy-path HTTP coverage is thin until review can
+    activate listings — purchase/authz tests assert the strand (409s) meanwhile.
+26. **Platform review with allowlist (2026-09-27, workflow Step 3).**
+    No admin system: reviewers are named in `PLATFORM_REVIEWERS`
+    (handles or stable user IDs, IDs survive renames; empty = no
+    reviewers). `GET /api/review/queue` + `POST
+    /api/listings/:slug/approve|reject` are session + CSRF + reviewer
+    gated (401/403 otherwise; 404 unknown, 409 not-submitted). Approve →
+    `active` (summaries, claim/bid work again); reject → `closed` with a
+    `reviewNote` (≤500) surfaced on the seller dashboard and cleared on
+    approve/resubmit. Self-approval allowed until RBAC. Buyer happy-path
+    HTTP coverage is restored via approval in the tests (25 pass). The
+    operator sets `PLATFORM_REVIEWERS=@you` (see `backend/.env.example`);
+    reviewers work the `/review` page (`review` added to the profile
+    `RESERVED` set so the route can't collide with a username).
 
 ---
 

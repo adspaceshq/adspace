@@ -14,7 +14,7 @@ X login: Privy OAuth in the browser, then the access token is exchanged here.
 | GET | `/api/auth/me` | cookie | `SessionResponse` |
 | POST | `/api/auth/logout` | cookie + CSRF | `{ ok: true }` |
 
-`SessionUser = { id, did, handle, name?, avatar? }`. `id` is Adspaces' stable user ID. The immutable Privy DID and X subject are stored server-side; `handle` is mutable profile data. `SessionResponse` adds `{ csrfToken, expiresAt }`.
+`SessionUser = { id, did, handle, name?, avatar? }`. `id` is Adspaces' stable user ID. The immutable Privy DID and X subject are stored server-side; `handle` is mutable profile data. `SessionResponse` adds `{ csrfToken, expiresAt, isReviewer }` (`isReviewer` mirrors the `PLATFORM_REVIEWERS` allowlist so the UI can reveal reviewer routes).
 
 List/claim/bid **require** a session. Seller/buyer/bidder is always `req.user.handle` — never the request body.
 
@@ -27,6 +27,9 @@ with zero listings. The profile is public; editing is owner-only.
 |---|---|---|---|---|
 | GET | `/api/users/{handle}` | public | — | `Profile` (404 if unknown) |
 | PATCH | `/api/users/me` | required + CSRF | `{ bio?, payoutWallet? }` | `Profile` |
+| GET | `/api/review/queue` | reviewer (session) | — | `Listing[]` (`submitted`, oldest last) |
+| POST | `/api/listings/{slug}/approve` | reviewer + CSRF | — | `Listing` (`active`) |
+| POST | `/api/listings/{slug}/reject` | reviewer + CSRF | `{ reason? }` | `Listing` (`closed` + `reviewNote`) |
 
 `Profile = { id, handle, displayName?, avatar?, bio, payoutWallet?, verified }`.
 `handle` lookup is case-insensitive with a leading `@` optional. `verified`
@@ -45,7 +48,7 @@ compares stable user IDs, never X handles.
 | GET | `/api/listings` | public | — | `ListingSummary[]` |
 | GET | `/api/listings/{slug}` | public | — | `Listing` (with `spots`) |
 | GET | `/api/seller/dashboard` | required | — | `SellerDashboard` |
-| POST | `/api/listings` | required | `{ title, surface?, story?, fabric?, mode?, currency?, deadline?, artworkClose?, spots?: [{ label?, location?, size?, price, view?, x?, y?, w? }] }` | `Listing` (201) |
+| POST | `/api/listings` | required | `{ title, surface?, story?, image?, fabric?, mode?, currency?, deadline?, artworkClose?, spots?: [{ label?, location?, size?, price, view?, x?, y?, w? }] }` | `Listing` (201, `submitted`) |
 | PATCH | `/api/listings/{slug}` | owner + CSRF | `{ title?, story? }` | `Listing` |
 | POST | `/api/listings/{slug}/close` | owner + CSRF | — | `Listing` |
 | POST | `/api/listings/{slug}/reopen` | owner + CSRF | — | `Listing` |
@@ -58,6 +61,24 @@ compares stable user IDs, never X handles.
 
 ## Rules
 
+- Step 2 (submit): `POST /api/listings` creates the listing as `submitted` —
+  hidden from the marketplace, summaries, and claim/bid (which require
+  `active`), visible to the owner via the dashboard and the direct link.
+  `submitted` goes live only through platform review (next step) — there is
+  no seller-side publish. Closing withdraws from any status; reopening a
+  closed listing resubmits it (`closed` → `submitted`), never activates it;
+  reopening a `submitted` listing is a 409, reopening an `active` one is a
+  no-op. Statuses: `"active" | "submitted" | "closed"`.
+- Listing `image` is the seller's surface photo as a `data:image/*` URL under
+  ~3 MB (mock-grade inline storage until object storage lands, same pattern
+  as buyer logos). Anything else → 400. Omitted → the preset surface photos.
+- Step 3 (review): reviewers are named in `PLATFORM_REVIEWERS` (X handles,
+  `@` optional, or stable user IDs — IDs survive renames). The queue lists
+  `submitted` listings newest-first; approve flips to `active` (visible,
+  buyable) and clears the note; reject closes with `reviewNote` (≤500 chars,
+  else 400) that the seller sees on the dashboard. Both are 404 on unknown
+  slugs, 409 when not awaiting review, 403 for non-reviewers. Self-approval
+  is permitted while reviewers are named individuals — revisit with RBAC.
 - `mode: "fixed"` → claim open spots. Auction spots reject claims (409).
 - `mode: "auction"` → bid only. First bid ≥ starting `price`. Later bids must beat current by `minIncrement` (Vincent: 10 EUR). If `doubleUp: true` (Marc), each takeover doubles.
 - Claiming/bidding a non-open spot → 409.
