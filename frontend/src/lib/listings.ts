@@ -27,6 +27,10 @@ export interface Spot {
   bids?: Bid[];
   claimedBy?: string;
   logoColor?: string;
+  /** Approved (sold) — the only state that accepts artwork intake. */
+  sold?: boolean;
+  /** When the buyer submitted final artwork (Step 7 intake). */
+  artworkSubmittedAt?: string;
 }
 
 export interface MockupSpot {
@@ -65,6 +69,8 @@ export interface Listing {
   seller: { name: string; handle: string; color: string };
   deadline: string;
   endsAt: string;
+  /** Artwork due ISO date (empty = none). */
+  artworkClose?: string;
   priceType: "fixed" | "auction";
   currency?: string;
   minIncrement?: number;
@@ -594,6 +600,13 @@ export function deadlineLabel(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+/** Step 5: lazy deadline — a listing is over once its ISO deadline passes. */
+export function isEnded(iso: string | undefined): boolean {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  return !Number.isNaN(t) && t <= Date.now();
+}
+
 function usableImage(image: string): string {
   return image && !image.startsWith("/demo/") ? image : "";
 }
@@ -627,6 +640,8 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
     bids: s.bids?.map((b) => ({ bidder: b.bidder, amount: b.amount, at: b.at })),
     claimedBy: claimed ? s.buyer : undefined,
     logoColor: actor ? sellerColor(actor) : undefined,
+    sold: s.status === "sold",
+    artworkSubmittedAt: s.artworkSubmittedAt || undefined,
   };
 }
 
@@ -637,7 +652,12 @@ export function applyApiSpotToUi(ui: Spot, api: ApiSpot, mode: ApiMode): Spot {
 export function apiListingToUi(a: ApiListing): Listing {
   const image = usableImage(a.image);
   const spots = a.spots.map((s) => apiSpotToUi(s, a.mode));
-  const description = a.artworkClose ? `${a.story} (Artwork: ${a.artworkClose}.)` : a.story;
+  const closeLabel = (() => {
+    if (!a.artworkClose) return "";
+    const t = new Date(a.artworkClose).getTime();
+    return ` (Artwork due ${Number.isNaN(t) ? a.artworkClose : deadlineLabel(a.artworkClose)}.)`;
+  })();
+  const description = `${a.story}${closeLabel}`;
   // Stickers live on exactly one photo: the lid gets every non-inside spot, the deck only its own.
   // Hand placements ride along — buyers see the seller's exact layout, not a re-layout.
   // Tee listings split across the four model shots; a spot with no recorded
@@ -666,6 +686,7 @@ export function apiListingToUi(a: ApiListing): Listing {
     seller: { name: a.seller, handle: a.sellerHandle, color: sellerColor(a.seller) },
     deadline: deadlineLabel(a.deadline),
     endsAt: a.deadline,
+    artworkClose: a.artworkClose || undefined,
     priceType: a.mode,
     currency: a.currency,
     minIncrement: a.minIncrement,
