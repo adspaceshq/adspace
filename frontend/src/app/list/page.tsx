@@ -46,6 +46,8 @@ export default function ListPage() {
   const isTee = surface === 'apparel'
   const [goal, setGoal] = useState('')
   const [deadline, setDeadline] = useState(() => toDateInput(new Date(Date.now() + 14 * 86_400_000)))
+  // Optional artwork due date: buyers must submit final art by then (empty = none).
+  const [artworkClose, setArtworkClose] = useState('')
   const priceType = 'auction' as const
   const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
   // Id of the spot whose price panel is open — set by dropping or tapping a sticker.
@@ -321,6 +323,7 @@ export default function ListPage() {
       goal: goal.trim() || 'Fund my goal',
       description: '',
       image,
+      artworkClose: artworkClose ? new Date(`${artworkClose}T23:59:00`).toISOString() : undefined,
       surface,
       // The model wears a black tee — record it so the stored value matches the photo.
       fabric: isTee ? '#1b1b20' : undefined,
@@ -459,6 +462,10 @@ export default function ListPage() {
                 <label className="text-[13px] font-semibold" htmlFor="list-deadline">Deadline</label>
                 <input id="list-deadline" type="date" className={field} value={deadline} min={toDateInput(new Date())} onChange={(e) => setDeadline(e.target.value)} required />
               </div>
+            </div>
+            <div className="mb-5 flex flex-col gap-[6px]">
+              <label className="text-[13px] font-semibold" htmlFor="list-artwork-close">Artwork due <span className="font-normal text-[#64748b]">(optional — buyers submit final art by this date)</span></label>
+              <input id="list-artwork-close" type="date" className={field} value={artworkClose} min={toDateInput(new Date())} onChange={(e) => setArtworkClose(e.target.value)} />
             </div>
             <div className="mb-5 flex flex-col gap-[6px]">
               <span className="text-[13px] font-semibold" id="list-photo-label">Surface photo <span className="font-normal text-[#64748b]">(optional)</span></span>
@@ -699,6 +706,12 @@ export default function ListPage() {
                 <dt className="shrink-0 text-[#64748b]">Deadline</dt>
                 <dd className="font-medium">{prettyDeadline(deadline)}</dd>
               </div>
+              {artworkClose && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="shrink-0 text-[#64748b]">Artwork due</dt>
+                  <dd className="font-medium">{prettyDeadline(artworkClose)}</dd>
+                </div>
+              )}
             </dl>
             <ul className="mb-2 space-y-3">
               {preview.spots.map((p) => (
