@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-27 (Step 7: artwork intake).
+Last updated: 2026-09-27 (Get paid: manual USDC + verify).
 
 ---
 
@@ -561,6 +561,63 @@ docker run -p 8080:8080 adspaces-api
     with a new optional due-date input on `/list`. Buyers upload from
     the detail page (sold own spots); reminders are UI surfacing only.
     Tests: new `artwork-intake.test.ts` (35 pass).
+30. **Deliver gated on artwork (2026-09-27, workflow Step 8).**
+    Jev picked the fulfill gate (0.85), gate-only scope (0.81), and buyer
+    receipt (0.80). `fulfill` now requires intake art or the purchase-time
+    logo (else 409 `awaiting artwork`, diagnosed on the failure path) —
+    no new columns, no new endpoints. `fulfilledAt` passes through to the
+    UI: buyers see a DELIVERED marker on own fulfilled spots (artwork
+    controls hide once delivered).     Tests: gate cases in
+    `artwork-intake.test.ts` (36 pass).
+31. **Logo required at purchase; fulfill ungated (2026-09-27).**
+    Simplification the seller asked for: Jev agreed (0.77) that
+    requiring `logoUrl` on claim/bid beats optional-logo plus gated
+    fulfill — every sold spot carries art by construction, no stuck
+    "awaiting artwork" states. `fulfill` is unconditional on sold again;
+    intake stays as an optional art replace (0.84). The buy modal marks
+    the logo required and blocks submit without one; the dashboard nag
+    is gone (quiet Artwork-in marker remains).
+32. **Upload proof (2026-09-27, workflow Step 9).**
+    Jev: required for honest payout (0.66), spot-fields shape (0.97),
+    seller-only (0.91). `POST /api/spots/:id/proof`
+    (`{ photos[1..5], postUrl? }`, seller + CSRF): photos are
+    `data:image/*` ≤3 MB, post must be an X link; fulfilled spots only
+    (409 — fulfill first), seller-only (403), replaces the set. Stored
+    as `proof_photos text[]` + `proof_post` (Postgres) and on the Spot
+    in memory; surfaced on the detail page gallery and in `get`.
+    Dashboard attention keeps fulfilled-without-proof rows as
+    `delivered` (new attention status) with an Upload-proof link; proof
+    clears the cue. Detail page carries the seller upload form (pending
+    spots) and the buyer gallery. Tests: new `proof.test.ts` (39 pass).
+33. **Review period: confirm/dispute (2026-09-27).**
+    Jev: required before payout (0.81), confirm-or-timeout shape (1.0),
+    3-day window (0.99). No scheduler: `POST
+    /api/spots/:id/confirm|dispute|withdraw` are buyer-only (403),
+    fulfilled-only (409). Confirm is idempotent early release; dispute
+    carries an optional reason (≤500, replaced on repeat, blocked once
+    confirmed — confirm first also blocks disputing); withdraw lifts it.
+    `payoutReleased` (shared helper both sides) = undisputed AND
+    (confirmed OR window elapsed), enforced by payout next. Disputes
+    surface in seller attention (`disputed` status + reason). Buyer
+    controls live on own fulfilled rows (Confirm / Dispute w/ reason /
+    Withdraw, days-left, Released marker); no email rail. Tests: new
+    `review-window.test.ts` (42 pass).
+34. **Get paid: manual USDC + verify (2026-09-27).**
+    No custody, no escrow, no Stripe yet: the reviewer moves real USDC
+    from their own wallet and pastes the tx signature as the pay
+    `reference`. Sig-like refs verify amount + destination + USDC mint
+    (mainnet `EPjFW…`, devnet/testnet `4zMM…`, overridable via
+    `USDC_MINT`) against `SOLANA_RPC_URL` (`getTransaction`,
+    jsonParsed); `PAYOUT_REQUIRE_ONCHAIN=1` makes sig + verification
+    mandatory (memos 400). `PLATFORM_FEE_BPS` stays 0 default;
+    `payoutWallet` stays format-validated. Same HTTP shapes — the
+    contract rule text changed, endpoints didn't. Frontend parity fixed
+    too: `ApiSpot`/dashboard types carry the payout record, `/review`
+    has a payouts ops section, buyers see PAID (explorer link) on own
+    spots, dashboard shows Paid out. Tests: `payout-verify.test.ts`
+    (sig/mint/explorer, lenient-vs-strict, stubbed-RPC credit checks);
+    `payout.test.ts` helper fixed to approve via the reviewer
+    (50 pass, 0 fail).
 
 ---
 
@@ -571,8 +628,10 @@ Rough priority, not a commitment:
 1. Image upload + persisting a hand-placed sticker layout (the `/list`
    preview already lets a seller drop, move, and resize stickers, but the
    layout is preview-only — the API has no mockup column).
-2. Real payments: Solana USDC (and/or Stripe), verify `txSignature`,
-   refunds on outbid for `doubleUp` auctions.
+2. Real payments, continued: escrow, Stripe rail, purchase-time on-chain
+   payment (claims/bids still mock-mark), refunds on outbid for
+   `doubleUp` auctions. Manual-USDC payout + verify already shipped
+   (decision 34).
 3. Artwork intake, proof uploads, and buyer notifications.
 4. Wallet login via Privy once money moves.
 5. Listing pause/close controls and richer seller reporting.
