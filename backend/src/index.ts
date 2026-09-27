@@ -3,7 +3,7 @@ import cookieParser from "cookie-parser";
 import { rateLimit } from "express-rate-limit";
 import { Store } from "./store.js";
 import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken } from "./auth.js";
-import { csrfMatches, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
+import { csrfMatches, isReviewer, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
 import type { MarketplaceRepository } from "./market.js";
 import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
@@ -16,6 +16,8 @@ export interface AppDependencies {
   market?: MarketplaceRepository;
   store?: Store;
   profiles?: ProfileRepository;
+  /** X handles or user IDs allowed to review submissions. Defaults to PLATFORM_REVIEWERS. */
+  reviewers?: string[];
   frontendUrl?: string;
   trustProxy?: number;
   chain?: { cluster: SolanaCluster; programId: string };
@@ -41,6 +43,7 @@ export function createApp({
   market,
   store = new Store(),
   profiles = new MemoryProfileRepository(),
+  reviewers = (process.env.PLATFORM_REVIEWERS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
   frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000",
   trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
   chain = { cluster: "devnet", programId: adspacesProgramId },
@@ -52,11 +55,13 @@ export function createApp({
     close: async (slug,user) => store.close(slug,user), reopen: async (slug,user) => store.reopen(slug,user), remove: async (slug,user) => store.remove(slug,user),
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
+    reviewQueue: async () => store.reviewQueue(), approveReview: async slug => store.approveReview(slug),
+    rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
   };
   const app = express();
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
   app.disable("x-powered-by");
-  app.use(express.json({ limit: "100kb" }));
+  app.use(express.json({ limit: "4mb" }));
   app.use(cookieParser());
   app.use((req, res, next) => {
     if (req.headers.origin === frontendUrl) res.header("Access-Control-Allow-Origin", frontendUrl);
@@ -83,7 +88,14 @@ export function createApp({
   };
   const requireUser = (req: Request, res: Response, next: NextFunction) => req.user ? next() : void res.status(401).json({ error: "log in with X" });
   const requireCsrf = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.authSession || !csrfMatches(req.authSession, req.get("x-csrf-token"))) return void res.status(403).json({ error: "invalid CSRF token" });
+    // No session cookie (e.g. expired) but a valid Privy Bearer: the client
+    // must exchange for a fresh session — a CSRF retry can never succeed.
+    if (!req.authSession) return void res.status(401).json({ error: "session required — log out and log in again" });
+    if (!csrfMatches(req.authSession, req.get("x-csrf-token"))) return void res.status(403).json({ error: "invalid CSRF token" });
+    next();
+  };
+  const requireReviewer = (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user || !isReviewer(req.user, reviewers)) return void res.status(403).json({ error: "reviewer access required" });
     next();
   };
 
@@ -102,12 +114,12 @@ export function createApp({
       // Step 1: every login owns a profile row, even with zero listings.
       try { await profiles.upsertFromSession(created.session.user); } catch (e) { console.warn("profile upsert:", e instanceof Error ? e.message : e); }
       res.cookie(sessionCookieName, created.token, cookieOptions());
-      res.json({ ...created.session.user, csrfToken: created.session.csrfToken, expiresAt: created.session.expiresAt.toISOString() });
+      res.json({ ...created.session.user, csrfToken: created.session.csrfToken, expiresAt: created.session.expiresAt.toISOString(), isReviewer: isReviewer(created.session.user, reviewers) });
     } catch (e) { sendErr(res, e); }
   });
   app.get("/api/auth/me", attachUser, requireUser, (req, res) => {
     if (!req.authSession) return void res.status(401).json({ error: "session required" });
-    res.json({ ...req.user!, csrfToken: req.authSession.csrfToken, expiresAt: req.authSession.expiresAt.toISOString() });
+    res.json({ ...req.user!, csrfToken: req.authSession.csrfToken, expiresAt: req.authSession.expiresAt.toISOString(), isReviewer: isReviewer(req.user!, reviewers) });
   });
   app.post("/api/auth/logout", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     await auth.destroySession(req.cookies?.[sessionCookieName] as string | undefined);
@@ -133,6 +145,16 @@ export function createApp({
       ...(typeof body.payoutWallet === "string" ? { payoutWallet: body.payoutWallet } : {}),
     };
     try { res.json(await profiles.updateProfile(req.user!.id, patch)); } catch (e) { sendErr(res, e); }
+  });
+  app.get("/api/review/queue", attachUser, requireUser, requireReviewer, async (_req, res) => {
+    try { res.json(await repo.reviewQueue()); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/listings/:slug/approve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
+    try { res.json(await repo.approveReview(req.params.slug)); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/listings/:slug/reject", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
+    const reason = (req.body as { reason?: unknown } | null)?.reason;
+    try { res.json(await repo.rejectReview(req.params.slug, typeof reason === "string" ? reason : "")); } catch (e) { sendErr(res, e); }
   });
   app.get("/api/listings", async (_req, res) => { try { res.json(await repo.summaries()); } catch(e){sendErr(res,e);} });
   app.get("/api/listings/:slug", async (req, res) => { try { const listing = await repo.get(req.params.slug); listing ? res.json(listing) : res.status(404).json({ error: "listing not found" }); } catch(e){sendErr(res,e);} });
