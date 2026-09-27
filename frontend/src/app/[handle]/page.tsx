@@ -6,7 +6,7 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import ListingCard from '@/components/ListingCard'
 import { useAuthSession } from '@/components/AuthSessionProvider'
-import { listingUrl } from '@/lib/listings'
+import { isEnded, listingUrl } from '@/lib/listings'
 import { fetchProfile, updateMyProfile } from '@/lib/auth-api'
 import type { PublicProfile } from '@/lib/types'
 import { useStore } from '@/components/StoreProvider'
@@ -72,7 +72,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
   }
 
   const mine = listings.filter((l) => {
-    if (l.status !== 'active') return false
+    if (l.status !== 'active' || isEnded(l.endsAt)) return false
     const h = (l.seller.handle ?? '').replace(/^@+/, '').toLowerCase()
     const n = (l.seller.name ?? '').replace(/^@+/, '').toLowerCase()
     return h === clean || n === clean

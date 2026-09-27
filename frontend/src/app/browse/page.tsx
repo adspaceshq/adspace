@@ -7,7 +7,7 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import ListingCard from '@/components/ListingCard'
 import { useStore } from '@/components/StoreProvider'
-import { listingUrl, surfaceLabels } from '@/lib/listings'
+import { isEnded, listingUrl, surfaceLabels } from '@/lib/listings'
 
 export default function BrowsePage() {
   const { listings } = useStore()
@@ -17,7 +17,7 @@ export default function BrowsePage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return listings.filter((l) => {
-      if (l.status !== 'active') return false
+      if (l.status !== 'active' || isEnded(l.endsAt)) return false
       if (surface !== 'all' && l.surface !== surface) return false
       if (!q) return true
       return (

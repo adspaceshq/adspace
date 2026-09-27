@@ -1,6 +1,6 @@
 'use client'
 
-import { cardPhoto, formatMoney, sellerDisplay, surfaceLabels, type Listing } from '@/lib/listings'
+import { cardPhoto, formatMoney, isEnded, sellerDisplay, surfaceLabels, type Listing } from '@/lib/listings'
 import SellerAvatar from '@/components/SellerAvatar'
 
 function SpotProgress({ spots }: { spots: Listing['spots'] }) {
@@ -70,7 +70,7 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         </div>
         <SpotProgress spots={listing.spots} />
         <div className="flex justify-between border-t border-[#e7e5e0] pt-3 text-[13px] text-[#64748b]">
-          <span>Ends {listing.deadline}</span>
+          <span>{isEnded(listing.endsAt) ? `Ended ${listing.deadline}` : `Ends ${listing.deadline}`}</span>
           <span className="font-semibold text-[#16a34a]">
             {soldOut ? 'All claimed' : `${listing.spots.length - claimedCount} spots left`}
           </span>

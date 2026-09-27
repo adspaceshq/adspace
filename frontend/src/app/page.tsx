@@ -16,7 +16,7 @@ import {
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import ListingCard from '@/components/ListingCard'
-import { listingUrl } from '@/lib/listings'
+import { isEnded, listingUrl } from '@/lib/listings'
 import { useStore } from '@/components/StoreProvider'
 
 const steps = [
@@ -61,7 +61,7 @@ const faqs = [
 
 export default function Home() {
   const { listings } = useStore()
-  const live = listings.filter((l) => l.status === 'active' && l.spots.some((s) => !s.claimedBy))
+  const live = listings.filter((l) => l.status === 'active' && !isEnded(l.endsAt) && l.spots.some((s) => !s.claimedBy))
   const openSpots = live.reduce((a, l) => a + l.spots.filter((s) => !s.claimedBy).length, 0)
 
   return (
