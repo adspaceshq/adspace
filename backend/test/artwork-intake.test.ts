@@ -85,6 +85,20 @@ test("intake is buyer-only, sold-only, and needs substance", async () => {
   await owner.post(`/api/spots/${spotId}/artwork`).set("X-CSRF-Token", ownerCsrf).send({ logoUrl: FINAL }).expect(403);
 });
 
+test("fulfill works once sold — the purchase logo is the artwork", async () => {
+  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token], reviewers: ["@owner"] });
+  const owner = request.agent(app);
+  const buyer = request.agent(app);
+  const ownerCsrf = await login(owner, "owner");
+  const buyerCsrf = await login(buyer, "buyer");
+
+  // Logo at purchase: approve, fulfill, done — intake is an optional upgrade.
+  const { slug, spotId } = await soldSpot(owner, ownerCsrf, buyer, buyerCsrf);
+  const delivered = await owner.post(`/api/spots/${spotId}/fulfill`).set("X-CSRF-Token", ownerCsrf).expect(200);
+  assert.equal(typeof delivered.body.fulfilledAt, "string");
+  void slug;
+});
+
 test("intake on a merely claimed spot is refused", async () => {
   const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token], reviewers: ["@owner"] });
   const owner = request.agent(app);
