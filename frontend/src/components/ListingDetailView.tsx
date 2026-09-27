@@ -42,7 +42,7 @@ function ago(iso: string): string {
 }
 
 export default function ListingDetailView({ id, backHref }: { id: string; backHref?: string }) {
-  const { listings, getListing, claimSpot, placeBid, submitArtwork } = useStore()
+  const { listings, getListing, claimSpot, placeBid, submitArtwork, submitProof, reviewSpot } = useStore()
   const listing = getListing(id)
 
   const [modal, setModal] = useState<{ spot: Spot; mode: 'claim' | 'bid' } | null>(null)
@@ -58,6 +58,12 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   // Post-purchase artwork intake: which sold spot the hidden file input serves.
   const [artSpot, setArtSpot] = useState<string | null>(null)
   const [artBusy, setArtBusy] = useState(false)
+  // Delivery proof (Step 9): seller-only form state per fulfilled spot.
+  const [proofSpot, setProofSpot] = useState<string | null>(null)
+  const [proofFiles, setProofFiles] = useState<string[]>([])
+  const [proofPost, setProofPost] = useState('')
+  const [proofBusy, setProofBusy] = useState(false)
+  const [proofError, setProofError] = useState<string | null>(null)
 
   // Brand site → clickable link. Bare domains get https:// so the link works.
   const normalizeWebsite = (raw: string) => {
@@ -210,6 +216,58 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
 
   const shareUrl = (text: string) =>
     `https://x.com/intent/post?text=${encodeURIComponent(text + ` ${window.location.origin}${listingUrl(listing, listings)}`)}`
+
+  const normHandle = (h: string) => h.trim().replace(/^@+/, '').toLowerCase()
+  const isOwner = !!x?.handle && normHandle(x.handle) === normHandle(listing.seller.handle || listing.seller.name)
+
+  // Proof photos upload at full quality (no shrink), capped at the API's ~3 MB each.
+  const onProofFiles = (files: FileList | null) => {
+    if (!files || proofBusy) return
+    const picked = Array.from(files).slice(0, 5 - proofFiles.length)
+    if (!picked.length) {
+      showToast('At most 5 proof photos.')
+      return
+    }
+    setProofBusy(true)
+    setProofError(null)
+    Promise.all(picked.map((file) => new Promise<string>((resolve, reject) => {
+      if (!file.type.startsWith('image/')) reject(new Error('Proof photos must be image files.'))
+      else if (file.size > 3 * 1024 * 1024) reject(new Error('Proof photos must be under 3 MB each.'))
+      else {
+        const reader = new FileReader()
+        reader.onload = () => {
+          const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+          if (dataUrl.startsWith('data:image/')) resolve(dataUrl)
+          else reject(new Error('Could not read that file.'))
+        }
+        reader.onerror = () => reject(new Error('Could not read that file.'))
+        reader.readAsDataURL(file)
+      }
+    }))).then(
+      (dataUrls) => { setProofFiles((prev) => [...prev, ...dataUrls].slice(0, 5)); setProofBusy(false) },
+      (e) => { setProofBusy(false); setProofError(e instanceof Error ? e.message : 'Could not read those files.') },
+    )
+  }
+
+  const saveProof = async (spotId: string) => {
+    if (!proofFiles.length) {
+      setProofError('Add at least one photo.')
+      return
+    }
+    setProofBusy(true)
+    setProofError(null)
+    try {
+      await submitProof(listing.id, spotId, { photos: proofFiles, ...(proofPost.trim() ? { postUrl: proofPost.trim() } : {}) })
+      setProofSpot(null)
+      setProofFiles([])
+      setProofPost('')
+      showToast('Proof uploaded.')
+    } catch (e) {
+      setProofError(e instanceof Error ? e.message : 'Could not upload proof.')
+    } finally {
+      setProofBusy(false)
+    }
+  }
 
   // Actor: verified X handle when Privy is configured, manual name in demo mode.
   const actor = PRIVY_ENABLED ? (x?.handle ?? '') : name.trim()
@@ -417,6 +475,115 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           aria-label="Upload final artwork"
           onChange={(e) => { if (artSpot) onArtFile(artSpot, e.target.files?.[0]); e.target.value = '' }}
         />
+
+        {(() => {
+          const proven = listing.spots.filter((s) => s.proofPhotos?.length)
+          const pending = isOwner ? listing.spots.filter((s) => s.fulfilledAt && !s.proofPhotos?.length) : []
+          if (!proven.length && !pending.length) return null
+          const openForm = (sp: Spot) => {
+            setProofSpot(sp.id)
+            setProofFiles(sp.proofPhotos ? [...sp.proofPhotos] : [])
+            setProofPost(sp.proofPost ?? '')
+            setProofError(null)
+          }
+          const form = (sp: Spot) => (
+            <div className="mt-3 rounded-xl bg-[#f6f6f4] p-4">
+              {proofFiles.length > 0 && (
+                <div className="mb-3 flex flex-wrap gap-2">
+                  {proofFiles.map((src, i) => (
+                    <span key={i} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt="" className="h-20 w-20 rounded-lg border border-[#e7e5e0] object-cover" />
+                      <button
+                        type="button"
+                        aria-label="Remove photo"
+                        onClick={() => setProofFiles((prev) => prev.filter((_, j) => j !== i))}
+                        className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-[#020817] text-[11px] text-white"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-3">
+                <label htmlFor={`proof-file-${sp.id}`} className="cursor-pointer rounded-full border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium transition hover:border-[#4166fb]">
+                  {proofBusy ? 'Reading…' : 'Add photos'}
+                </label>
+                <input
+                  id={`proof-file-${sp.id}`}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => { onProofFiles(e.target.files); e.target.value = '' }}
+                />
+                <input
+                  value={proofSpot === sp.id ? proofPost : ''}
+                  onChange={(e) => setProofPost(e.target.value)}
+                  placeholder="x.com/… post link (optional)"
+                  spellCheck={false}
+                  className="min-w-[200px] flex-1 rounded-lg border border-[#e7e5e0] bg-white px-3 py-2 text-[13px] outline-none transition focus:border-[#4166fb]"
+                />
+                <button
+                  type="button"
+                  onClick={() => void saveProof(sp.id)}
+                  disabled={proofBusy || !proofFiles.length}
+                  className="rounded-full bg-[#020817] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
+                >
+                  {proofBusy ? 'Uploading…' : 'Upload proof'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setProofSpot(null); setProofFiles([]); setProofPost(''); setProofError(null) }}
+                  className="text-[13px] font-medium text-[#64748b] transition hover:text-[#020817]"
+                >
+                  Cancel
+                </button>
+              </div>
+              {proofError && proofSpot === sp.id && <p className="mt-2 text-[13px] text-[#dc2626]">{proofError}</p>}
+            </div>
+          )
+          return (
+            <div className="mx-auto mt-10 max-w-5xl">
+              <h2 className="mb-1 text-2xl">Proof of delivery.</h2>
+              <p className="mb-4 text-sm text-[#64748b]">Photos from the finished campaign, pinned by the seller.</p>
+              <div className="flex flex-col gap-3">
+                {proven.map((sp) => (
+                  <div key={sp.id} className="rounded-2xl border border-[#e7e5e0] bg-white px-5 py-4">
+                    <p className="text-sm font-semibold">{sp.label} <span className="font-normal text-[#64748b]">· {sp.claimedBy ?? sp.bidBy}</span></p>
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      {sp.proofPhotos!.map((src, i) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img key={i} src={src} alt={`${sp.label} proof ${i + 1}`} className="h-28 w-28 rounded-xl border border-[#e7e5e0] object-cover" />
+                      ))}
+                    </div>
+                    {sp.proofPost && (
+                      <a href={sp.proofPost} target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-[13px] font-semibold text-[#4166fb] hover:underline">
+                        View the X post ↗
+                      </a>
+                    )}
+                    {isOwner && (proofSpot === sp.id ? form(sp) : (
+                      <button type="button" onClick={() => openForm(sp)} className="mt-3 text-[13px] font-medium text-[#64748b] transition hover:text-[#020817]">
+                        Replace proof
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {pending.map((sp) => (
+                  <div key={sp.id} className="rounded-2xl border border-dashed border-[#d8d6d0] bg-white px-5 py-4">
+                    <p className="text-sm font-semibold">{sp.label} <span className="font-normal text-[#64748b]">· delivered, no proof yet</span></p>
+                    {proofSpot === sp.id ? form(sp) : (
+                      <button type="button" onClick={() => openForm(sp)} className="mt-3 inline-flex items-center rounded-full bg-[#020817] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#0f1a33]">
+                        Add proof
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
 
         {allBids.length > 0 && (
           <div className="mx-auto mt-10 max-w-5xl">
