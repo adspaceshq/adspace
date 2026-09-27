@@ -283,6 +283,11 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       }
     }
     if (!actor) return
+    if (!logo) {
+      showToast('Add your logo — every spot carries art.')
+      setStep('brand')
+      return
+    }
     const extras = {
       ...(logo ? { logoUrl: logo } : {}),
       ...(normalizeWebsite(website) ? { website: normalizeWebsite(website) } : {}),
@@ -668,7 +673,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     />
                   </div>
                   <div className="mb-5 flex flex-col gap-[6px]">
-                    <span className="text-[13px] font-semibold" id="modal-logo-label">Logo <span className="font-normal text-[#64748b]">(optional)</span></span>
+                    <span className="text-[13px] font-semibold" id="modal-logo-label">Logo <span className="font-normal text-[#64748b]">(required — it goes on the real thing)</span></span>
                     <div className="flex items-center gap-3">
                       {logo && (
                         // eslint-disable-next-line @next/next/no-img-element
