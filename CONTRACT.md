@@ -55,9 +55,15 @@ compares stable user IDs, never X handles.
 | POST | `/api/listings/{slug}/close` | owner + CSRF | — | `Listing` |
 | POST | `/api/listings/{slug}/reopen` | owner + CSRF | — | `Listing` |
 | DELETE | `/api/listings/{slug}` | owner + CSRF | — | `{ ok: true }` |
-| POST | `/api/spots/{id}/claim` | required | `{ website?, logoUrl? }` | `Spot` |
-| POST | `/api/spots/{id}/bid` | required | `{ amount, website?, logoUrl? }` | `Spot` |
+| POST | `/api/spots/{id}/claim` | required | `{ website?, logoUrl }` | `Spot` |
+| POST | `/api/spots/{id}/bid` | required | `{ amount, website?, logoUrl }` | `Spot` |
 | POST | `/api/spots/{id}/artwork` | buyer + CSRF | `{ website?, logoUrl? }` | `Spot` |
+| POST | `/api/spots/{id}/proof` | seller + CSRF | `{ photos: string[1..5], postUrl? }` | `Spot` |
+| POST | `/api/spots/{id}/confirm` | buyer + CSRF | — | `Spot` (idempotent) |
+| POST | `/api/spots/{id}/dispute` | buyer + CSRF | `{ reason? }` | `Spot` (replaces reason) |
+| POST | `/api/spots/{id}/withdraw` | buyer + CSRF | — | `Spot` |
+| GET | `/api/review/payable` | reviewer (session) | — | `PayoutItem[]` (released, unpaid) |
+| POST | `/api/spots/{id}/pay` | reviewer + CSRF | `{ reference? }` | `Spot` (idempotent) |
 | POST | `/api/spots/{id}/approve` | owner + CSRF | — | `Spot` |
 | POST | `/api/spots/{id}/reject` | owner + CSRF | — | `Spot` |
 | POST | `/api/spots/{id}/fulfill` | owner + CSRF | — | `Spot` |
@@ -90,14 +96,44 @@ compares stable user IDs, never X handles.
 - Listing `image` is the seller's surface photo as a `data:image/*` URL under
   ~3 MB (mock-grade inline storage until object storage lands, same pattern
   as buyer logos). Anything else → 400. Omitted → the preset surface photos.
-- Step 7 (artwork): `artworkClose` is an optional ISO date (empty = none,
-  else must parse, 400). After a spot is sold, its buyer submits final
-  artwork with `POST /api/spots/{id}/artwork` — same asset rules, no client
-  shrink, at least one of `website`/`logoUrl` required. Only the buyer
-  (403 otherwise), only sold spots (409), locked after `artworkClose`
-  (409). Intake replaces the purchase assets in place and stamps
-  `artworkSubmittedAt`, which is how the seller tells awaiting-artwork
-  from ready. Reminders are UI surfacing only — no email rail exists.
+- Buying carries the art: `logoUrl` is required on claim/bid (400 if
+  missing), so every sold spot has something to produce with — no second
+  step, no stuck states. Fulfill is unconditional on sold spots again.
+- Step 9 (proof): after fulfilling, the seller pins delivery evidence to
+  the spot with `POST /api/spots/:id/proof` — 1–5 photos as `data:image/*`
+  URLs (≤3 MB each, same mock-grade pattern) plus an optional X-post link
+  (`https` on `x.com`/`twitter.com`). Seller-only (403), fulfilled spots
+  only (409 — fulfill first), replaces the previous set. Buyers read the
+  proof on the detail page; it is the verification input for payout.
+- Review period (lazy 3-day window from `fulfilledAt`, no scheduler): the
+  buyer confirms receipt (`confirm`, idempotent, early release), disputes
+  (`dispute`, optional `reason` ≤500, replaced on repeat, blocked once
+  confirmed), or withdraws their dispute (`withdraw`). All three are
+  buyer-only (403), fulfilled-only (409). A spot is payout-released when
+  undisputed AND (confirmed OR the window elapsed) — computed from the
+  timestamps, enforced by payout. Disputes surface in seller attention.
+- Get paid (manual USDC; no custody, no escrow yet): the reviewer sends the
+  USDC transfer from their own wallet, then records it with `POST
+  /api/spots/:id/pay` (reviewer + CSRF, `{ reference }` = the Solana
+  transaction signature, ≤200 chars). Only released spots (409 otherwise);
+  the seller must have a payout wallet set (409); idempotent — paying twice
+  returns the same record. A sig-like reference is verified on-chain when
+  `SOLANA_RPC_URL` is set (amount + destination + USDC mint for the
+  cluster); set `PAYOUT_REQUIRE_ONCHAIN=1` to require a signature plus
+  verification and reject memo-style references (400). Each record snapshots
+  `amount`, `fee` (`PLATFORM_FEE_BPS`, default 0 — shown, not moved),
+  `net`, and `destination`. `GET /api/review/payable` lists
+  released-but-unpaid spots for the ops console (`/review` payouts
+  section). Paid sums surface on the dashboard; buyers see PAID on own
+  spots (explorer link when the reference is a signature). Purchase-time
+  claims/bids stay mock-marked — no money moves until this step.
+- Step 7 (artwork, optional upgrade): `artworkClose` is an optional ISO
+  date (empty = none, else must parse, 400). After a spot is sold, its
+  buyer may replace the purchase art with `POST /api/spots/:id/artwork`
+  — same asset rules, no client shrink, at least one of `website`/`logoUrl`
+  required. Only the buyer (403 otherwise), only sold spots (409), locked
+  after `artworkClose` (409). Intake replaces the assets in place and
+  stamps `artworkSubmittedAt`. Reminders are UI surfacing only.
 - Step 3 (review): reviewers are named in `PLATFORM_REVIEWERS` (X handles,
   `@` optional, or stable user IDs — IDs survive renames). The queue lists
   `submitted` listings newest-first; approve flips to `active` (visible,
