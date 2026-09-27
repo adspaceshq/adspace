@@ -7,7 +7,7 @@ import Header from '@/components/Header'
 import SpecSheet from '@/components/SpecSheet'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { INSIDE_VIEW_ID, LID_VIEW_ID, formatMoney, gearInsideView, gearPhotoView, sellerListings, sellerUrl, type LidPlacement, type Listing } from '@/lib/listings'
+import { INSIDE_VIEW_ID, LID_VIEW_ID, TEE_BACK_VIEW_ID, TEE_FRONT_VIEW_ID, TEE_LEFT_VIEW_ID, TEE_RIGHT_VIEW_ID, formatMoney, freeSlotOnView, gearInsideView, gearPhotoView, pinDraftPositions, teeBackView, teeFrontView, teeLeftView, teeRightView, type LidPlacement, type Listing } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -35,12 +35,15 @@ const prettyDeadline = (input: string) => {
 }
 
 export default function ListPage() {
-  const { listings, addListing } = useStore()
+  const { addListing } = useStore()
   const router = useRouter()
 
   const [sellerName, setSellerName] = useState('')
   const [title, setTitle] = useState('')
-  const surface = 'gear'
+  // Second surface alongside the Mac: 'gear' is the MacBook lid,
+  // 'apparel' is the T-shirt (model-photo editor and buyer view).
+  const [surface, setSurface] = useState<'gear' | 'apparel'>('gear')
+  const isTee = surface === 'apparel'
   const [goal, setGoal] = useState('')
   const [deadline, setDeadline] = useState(() => toDateInput(new Date(Date.now() + 14 * 86_400_000)))
   const priceType = 'auction' as const
@@ -51,10 +54,62 @@ export default function ListPage() {
   const [activeView, setActiveView] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Review gate: submitting the form (button or Enter) only opens the confirm dialog —
-  // nothing goes live until "Go live" is clicked there.
+  // nothing is submitted until "Submit for review" is clicked there.
   const [reviewing, setReviewing] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [x, setX] = useState<XIdentity | null>(null)
+  // Optional surface photo: replaces the preset Mac/T-shirt shots for buyers.
+  const [image, setImage] = useState('')
+  const [imageBusy, setImageBusy] = useState(false)
+  const [imageError, setImageError] = useState<string | null>(null)
+
+  // Shrink uploads to a listing-grade photo (max 1200px) so the data URL stays
+  // well under the API's ~3 MB cap. Same mock-grade inline pattern as logos.
+  const photoDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      for (const size of [1200, 800, 400]) {
+        const scale = Math.min(1, size / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(img.width * scale))
+        canvas.height = Math.max(1, Math.round(img.height * scale))
+        const ctx = canvas.getContext('2d')
+        if (!ctx) break
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        const jpg = canvas.toDataURL('image/jpeg', 0.85)
+        if (jpg.length <= 2_500_000 || size === 400) {
+          resolve(jpg)
+          return
+        }
+      }
+      reject(new Error('could not shrink photo'))
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('could not read photo'))
+    }
+    img.src = url
+  })
+
+  const onPhotoFile = (file: File | undefined) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setImageError('Photo must be an image file.')
+      return
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setImageError('Photo must be under 8 MB.')
+      return
+    }
+    setImageBusy(true)
+    setImageError(null)
+    photoDataUrl(file).then(
+      (dataUrl) => { setImage(dataUrl); setImageBusy(false) },
+      () => { setImageError('Could not read that file.'); setImageBusy(false) },
+    )
+  }
 
   const updateSpot = (i: number, patch: Partial<SpotDraft>) =>
     setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)))
@@ -68,8 +123,48 @@ export default function ListPage() {
       size: s.size.trim() || 'M',
       price: Number(s.price) || 0,
     }))
-    // Stickers the seller placed or sized by hand; everything else auto-lays out. Each spot belongs to
-    // one view, so the deck only ever draws the spots actually dropped on it.
+    // Tee branch first: each spot lives on the model shot it was dropped on
+    // (front, back, either side) — unlabeled drafts start on the front.
+    // Otherwise stickers the seller placed or sized by hand; everything else
+    // auto-lays out, each spot on one view (lid, or the deck when dropped there).
+    if (isTee) {
+      const teeIds: Record<string, string[]> = {
+        [TEE_FRONT_VIEW_ID]: [],
+        [TEE_BACK_VIEW_ID]: [],
+        [TEE_LEFT_VIEW_ID]: [],
+        [TEE_RIGHT_VIEW_ID]: [],
+      }
+      const teePlaced: Record<string, LidPlacement> = {}
+      pspots.forEach((p, i) => {
+        const draft = spots[i]
+        const view = draft.view ?? TEE_FRONT_VIEW_ID
+        ;(teeIds[view] ??= []).push(p.id)
+        if (draft.x != null || draft.y != null || draft.w != null) {
+          teePlaced[p.id] = { x: draft.x, y: draft.y, w: draft.w }
+        }
+      })
+      return {
+        id: pid,
+        title: title.trim() || 'Your listing',
+        goal: '',
+        description: '',
+        image: '',
+        surface,
+        seller: { name: '', handle: '', color: '#4166fb' },
+        deadline: '',
+        endsAt: '',
+        priceType,
+        spots: pspots,
+        mockup: {
+          views: [
+            teeFrontView(teeIds[TEE_FRONT_VIEW_ID], teePlaced),
+            teeBackView(teeIds[TEE_BACK_VIEW_ID], teePlaced),
+            teeLeftView(teeIds[TEE_LEFT_VIEW_ID], teePlaced),
+            teeRightView(teeIds[TEE_RIGHT_VIEW_ID], teePlaced),
+          ],
+        },
+      }
+    }
     const lidIds: string[] = []
     const deckIds: string[] = []
     const lidPlaced: Record<string, LidPlacement> = {}
@@ -99,12 +194,14 @@ export default function ListPage() {
       // Lid first (the main sticker surface), then the deck. Each view draws only its own spots.
       mockup: { views: [gearPhotoView(lidIds, lidPlaced), gearInsideView(deckIds, deckPlaced)] },
     }
-  }, [spots, title, surface, priceType])
+  }, [spots, title, surface, isTee, priceType])
 
-  // A click on bare photo drops a spot there — on the view that was clicked — and opens
-  // the side panel so the price is the next thing typed. Preview ids are positional: the new spot is last.
+  // A click on bare photo drops a spot exactly where clicked — on the view that was
+  // clicked — and opens the side panel so the price is the next thing typed. Existing
+  // stickers are pinned first, so nothing already placed jumps to a new auto slot.
+  // Preview ids are positional: the new spot is last.
   const placeSpot = (x: number, y: number, viewId: string) => {
-    setSpots((prev) => [...prev, { label: '', size: '', price: '', view: viewId, x, y }])
+    setSpots((prev) => [...pinDraftPositions(prev, isTee ? TEE_FRONT_VIEW_ID : LID_VIEW_ID), { label: '', size: '', price: '', view: viewId, x, y }])
     setActiveView(viewId)
     setEditingSpot(`preview-s${spots.length + 1}`)
   }
@@ -123,13 +220,15 @@ export default function ListPage() {
     setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, w: w ?? undefined } : s)))
   }
 
-  // Remove from the sticker's dot (or Delete on a focused sticker). Keeps one spot. Removing shifts the
-  // positional preview ids, so close the price panel rather than leave it pointing at the wrong spot.
+  // Remove from the sticker's dot (or Delete on a focused sticker). Keeps one spot.
+  // Pinning first means the survivors stay exactly where they are — removing no
+  // longer re-lays-out the rest. Removing shifts the positional preview ids, so
+  // close the price panel rather than leave it pointing at the wrong spot.
   const removeSpot = (spotId: string) => {
     const i = preview.spots.findIndex((p) => p.id === spotId)
     if (i < 0 || spots.length <= 1) return
     setEditingSpot(null)
-    setSpots((prev) => prev.filter((_, j) => j !== i))
+    setSpots((prev) => pinDraftPositions(prev, isTee ? TEE_FRONT_VIEW_ID : LID_VIEW_ID).filter((_, j) => j !== i))
   }
 
   // Index of the spot the price panel is open for; -1 keeps the panel hidden.
@@ -142,25 +241,36 @@ export default function ListPage() {
   const total = priced.reduce((a, b) => a + b, 0)
   const currency = preview.currency ?? 'USD'
 
+  // Row click jumps the Mac to that sticker: switch to its view (lid/inside), select it so the
+  // price panel opens next to it, and bring the Mac into view on small screens.
   const addSticker = () => {
     if (spots.length >= 60) {
       setError('Max 60 spots per listing.')
       return
     }
-    setSpots((prev) => [...prev, { label: '', size: '', price: '' }])
-    setActiveView(LID_VIEW_ID)
-    setEditingSpot(`preview-s${spots.length + 1}`)
+    // Pin first for the same reason as click-to-place; the new sticker takes the
+    // emptiest preset slot on the main view instead of triggering a re-layout.
+    // Tee zones land on the front print area; Mac stickers on the lid.
+    const mainView = isTee ? TEE_FRONT_VIEW_ID : LID_VIEW_ID
+    const pinned = pinDraftPositions(spots, isTee ? TEE_FRONT_VIEW_ID : LID_VIEW_ID)
+    const taken = pinned.filter((s) => (s.view ?? mainView) === mainView).map((s) => ({ x: s.x ?? 50, y: s.y ?? 50 }))
+    const slot = freeSlotOnView(taken, mainView)
+    setSpots([...pinned, { label: '', size: '', price: '', view: mainView, x: slot.x, y: slot.y }])
+    setActiveView(mainView)
+    setEditingSpot(`preview-s${pinned.length + 1}`)
   }
 
-  // Row click jumps the Mac to that sticker: switch to its view (lid/inside), select it so the
-  // price panel opens next to it, and bring the Mac into view on small screens.
+  // Row click jumps the preview to that sticker: switch to its view (lid/inside),
+  // select it so the price panel opens next to it, and bring
+  // the preview into view on small screens.
   const focusSticker = (rowId: string, i: number) => {
+    const v = spots[i]?.view
     setEditingSpot(rowId)
-    setActiveView(spots[i]?.view === INSIDE_VIEW_ID ? INSIDE_VIEW_ID : LID_VIEW_ID)
+    setActiveView(isTee ? (v ?? TEE_FRONT_VIEW_ID) : v === INSIDE_VIEW_ID ? v : LID_VIEW_ID)
     document.getElementById('mac-preview')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }
 
-  // Review gate: only the Publish CTA opens the confirm dialog — Enter anywhere
+  // Review gate: only the Submit CTA opens the confirm dialog — Enter anywhere
   // in the form (basics or the sticker popover) must not submit.
   const review = () => {
     // Seller: verified X session when Privy is configured, manual name in demo mode.
@@ -194,21 +304,26 @@ export default function ListPage() {
     setReviewing(true)
   }
 
-  // Fired only from the review dialog's "Go live" button — this is the point of no return.
-  const goLive = async () => {
+  // Fired only from the review dialog's "Submit for review" button — this is the
+  // point of no return. The listing lands as submitted: hidden until review.
+  const submitListing = async () => {
     if (publishing) return
     setPublishing(true)
     const seller = PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()
     const id = `user-${Date.now()}`
     const spotIds = spots.map((_, i) => `${id}-s${i + 1}`)
-    const onDeck = (i: number) => spots[i].view === INSIDE_VIEW_ID
+    const spotView = (i: number) =>
+      isTee ? (spots[i].view ?? 'tee-front') : spots[i].view === INSIDE_VIEW_ID ? 'inside' : 'lid'
+    const onDeck = (i: number) => spotView(i) === 'inside'
     const listing: Listing = {
       id,
       title: title.trim(),
       goal: goal.trim() || 'Fund my goal',
       description: '',
-      image: '',
+      image,
       surface,
+      // The model wears a black tee — record it so the stored value matches the photo.
+      fabric: isTee ? '#1b1b20' : undefined,
       seller: { name: seller, handle: PRIVY_ENABLED ? seller : '', color: '#4166fb' },
       deadline: prettyDeadline(deadline),
       endsAt: new Date(`${deadline}T23:59:00`).toISOString(),
@@ -218,30 +333,38 @@ export default function ListPage() {
         label: s.label.trim() || `Spot ${i + 1}`,
         size: s.size.trim() || 'M',
         price: Number(s.price),
-        view: onDeck(i) ? 'inside' : 'lid',
+        view: spotView(i),
+        x: s.x,
+        y: s.y,
+        w: s.w,
       })),
       mockup: {
-        // The deck keeps the spots the seller dropped there; positions and sizes are preview-only, so
-        // both views auto-lay out on publish (see the note under the preview).
-        views: [
-          gearPhotoView(spotIds.filter((_, i) => !onDeck(i))),
-          gearInsideView(spotIds.filter((_, i) => onDeck(i))),
-        ],
+        // The deck keeps the spots the seller dropped there. Positions and sizes ride
+        // on each spot (x/y/w), so buyers see this exact layout — the views below are
+        // only the seller's working copy.
+        views: isTee
+          ? [
+              teeFrontView(spotIds.filter((_, i) => spotView(i) === 'tee-front')),
+              teeBackView(spotIds.filter((_, i) => spotView(i) === 'tee-back')),
+              teeLeftView(spotIds.filter((_, i) => spotView(i) === 'tee-left')),
+              teeRightView(spotIds.filter((_, i) => spotView(i) === 'tee-right')),
+            ]
+          : [
+              gearPhotoView(spotIds.filter((_, i) => !onDeck(i))),
+              gearInsideView(spotIds.filter((_, i) => onDeck(i))),
+            ],
       },
     }
     try {
       await addListing(listing)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not publish. Try again.')
+      setError(err instanceof Error ? err.message : 'Could not submit. Try again.')
       setReviewing(false)
       setPublishing(false)
       return
     }
-    // New space goes live as the seller's newest — oldest-first it lands last,
-    // so its short key is mac-N (or plain mac for their first).
-    const existingCount = sellerListings(listings, seller).length
-    const shortKey = existingCount === 0 ? 'mac' : `mac-${existingCount + 1}`
-    router.push(`${sellerUrl(seller)}/${shortKey}`)
+    // Submissions land as submitted — the dashboard shows the pending state.
+    router.push('/dashboard')
   }
 
   return (
@@ -252,9 +375,9 @@ export default function ListPage() {
         <div className="mb-6 text-center">
           <p className="mb-3 flex items-center justify-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-[#64748b]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
-            Mac-only · auction · mock — no money moves
+            {isTee ? 'T-shirt · auction · mock — no money moves' : 'Mac-only · auction · mock — no money moves'}
           </p>
-          <h1 className="mb-2" style={{ fontSize: '40px' }}>List your Mac lid.</h1>
+          <h1 className="mb-2" style={{ fontSize: '40px' }}>{isTee ? 'List your T-shirt.' : 'List your Mac lid.'}</h1>
           <p className="text-[16px] text-[#64748b]">
             {spots.length} sticker{spots.length === 1 ? '' : 's'}
             {floor > 0 ? ` · from ${formatMoney(floor, currency)}` : ' · set a starting bid below'}
@@ -266,10 +389,39 @@ export default function ListPage() {
           <section className="mx-auto max-w-[640px]">
             <h2 className="mb-6 text-center text-[22px]">The basics</h2>
             <div className="mb-5 flex flex-col gap-[6px]">
-              <span className="text-[13px] font-semibold">Surface</span>
-              <p className="text-[15px] text-[#020817]">
-                MacBook lid <span className="text-[#64748b]">· auction · only surface for now</span>
-              </p>
+              <span className="text-[13px] font-semibold" id="list-surface-label">Surface</span>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-labelledby="list-surface-label">
+                {([
+                  { key: 'gear', title: 'MacBook lid', sub: 'stickers · auction' },
+                  { key: 'apparel', title: 'T-shirt', sub: 'print zones' },
+                ] as const).map((opt) => {
+                  const selected = surface === opt.key
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => {
+                        if (surface === opt.key) return
+                        // Switching surfaces resets placements: lid % and tee % are different photos.
+                        setSurface(opt.key)
+                        setSpots((prev) => prev.map((s) => ({ label: s.label, size: s.size, price: s.price })))
+                        setEditingSpot(null)
+                        setActiveView(null)
+                      }}
+                      className={`rounded-xl border px-4 py-3 text-left transition ${
+                        selected
+                          ? 'border-[#4166fb] bg-[#e9edfe]/50 shadow-[0_0_0_3px_#e9edfe]'
+                          : 'border-[#e7e5e0] bg-white hover:border-[#c3cdfd]'
+                      }`}
+                    >
+                      <span className="block text-[15px] font-semibold text-[#020817]">{opt.title}</span>
+                      <span className="block text-[13px] text-[#64748b]">{opt.sub}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
             {/* Seller identity comes from the X session — never a typed name — so there is
                 no "Your name" field when Privy login is on. Demo mode (no Privy) keeps it. */}
@@ -296,32 +448,70 @@ export default function ListPage() {
             )}
             <div className="mb-5 flex flex-col gap-[6px]">
               <label className="text-[13px] font-semibold" htmlFor="list-title">Title</label>
-              <input id="list-title" className={field} placeholder="Put your brand on my MacBook lid" value={title} onChange={(e) => setTitle(e.target.value)} required />
+                <input id="list-title" className={field} placeholder={isTee ? 'Put your brand on my T-shirt' : 'Put your brand on my MacBook lid'} value={title} onChange={(e) => setTitle(e.target.value)} required />
             </div>
             <div className="mb-5 grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-[6px]">
                 <label className="text-[13px] font-semibold" htmlFor="list-goal">Goal</label>
-                <input id="list-goal" className={field} placeholder="Fund my MacBook" value={goal} onChange={(e) => setGoal(e.target.value)} />
+                <input id="list-goal" className={field} placeholder={isTee ? 'Fund my drop' : 'Fund my MacBook'} value={goal} onChange={(e) => setGoal(e.target.value)} />
               </div>
               <div className="flex flex-col gap-[6px]">
                 <label className="text-[13px] font-semibold" htmlFor="list-deadline">Deadline</label>
                 <input id="list-deadline" type="date" className={field} value={deadline} min={toDateInput(new Date())} onChange={(e) => setDeadline(e.target.value)} required />
               </div>
             </div>
+            <div className="mb-5 flex flex-col gap-[6px]">
+              <span className="text-[13px] font-semibold" id="list-photo-label">Surface photo <span className="font-normal text-[#64748b]">(optional)</span></span>
+              {image ? (
+                <div className="flex items-center gap-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={image} alt="Surface preview" className="h-20 w-32 rounded-xl border border-[#e7e5e0] object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => { setImage(''); setImageError(null) }}
+                    className="text-[13px] font-medium text-[#dc2626] transition hover:text-[#991b1b]"
+                  >
+                    Remove photo
+                  </button>
+                </div>
+              ) : (
+                <label
+                  htmlFor="list-photo"
+                  aria-labelledby="list-photo-label"
+                  className="flex cursor-pointer items-center justify-center rounded-xl border border-dashed border-[#d8d6d0] bg-white px-4 py-6 text-center text-[14px] text-[#64748b] transition hover:border-[#4166fb] hover:text-[#020817]"
+                >
+                  {imageBusy ? 'Reading photo…' : 'Upload your own surface photo — buyers see it instead of the preset shots.'}
+                </label>
+              )}
+              <input
+                id="list-photo"
+                type="file"
+                accept="image/*"
+                className="sr-only"
+                onChange={(e) => { onPhotoFile(e.target.files?.[0]); e.target.value = '' }}
+              />
+              {imageError && <p className="text-sm font-medium text-[#dc2626]">{imageError}</p>}
+            </div>
           </section>
 
           <section>
-            <h2 className="mb-2 text-center text-[22px]">Stickers</h2>
-            <p className="mx-auto mb-8 max-w-[560px] text-center text-[14px] text-[#64748b]">Click the lid to drop a sticker, or add one below. Tap a sticker to name and price it.</p>
+            <h2 className="mb-2 text-center text-[22px]">{isTee ? 'Print zones' : 'Stickers'}</h2>
+            <p className="mx-auto mb-8 max-w-[560px] text-center text-[14px] text-[#64748b]">
+              {isTee
+                ? 'Click a view — front, back, either side — to drop a print zone, or add one below. Tap a zone to name and price it.'
+                : 'Click the lid to drop a sticker, or add one below. Tap a sticker to name and price it.'}
+            </p>
             {/* One toolbar for the whole section: count left, Lid/Inside center, add right —
                 so the row reads as a single line instead of two half-headers. */}
             <div className="mb-6 flex flex-wrap items-center gap-x-3 gap-y-3">
               <span className="mr-auto font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-[#64748b]">
                 {spots.length} sticker{spots.length === 1 ? '' : 's'}
               </span>
+              {preview.mockup.views.length > 1 && (
               <div className="flex gap-2 max-sm:order-3 max-sm:w-full max-sm:justify-center" role="tablist" aria-label="Product views">
                 {preview.mockup.views.map((v) => {
-                  const selected = (activeView ?? LID_VIEW_ID) === v.id
+                  const fallback = isTee ? TEE_FRONT_VIEW_ID : LID_VIEW_ID
+                  const selected = (activeView ?? fallback) === v.id
                   return (
                     <button
                       key={v.id}
@@ -340,13 +530,14 @@ export default function ListPage() {
                   )
                 })}
               </div>
+              )}
               <button
                 type="button"
                 onClick={addSticker}
                 disabled={spots.length >= 60}
                 className="ml-auto text-[13px] font-semibold text-[#4166fb] transition hover:text-[#3558e8] disabled:opacity-50 max-sm:ml-auto"
               >
-                + Add sticker
+                {isTee ? '+ Add zone' : '+ Add sticker'}
               </button>
             </div>
             <div className="grid items-start gap-8 lg:grid-cols-[400px_minmax(0,1fr)] xl:gap-12">
@@ -367,7 +558,7 @@ export default function ListPage() {
                         </span>
                         <span className="min-w-0 flex-1 truncate text-[14px] font-semibold">{p.label}</span>
                         <span className="hidden shrink-0 font-mono text-[10px] tracking-[0.06em] text-[#64748b] sm:inline">
-                          {spots[i]?.view === INSIDE_VIEW_ID ? 'INSIDE' : 'LID'}
+                           {spots[i]?.view === INSIDE_VIEW_ID ? 'INSIDE' : spots[i]?.view === TEE_BACK_VIEW_ID ? 'BACK' : spots[i]?.view === TEE_LEFT_VIEW_ID ? 'LEFT' : spots[i]?.view === TEE_RIGHT_VIEW_ID ? 'RIGHT' : isTee ? 'FRONT' : 'LID'}
                         </span>
                         <span className={`shrink-0 whitespace-nowrap font-mono text-[13px] ${p.price > 0 ? 'text-[#020817]' : 'text-[#64748b]'}`}>
                           {p.price > 0 ? `from ${formatMoney(p.price, preview.currency)}` : 'No price yet'}
@@ -384,7 +575,7 @@ export default function ListPage() {
                   </span>
                 </div>
                 <p className="mt-4 font-mono text-[11px] leading-relaxed tracking-[0.04em] text-[#64748b]">
-                  Publishing auto-lays out.
+                  Positions and sizes publish exactly as placed.
                 </p>
               </div>
               {/* Live Mac — sticky on desktop like the auction visual. */}
@@ -401,6 +592,7 @@ export default function ListPage() {
                   onResizeSpot={resizeSpot}
                   onRemoveSpot={removeSpot}
                   onSelectSpot={setEditingSpot}
+                  onDismissSpotPanel={() => setEditingSpot(null)}
                   selectedSpotId={editingSpot}
                   spotPanel={editingIdx >= 0 ? (
                 /* Spot editor: name + starting bid. Keyed by spot so it autofocuses on each open. */
@@ -461,17 +653,17 @@ export default function ListPage() {
 
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="font-mono text-[11px] tracking-[0.04em] text-[#64748b]">
-              MOCK PUBLISHING · SELLER = X SESSION · LAYOUT AUTO ON PUBLISH
+              MOCK SUBMIT · SELLER = X SESSION · GOES LIVE AFTER REVIEW
             </p>
             <button type="button" onClick={review} className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-7 py-[15px] text-[16px] font-medium text-white shadow-sm transition hover:-translate-y-px hover:bg-[#3558e8]">
-              {PRIVY_ENABLED && (!x?.authenticated || !x.handle) ? 'Log in with X to publish' : 'Publish Mac space'}
+              {PRIVY_ENABLED && (!x?.authenticated || !x.handle) ? 'Log in with X to list' : isTee ? 'Submit T-shirt space' : 'Submit Mac space'}
             </button>
           </div>
         </form>
       </main>
 
-      {/* Review gate — the only path to `goLive`. Only the Publish CTA opens this;
-          the listing goes live only when "Go live" is clicked here. */}
+      {/* Review gate — the only path to `submitListing`. Only the Submit CTA opens this;
+          the listing is submitted for platform review when "Submit for review" is clicked here. */}
       {reviewing && (
         <div
           role="dialog"
@@ -484,12 +676,12 @@ export default function ListPage() {
             className="max-h-[85vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="review-title" className="mb-1 text-[22px]">Review before it goes live</h2>
-            <p className="mb-6 text-[14px] text-[#64748b]">Nothing is public yet. Check every detail — this is the last step.</p>
+            <h2 id="review-title" className="mb-1 text-[22px]">Review before you submit</h2>
+            <p className="mb-6 text-[14px] text-[#64748b]">This sends your space for platform review — it goes live only once approved.</p>
             <dl className="mb-4 space-y-3 text-[14px]">
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="shrink-0 text-[#64748b]">Surface</dt>
-                <dd className="truncate font-medium">MacBook lid · auction</dd>
+                <dd className="truncate font-medium">{isTee ? 'T-shirt · auction' : 'MacBook lid · auction'}</dd>
               </div>
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="shrink-0 text-[#64748b]">Seller</dt>
@@ -531,11 +723,11 @@ export default function ListPage() {
               </button>
               <button
                 type="button"
-                onClick={goLive}
+                onClick={submitListing}
                 disabled={publishing}
                 className="inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-6 py-[10px] text-[14px] font-medium text-white shadow-sm transition hover:bg-[#3558e8] disabled:opacity-60"
               >
-                {publishing ? 'Publishing…' : 'Go live'}
+                {publishing ? 'Submitting…' : 'Submit for review'}
               </button>
             </div>
           </div>
