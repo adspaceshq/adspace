@@ -36,6 +36,9 @@ function parseBrandAssets(assets?: PurchaseAssets): { website?: string; logoUrl?
     out.website = website;
   }
   const logoUrl = assets?.logoUrl?.trim() ?? "";
+  if (!logoUrl && opts.requireLogo) {
+    throw Object.assign(new Error("logo is required"), { status: 400 });
+  }
   if (logoUrl) {
     if (!logoUrl.startsWith("data:image/")) {
       throw Object.assign(new Error("logo must be an image upload"), { status: 400 });
@@ -327,7 +330,7 @@ export class Store {
   }
 
   claim(spotId: string, buyer: SessionUser | string, assets?: PurchaseAssets): Spot {
-    const brand = parseBrandAssets(assets);
+    const brand = parseBrandAssets(assets, { requireLogo: true });
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
@@ -343,7 +346,7 @@ export class Store {
   }
 
   placeBid(spotId: string, bidder: SessionUser | string, amount: number, assets?: PurchaseAssets): Spot {
-    const brand = parseBrandAssets(assets);
+    const brand = parseBrandAssets(assets, { requireLogo: true });
     const found = this.findSpot(spotId);
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;

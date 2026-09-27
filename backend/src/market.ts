@@ -87,6 +87,7 @@ function parseBrandAssets(assets?: PurchaseAssets): { website?: string; logoUrl?
     out.website = website;
   }
   const logoUrl = assets?.logoUrl?.trim() ?? "";
+  if (!logoUrl && opts.requireLogo) throw httpError("logo is required", 400);
   if (logoUrl) {
     if (!logoUrl.startsWith("data:image/")) throw httpError("logo must be an image upload", 400);
     if (logoUrl.length > MAX_LOGO_URL_LENGTH) throw httpError("logo is too large", 400);
@@ -307,7 +308,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async claim(spotId: string, buyer: SessionUser, assets?: PurchaseAssets): Promise<Spot> {
-    const brand = parseBrandAssets(assets);
+    const brand = parseBrandAssets(assets, { requireLogo: true });
     const result = await this.pool.query(`UPDATE spots s SET status='claimed',buyer_user_id=$2,buyer_handle=$3,claimed_at=now(),updated_at=now(),
       website_url=$4,logo_url=$5
       FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.mode='fixed' AND l.status='active' AND l.deadline > now() AND s.status='open' AND l.seller_user_id<>$2 RETURNING s.id`, [spotId,buyer.id,buyer.handle,brand.website ?? "",brand.logoUrl ?? ""]);
@@ -330,7 +331,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async placeBid(spotId: string, bidder: SessionUser, amount: number, assets?: PurchaseAssets): Promise<Spot> {
-    const brand = parseBrandAssets(assets);
+    const brand = parseBrandAssets(assets, { requireLogo: true });
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
