@@ -9,6 +9,8 @@ import type { SessionUser } from '@/lib/types';
 export interface AuthSession {
   ready: boolean;
   authenticated: boolean;
+  /** Stable Adspaces user ID — compare this, never handles, for owner UI. */
+  userId: string | undefined;
   handle: string | undefined;
   name: string | undefined;
   avatar: string | undefined;
@@ -21,6 +23,7 @@ export interface AuthSession {
 const guest: AuthSession = {
   ready: true,
   authenticated: false,
+  userId: undefined,
   handle: undefined,
   name: undefined,
   avatar: undefined,
@@ -107,6 +110,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const value: AuthSession = {
     ready: ready && !exchanging,
     authenticated: Boolean(authenticated && me?.handle),
+    userId: me?.id,
     handle: me?.handle,
     name: me?.name ?? user?.twitter?.name ?? undefined,
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,

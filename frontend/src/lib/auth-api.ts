@@ -4,8 +4,10 @@ import type {
   ApiListing,
   ApiListingSummary,
   ApiSpot,
+  PublicProfile,
   SessionUser,
   SellerDashboard,
+  UpdateProfileRequest,
 } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
@@ -29,6 +31,39 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Owner POST without a body: session cookie + Privy Bearer + CSRF. */
+export async function apiPostEmpty<T>(path: string): Promise<T> {
+  let token: string | null = null;
+  try {
+    token = await getAccessToken();
+  } catch {
+    token = null;
+  }
+  return request<T>(path, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+    },
+  });
+}
+
+/** Owner DELETE: session cookie + Privy Bearer + CSRF. */
+export async function apiDelete<T>(path: string): Promise<T> {
+  let token: string | null = null;
+  try {
+    token = await getAccessToken();
+  } catch {
+    token = null;
+  }
+  return request<T>(path, {
+    method: "DELETE",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+    },
+  });
+}
 /** Authenticated POST: session cookie + Privy Bearer so the API can verify X. */
 export async function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
   let token: string | null = null;
@@ -51,6 +86,33 @@ export async function apiGet<T>(path: string): Promise<T> {
   return request<T>(path);
 }
 
+/** Authenticated PATCH: session cookie + Privy Bearer + CSRF. */
+export async function apiPatch<T>(path: string, body: unknown = {}): Promise<T> {
+  let token: string | null = null;
+  try {
+    token = await getAccessToken();
+  } catch {
+    token = null;
+  }
+  return request<T>(path, {
+    method: "PATCH",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchProfile(handle: string): Promise<PublicProfile> {
+  const clean = handle.trim().replace(/^@+/, "");
+  return apiGet<PublicProfile>(`/api/users/${encodeURIComponent(clean)}`);
+}
+
+export function updateMyProfile(patch: UpdateProfileRequest): Promise<PublicProfile> {
+  return apiPatch<PublicProfile>("/api/users/me", patch);
+}
+
 export function fetchListingSummaries(): Promise<ApiListingSummary[]> {
   return apiGet<ApiListingSummary[]>("/api/listings");
 }
@@ -63,12 +125,24 @@ export function createApiListing(req: ApiCreateListingRequest): Promise<ApiListi
   return apiPost<ApiListing>("/api/listings", req);
 }
 
-export function claimApiSpot(spotId: string): Promise<ApiSpot> {
-  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/claim`, {});
+export function closeApiListing(slug: string): Promise<ApiListing> {
+  return apiPostEmpty<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/close`);
 }
 
-export function bidApiSpot(spotId: string, amount: number): Promise<ApiSpot> {
-  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/bid`, { amount });
+export function reopenApiListing(slug: string): Promise<ApiListing> {
+  return apiPostEmpty<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/reopen`);
+}
+
+export function deleteApiListing(slug: string): Promise<{ ok: boolean }> {
+  return apiDelete<{ ok: boolean }>(`/api/listings/${encodeURIComponent(slug)}`);
+}
+
+export function claimApiSpot(spotId: string, assets?: { website?: string; logoUrl?: string }): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/claim`, { ...(assets ?? {}) });
+}
+
+export function bidApiSpot(spotId: string, amount: number, assets?: { website?: string; logoUrl?: string }): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/bid`, { amount, ...(assets ?? {}) });
 }
 
 export function fetchSellerDashboard(): Promise<SellerDashboard> {

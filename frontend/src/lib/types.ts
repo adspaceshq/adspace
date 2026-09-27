@@ -17,8 +17,15 @@ export interface ApiSpot {
   size: string;
   price: number;
   currency: string;
-  /** Which Mac photo the sticker lives on: "lid" or "inside". */
+  /** Which photo the sticker lives on: "lid" | "inside" (Mac) or "tee-front" | "tee-back" | "tee-left" | "tee-right" (T-shirt). */
   view: string;
+  /** Seller hand placement in % of the photo. Absent → auto layout. */
+  x?: number | null;
+  y?: number | null;
+  w?: number | null;
+  /** Buyer brand assets attached at purchase; replaced on takeover. */
+  website?: string;
+  logoUrl?: string;
   status: ApiSpotStatus;
   currentBid?: number;
   buyer?: string;
@@ -35,12 +42,15 @@ export interface ApiListing {
   surface: string;
   story: string;
   image: string;
+  /** Tee base color as #rrggbb (apparel surface). */
+  fabric: string;
   mode: ApiMode;
   currency: string;
   deadline: string;
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  status: "active" | "closed";
   spots: ApiSpot[];
 }
 
@@ -63,6 +73,7 @@ export interface ApiCreateListingRequest {
   title: string;
   surface?: string;
   story?: string;
+  fabric?: string;
   mode?: string;
   currency?: string;
   deadline?: string;
@@ -76,6 +87,9 @@ export interface ApiCreateSpotRequest {
   size?: string;
   price?: number;
   view?: string;
+  x?: number;
+  y?: number;
+  w?: number;
 }
 
 export interface SessionUser {
@@ -86,6 +100,22 @@ export interface SessionUser {
   avatar?: string;
   csrfToken: string;
   expiresAt: string;
+}
+
+/** Public seller profile at /{username}. payoutWallet is only ever returned to the owner. */
+export interface PublicProfile {
+  id: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+  bio: string;
+  payoutWallet?: string;
+  verified: boolean;
+}
+
+export interface UpdateProfileRequest {
+  bio?: string;
+  payoutWallet?: string;
 }
 
 export interface SellerDashboardListing {
