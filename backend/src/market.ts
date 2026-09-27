@@ -37,6 +37,10 @@ type SpotRow = {
   x: string | null; y: string | null; w: string | null;
   status: "open" | "claimed" | "sold"; buyer_handle: string | null; buyer_user_id: string | null;
   current_bid: string | null; claimed_at: Date | null; fulfilled_at: Date | null; artwork_submitted_at: Date | null;
+  proof_photos: string[] | null; proof_post: string | null;
+  confirmed_at: Date | null; disputed_at: Date | null; dispute_reason: string | null;
+  paid_at: Date | null; payout_amount: string | null; payout_fee: string | null;
+  payout_reference: string | null; payout_destination: string | null;
 };
 
 const n = (value: string | number | null | undefined) => value == null ? undefined : Number(value);
@@ -162,6 +166,16 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_version text NOT NULL DEFAULT '';
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS artwork_submitted_at timestamptz;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS proof_photos text[] NOT NULL DEFAULT '{}';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS proof_post text NOT NULL DEFAULT '';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS confirmed_at timestamptz;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS disputed_at timestamptz;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS dispute_reason text NOT NULL DEFAULT '';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS paid_at timestamptz;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS payout_amount numeric(14,2);
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS payout_fee numeric(14,2) NOT NULL DEFAULT 0;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS payout_reference text NOT NULL DEFAULT '';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS payout_destination text NOT NULL DEFAULT '';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS view text NOT NULL DEFAULT 'lid';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS website_url text NOT NULL DEFAULT '';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS logo_url text NOT NULL DEFAULT '';
