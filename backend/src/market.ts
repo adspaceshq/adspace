@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
-import { TERMS_VERSION } from "./types.js";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import { REVIEW_WINDOW_MS, TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
+import { resolvePayoutReference } from "./payout.js";
+import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 export interface MarketplaceRepository {
   migrate(): Promise<void>;
@@ -407,6 +408,110 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       `UPDATE spots SET website_url=COALESCE(NULLIF($2,''),website_url), logo_url=COALESCE(NULLIF($3,''),logo_url),
         artwork_submitted_at=now(), updated_at=now() WHERE id=$1`,
       [spotId, brand.website ?? "", brand.logoUrl ?? ""],
+    );
+    return (await this.getSpot(spotId))!;
+  }
+
+  async submitProof(spotId: string, actorUserId: string, proof: { photos: unknown; postUrl?: unknown }): Promise<Spot> {
+    const parsed = parseProof(proof);
+    const owned = await this.pool.query("SELECT seller_user_id, status, fulfilled_at FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.id=$1", [spotId]);
+    const row = owned.rows[0];
+    if (!row) throw httpError("spot not found", 404);
+    if (row.seller_user_id !== actorUserId) throw httpError("forbidden", 403);
+    if (row.status !== "sold" || !row.fulfilled_at) throw httpError("fulfill the spot before uploading proof", 409);
+    await this.pool.query("UPDATE spots SET proof_photos=$2, proof_post=$3, updated_at=now() WHERE id=$1",
+      [spotId, parsed.photos, parsed.postUrl ?? ""]);
+    return (await this.getSpot(spotId))!;
+  }
+
+  /** Buyer receipt: confirm (idempotent), dispute (replaces reason), withdraw. Fulfilled-only, buyer-only. */
+  private async buyerSpot(spotId: string, actor: SessionUser) {
+    const found = await this.pool.query<SpotRow & { artwork_close: string }>(
+      `SELECT s.* FROM spots s WHERE s.id=$1`, [spotId],
+    );
+    const row = found.rows[0];
+    if (!row) throw httpError("spot not found", 404);
+    if (row.status !== "sold" || !row.fulfilled_at) throw httpError("spots open for review once delivered", 409);
+    const mine = row.buyer_handle === actor.handle || row.buyer_user_id === actor.id;
+    if (!row.buyer_handle || !mine) throw httpError("only the buyer can review delivery", 403);
+    return row;
+  }
+
+  async confirmSpot(spotId: string, actor: SessionUser): Promise<Spot> {
+    const row = await this.buyerSpot(spotId, actor);
+    if (row.disputed_at) throw httpError("withdraw the dispute first", 409);
+    await this.pool.query("UPDATE spots SET confirmed_at=COALESCE(confirmed_at,now()), updated_at=now() WHERE id=$1", [spotId]);
+    return (await this.getSpot(spotId))!;
+  }
+
+  async disputeSpot(spotId: string, actor: SessionUser, reason: string): Promise<Spot> {
+    const row = await this.buyerSpot(spotId, actor);
+    if (row.confirmed_at) throw httpError("already confirmed", 409);
+    const note = typeof reason === "string" ? reason.trim() : "";
+    if (note.length > 500) throw httpError("reason must be at most 500 characters", 400);
+    await this.pool.query("UPDATE spots SET disputed_at=COALESCE(disputed_at,now()), dispute_reason=$2, updated_at=now() WHERE id=$1",
+      [spotId, note]);
+    return (await this.getSpot(spotId))!;
+  }
+
+  async withdrawDispute(spotId: string, actor: SessionUser): Promise<Spot> {
+    await this.buyerSpot(spotId, actor);
+    await this.pool.query("UPDATE spots SET disputed_at=NULL, dispute_reason='', updated_at=now() WHERE id=$1", [spotId]);
+    return (await this.getSpot(spotId))!;
+  }
+
+  async payableQueue(): Promise<PayoutItem[]> {
+    const result = await this.pool.query(
+      `SELECT s.id spot_id, l.id listing_id, l.slug listing_slug, l.title listing_title, s.label spot_label,
+        l.seller_handle seller, s.buyer_handle buyer, COALESCE(s.current_bid, s.price) amount, s.currency,
+        s.confirmed_at, s.fulfilled_at
+       FROM spots s JOIN listings l ON l.id=s.listing_id
+       WHERE s.status='sold' AND s.fulfilled_at IS NOT NULL AND s.paid_at IS NULL AND s.disputed_at IS NULL
+         AND (s.confirmed_at IS NOT NULL OR s.fulfilled_at <= now() - ($1 || ' milliseconds')::interval)
+       ORDER BY s.fulfilled_at`,
+      [String(REVIEW_WINDOW_MS)],
+    );
+    return result.rows.map((r) => {
+      const base = r.confirmed_at ? new Date(r.confirmed_at).getTime() : new Date(r.fulfilled_at).getTime() + REVIEW_WINDOW_MS;
+      return {
+        spotId: r.spot_id, listingId: r.listing_id, listingSlug: r.listing_slug, listingTitle: r.listing_title,
+        spotLabel: r.spot_label, seller: r.seller_handle, buyer: r.buyer_handle,
+        amount: Number(r.amount), currency: r.currency, releasedAt: new Date(base).toISOString(),
+      };
+    });
+  }
+
+  async paySpot(spotId: string, reference: string): Promise<Spot> {
+    if (typeof reference === "string" && reference.trim().length > 200) {
+      throw httpError("reference must be at most 200 characters", 400);
+    }
+    const found = await this.pool.query<SpotRow & { seller_payout_wallet: string | null }>(
+      `SELECT s.*, u.payout_wallet AS seller_payout_wallet FROM spots s
+       JOIN listings l ON l.id=s.listing_id LEFT JOIN users u ON u.id=l.seller_user_id WHERE s.id=$1`,
+      [spotId],
+    );
+    const row = found.rows[0];
+    if (!row) throw httpError("spot not found", 404);
+    if (row.status !== "sold" || !row.fulfilled_at) throw httpError("only delivered spots can be paid", 409);
+    if (row.paid_at) return (await this.getSpot(spotId))!;
+    if (!payoutReleased({
+      fulfilledAt: row.fulfilled_at?.toISOString(), confirmedAt: row.confirmed_at?.toISOString(),
+      disputedAt: row.disputed_at?.toISOString(),
+    })) throw httpError("spot is not released for payout", 409);
+    if (!row.seller_payout_wallet) throw httpError("seller payout wallet is not set", 409);
+    const amount = Number(row.current_bid ?? row.price);
+    const fee = Math.round(amount * (platformFeeBps() / 10_000) * 100) / 100;
+    // Manual USDC: the reference is the Solana transfer signature; verified
+    // on-chain when it looks like one and an RPC is configured (required
+    // when PAYOUT_REQUIRE_ONCHAIN=1).
+    const note = await resolvePayoutReference({
+      reference,
+      destination: row.seller_payout_wallet,
+      expectedNet: Math.round((amount - fee) * 100) / 100,
+    });
+    await this.pool.query(
+      `UPDATE spots SET paid_at=now(), payout_amount=$2, payout_fee=$3, payout_reference=$4, payout_destination=$5, updated_at=now() WHERE id=$1`,
+      [spotId, amount, fee, note, row.seller_payout_wallet],
     );
     return (await this.getSpot(spotId))!;
   }
