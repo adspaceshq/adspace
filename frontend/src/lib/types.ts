@@ -31,6 +31,7 @@ export interface ApiSpot {
   buyer?: string;
   bids?: ApiBid[];
   fulfilledAt?: string;
+  artworkSubmittedAt?: string;
 }
 
 export interface ApiListing {
@@ -133,6 +134,7 @@ export interface SellerDashboardListing {
   title: string;
   image: string;
   status: "active" | "approved" | "submitted" | "closed";
+  deadline: string;
   reviewNote?: string;
   mode: ApiMode;
   currency: string;
@@ -153,6 +155,7 @@ export interface SellerAttentionItem {
   currency: string;
   submittedAt: string;
   status: "pending" | "approved";
+  artworkReceived: boolean;
 }
 
 export interface SellerDashboard {
