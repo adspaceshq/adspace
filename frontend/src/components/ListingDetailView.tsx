@@ -9,7 +9,7 @@ import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { deadlineLabel, formatMoney, isEnded, listingUrl, minBidFor, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
+import { deadlineLabel, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -58,6 +58,10 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   // Post-purchase artwork intake: which sold spot the hidden file input serves.
   const [artSpot, setArtSpot] = useState<string | null>(null)
   const [artBusy, setArtBusy] = useState(false)
+  // Buyer review (Step 10 gate): dispute draft per own fulfilled spot.
+  const [disputingSpot, setDisputingSpot] = useState<string | null>(null)
+  const [disputeReason, setDisputeReason] = useState('')
+  const [reviewBusy, setReviewBusy] = useState(false)
   // Delivery proof (Step 9): seller-only form state per fulfilled spot.
   const [proofSpot, setProofSpot] = useState<string | null>(null)
   const [proofFiles, setProofFiles] = useState<string[]>([])
@@ -216,6 +220,19 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
 
   const shareUrl = (text: string) =>
     `https://x.com/intent/post?text=${encodeURIComponent(text + ` ${window.location.origin}${listingUrl(listing, listings)}`)}`
+
+  const review = async (spotId: string, action: 'confirm' | 'withdraw' | { dispute: string }) => {
+    setReviewBusy(true)
+    try {
+      await reviewSpot(listing.id, spotId, action)
+      setDisputingSpot(null)
+      setDisputeReason('')
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Review action failed.')
+    } finally {
+      setReviewBusy(false)
+    }
+  }
 
   const normHandle = (h: string) => h.trim().replace(/^@+/, '').toLowerCase()
   const isOwner = !!x?.handle && normHandle(x.handle) === normHandle(listing.seller.handle || listing.seller.name)
@@ -457,7 +474,80 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {isAuction ? 'Bid' : 'Claim'}
                     </button>
                   )}
-                  {sp.sold && (sp.claimedBy ?? sp.bidBy) && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
+                  {sp.fulfilledAt && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
+                    <span className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <span className="font-mono text-[11px] font-semibold text-[#16a34a]">DELIVERED ✓</span>
+                      {sp.paidAt && (sp.payoutReference && isSignatureLike(sp.payoutReference)
+                        ? <a href={explorerTxUrl(sp.payoutReference)} target="_blank" rel="noopener" className="font-mono text-[11px] font-semibold text-[#4166fb] underline">PAID ↗</a>
+                        : <span className="font-mono text-[11px] font-semibold text-[#4166fb]">PAID ✓</span>)}
+                      {sp.disputedAt ? (
+                        <>
+                          <span className="max-w-[220px] truncate font-mono text-[11px] text-[#dc2626]" title={sp.disputeReason || 'Disputed'}>
+                            DISPUTED{sp.disputeReason ? `: ${sp.disputeReason}` : ''}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void review(sp.id, 'withdraw')}
+                            disabled={reviewBusy}
+                            className="rounded-full border border-[#e7e5e0] px-3 py-1 text-[12px] font-medium transition hover:border-[#4166fb] disabled:opacity-60"
+                          >
+                            Withdraw
+                          </button>
+                        </>
+                      ) : sp.confirmedAt ? (
+                        <span className="font-mono text-[11px] font-semibold text-[#4166fb]">CONFIRMED ✓</span>
+                      ) : payoutReleased(sp) ? (
+                        <span className="font-mono text-[11px] font-semibold text-[#64748b]">RELEASED ✓</span>
+                      ) : disputingSpot === sp.id ? (
+                        <span className="flex items-center gap-2">
+                          <input
+                            value={disputeReason}
+                            onChange={(e) => setDisputeReason(e.target.value)}
+                            placeholder="What's wrong? (optional)"
+                            maxLength={500}
+                            className="w-40 rounded-lg border border-[#e7e5e0] px-2 py-1 text-[12px] outline-none transition focus:border-[#4166fb]"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void review(sp.id, { dispute: disputeReason })}
+                            disabled={reviewBusy}
+                            className="rounded-full bg-[#dc2626] px-3 py-1 text-[12px] font-medium text-white disabled:opacity-60"
+                          >
+                            Send
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDisputingSpot(null); setDisputeReason('') }}
+                            className="text-[12px] font-medium text-[#64748b] transition hover:text-[#020817]"
+                          >
+                            Cancel
+                          </button>
+                        </span>
+                      ) : (
+                        <>
+                          <span className="font-mono text-[11px] text-[#64748b]">
+                            {reviewDaysLeft(sp.fulfilledAt) === 0 ? 'Review closes soon' : `${reviewDaysLeft(sp.fulfilledAt)}d left to review`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => void review(sp.id, 'confirm')}
+                            disabled={reviewBusy}
+                            className="rounded-full bg-[#020817] px-3 py-1 text-[12px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
+                          >
+                            Confirm receipt
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setDisputingSpot(sp.id); setDisputeReason('') }}
+                            className="text-[12px] font-medium text-[#64748b] transition hover:text-[#dc2626]"
+                          >
+                            Dispute
+                          </button>
+                        </>
+                      )}
+                    </span>
+                  )}
+                  {!sp.fulfilledAt && sp.sold && (sp.claimedBy ?? sp.bidBy) && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
                     sp.artworkSubmittedAt
                       ? <span className="shrink-0 font-mono text-[11px] font-semibold text-[#16a34a]">ARTWORK IN ✓</span>
                       : artClosed
