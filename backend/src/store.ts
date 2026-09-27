@@ -1,5 +1,6 @@
-import { TERMS_VERSION } from "./types.js";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
+import { resolvePayoutReference } from "./payout.js";
+import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
@@ -242,6 +243,108 @@ export class Store {
     const { listing, spot } = this.ownedSpot(spotId, actorUserId);
     if (!spot.buyer) throw Object.assign(new Error("spot has no buyer to approve"), { status: 409 });
     spot.status = "sold";
+    return spot;
+  }
+
+  payableQueue(): PayoutItem[] {
+    const items: PayoutItem[] = [];
+    for (const slug of this.order) {
+      const l = this.listings.get(slug)!;
+      for (const s of l.spots) {
+        if (s.status !== "sold" || !s.fulfilledAt || s.paidAt || !payoutReleased(s)) continue;
+        const base = s.confirmedAt ? new Date(s.confirmedAt).getTime() : new Date(s.fulfilledAt).getTime() + 3 * 86_400_000;
+        items.push({
+          spotId: s.id, listingId: l.id, listingSlug: l.slug, listingTitle: l.title, spotLabel: s.label,
+          seller: l.seller, buyer: s.buyer!, amount: s.currentBid ?? s.price, currency: s.currency,
+          releasedAt: new Date(base).toISOString(),
+        });
+      }
+    }
+    return items.sort((a, b) => a.releasedAt.localeCompare(b.releasedAt));
+  }
+
+  /** Demo seam: the memory adapter has no users table, so tests register seller wallets here. */
+  private sellerWallets = new Map<string, string>();
+  registerSellerWallet(userId: string, wallet: string): void {
+    if (wallet) this.sellerWallets.set(userId, wallet);
+    else this.sellerWallets.delete(userId);
+  }
+
+  async paySpot(spotId: string, reference: string): Promise<Spot> {
+    if (typeof reference === "string" && reference.trim().length > 200) {
+      throw Object.assign(new Error("reference must be at most 200 characters"), { status: 400 });
+    }
+    const found = this.findSpot(spotId);
+    if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
+    const { listing, spot } = found;
+    if (spot.status !== "sold" || !spot.fulfilledAt) throw Object.assign(new Error("only delivered spots can be paid"), { status: 409 });
+    if (spot.paidAt) return spot;
+    if (!payoutReleased(spot)) throw Object.assign(new Error("spot is not released for payout"), { status: 409 });
+    const sellerWallet = listing.sellerUserId ? this.sellerWallets.get(listing.sellerUserId) : undefined;
+    if (!sellerWallet) throw Object.assign(new Error("seller payout wallet is not set"), { status: 409 });
+    const amount = spot.currentBid ?? spot.price;
+    const fee = Math.round(amount * (platformFeeBps() / 10_000) * 100) / 100;
+    const note = await resolvePayoutReference({
+      reference,
+      destination: sellerWallet,
+      expectedNet: Math.round((amount - fee) * 100) / 100,
+    });
+    spot.paidAt = new Date().toISOString();
+    spot.payoutAmount = amount;
+    spot.payoutFee = fee;
+    spot.payoutReference = note || undefined;
+    spot.payoutDestination = sellerWallet;
+    return spot;
+  }
+
+  /** Buyer receipt: confirm (idempotent), dispute (replaces reason), withdraw. Fulfilled-only, buyer-only. */
+  private buyerSpot(spotId: string, actor: SessionUser | string): Spot {
+    const found = this.findSpot(spotId);
+    if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
+    const { spot } = found;
+    if (spot.status !== "sold" || !spot.fulfilledAt) {
+      throw Object.assign(new Error("spots open for review once delivered"), { status: 409 });
+    }
+    const actorHandle = typeof actor === "string" ? actor : actor.handle;
+    if (!spot.buyer || spot.buyer !== actorHandle) throw Object.assign(new Error("only the buyer can review delivery"), { status: 403 });
+    return spot;
+  }
+
+  confirmSpot(spotId: string, actor: SessionUser | string): Spot {
+    const spot = this.buyerSpot(spotId, actor);
+    if (spot.disputedAt) throw Object.assign(new Error("withdraw the dispute first"), { status: 409 });
+    spot.confirmedAt = spot.confirmedAt ?? new Date().toISOString();
+    return spot;
+  }
+
+  disputeSpot(spotId: string, actor: SessionUser | string, reason: string): Spot {
+    const spot = this.buyerSpot(spotId, actor);
+    if (spot.confirmedAt) throw Object.assign(new Error("already confirmed"), { status: 409 });
+    const note = typeof reason === "string" ? reason.trim() : "";
+    if (note.length > 500) throw Object.assign(new Error("reason must be at most 500 characters"), { status: 400 });
+    spot.disputedAt = spot.disputedAt ?? new Date().toISOString();
+    spot.disputeReason = note || undefined;
+    return spot;
+  }
+
+  withdrawDispute(spotId: string, actor: SessionUser | string): Spot {
+    const spot = this.buyerSpot(spotId, actor);
+    spot.disputedAt = undefined;
+    spot.disputeReason = undefined;
+    return spot;
+  }
+
+  submitProof(spotId: string, actorUserId: string, proof: { photos: unknown; postUrl?: unknown }): Spot {
+    const parsed = parseProof(proof);
+    const found = this.findSpot(spotId);
+    if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
+    const { listing, spot } = found;
+    if (!listing.sellerUserId || listing.sellerUserId !== actorUserId) throw Object.assign(new Error("forbidden"), { status: 403 });
+    if (spot.status !== "sold" || !spot.fulfilledAt) {
+      throw Object.assign(new Error("fulfill the spot before uploading proof"), { status: 409 });
+    }
+    spot.proofPhotos = parsed.photos;
+    spot.proofPost = parsed.postUrl;
     return spot;
   }
 
