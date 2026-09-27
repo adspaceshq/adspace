@@ -73,6 +73,7 @@ test("delete removes clean listings but refuses ones with buyers or bids", async
 
   const busy = await createListing(owner, ownerCsrf, { title: "Busy", mode: "auction", spots: [{ price: 10 }] });
   await owner.post(`/api/listings/${busy.slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
+  await owner.post(`/api/listings/${busy.slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v1" }).expect(200);
   await buyer.post(`/api/spots/${busy.spots[0].id}/bid`).set("X-CSRF-Token", buyerCsrf).send({ amount: 10 }).expect(200);
   await owner.delete(`/api/listings/${busy.slug}`).set("X-CSRF-Token", ownerCsrf).expect(409);
 });

@@ -50,6 +50,7 @@ test("non-owners cannot edit, approve, or fulfill a seller listing", async () =>
   const slug = created.body.slug as string;
   const spotId = created.body.spots[0].id as string;
   await owner.post(`/api/listings/${slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
+  await owner.post(`/api/listings/${slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v1" }).expect(200);
 
   await attacker.patch(`/api/listings/${slug}`).set("X-CSRF-Token", attackerCsrf).send({ title: "Stolen" }).expect(403);
   await attacker.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", attackerCsrf).send({}).expect(200);
