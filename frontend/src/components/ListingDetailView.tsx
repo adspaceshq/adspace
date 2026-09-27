@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Calendar, Trophy } from 'lucide-react'
+import { ArrowLeft, Brush, Calendar, Trophy } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { formatMoney, listingUrl, minBidFor, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
+import { deadlineLabel, formatMoney, isEnded, listingUrl, minBidFor, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -23,7 +23,7 @@ function useCountdown(endsAt: string): string | null {
   }, [])
   const ms = new Date(endsAt).getTime() - now
   if (Number.isNaN(ms)) return null
-  if (ms <= 0) return 'Closed'
+  if (ms <= 0) return 'Ended'
   const d = Math.floor(ms / 86_400_000)
   const h = Math.floor((ms % 86_400_000) / 3_600_000)
   const m = Math.floor((ms % 3_600_000) / 60_000)
@@ -42,7 +42,7 @@ function ago(iso: string): string {
 }
 
 export default function ListingDetailView({ id, backHref }: { id: string; backHref?: string }) {
-  const { listings, getListing, claimSpot, placeBid } = useStore()
+  const { listings, getListing, claimSpot, placeBid, submitArtwork } = useStore()
   const listing = getListing(id)
 
   const [modal, setModal] = useState<{ spot: Spot; mode: 'claim' | 'bid' } | null>(null)
@@ -55,6 +55,9 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const [amount, setAmount] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [x, setX] = useState<XIdentity | null>(null)
+  // Post-purchase artwork intake: which sold spot the hidden file input serves.
+  const [artSpot, setArtSpot] = useState<string | null>(null)
+  const [artBusy, setArtBusy] = useState(false)
 
   // Brand site → clickable link. Bare domains get https:// so the link works.
   const normalizeWebsite = (raw: string) => {
@@ -130,6 +133,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   }
 
   const isAuction = listing.priceType === 'auction'
+  const ended = isEnded(listing.endsAt)
   const raised = listing.spots.reduce((a, s) => a + (s.bid ?? 0), 0)
   const allBids = listing.spots.flatMap((sp) =>
     (sp.bids ?? []).map((b) => ({ ...b, spotLabel: sp.label }))
@@ -168,6 +172,40 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     setAmount(String(minBidFor(listing, spot)))
     setSuccess(null)
     setModal({ spot, mode: 'bid' })
+  }
+
+  const artClosed = !!listing.artworkClose && isEnded(listing.artworkClose)
+
+  // Final artwork uploads at full quality (no shrink), capped at the API's ~3 MB.
+  const onArtFile = (spotId: string, file: File | undefined) => {
+    if (!file || artBusy) return
+    if (!file.type.startsWith('image/')) {
+      showToast('Artwork must be an image file.')
+      return
+    }
+    if (file.size > 3 * 1024 * 1024) {
+      showToast('Artwork must be under 3 MB.')
+      return
+    }
+    setArtBusy(true)
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : ''
+      if (!dataUrl.startsWith('data:image/')) {
+        showToast('Could not read that file.')
+        setArtBusy(false)
+        return
+      }
+      submitArtwork(listing.id, spotId, { logoUrl: dataUrl }).then(
+        () => { setArtBusy(false); showToast('Artwork submitted.') },
+        (e) => { setArtBusy(false); showToast(e instanceof Error ? e.message : 'Could not submit artwork.') },
+      )
+    }
+    reader.onerror = () => {
+      showToast('Could not read that file.')
+      setArtBusy(false)
+    }
+    reader.readAsDataURL(file)
   }
 
   const shareUrl = (text: string) =>
@@ -273,7 +311,10 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
               <SellerAvatar seller={listing.seller} />
               <strong className="text-[#020817]">{sellerDisplay(listing.seller)}</strong>
             </Link>
-            <span className="inline-flex items-center gap-[6px]"><Calendar size={14} /> Ends {listing.deadline}</span>
+            <span className="inline-flex items-center gap-[6px]"><Calendar size={14} /> {ended ? `Ended ${listing.deadline}` : `Ends ${listing.deadline}`}</span>
+            {listing.artworkClose && (
+              <span className="inline-flex items-center gap-[6px]"><Brush size={14} /> Artwork due {deadlineLabel(listing.artworkClose)}</span>
+            )}
           </div>
           <div className="mt-6">
             <div className="flex items-baseline justify-between gap-4">
@@ -292,9 +333,9 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
         </div>
 
         <div className="mx-auto mt-8 max-w-5xl">
-          <SpecSheet listing={listing} onClaim={openClaim} onBid={openBid} />
+          <SpecSheet listing={listing} onClaim={ended ? () => showToast('This space has ended.') : openClaim} onBid={ended ? () => showToast('This space has ended.') : openBid} />
           <p className="mt-4 text-center text-sm text-[#64748b]">
-            Tap an open slot to {isAuction ? 'bid' : 'claim'} — your logo goes on the real thing.
+            {ended ? 'This space has ended — no more claims or bids.' : <>Tap an open slot to {isAuction ? 'bid' : 'claim'} — your logo goes on the real thing.</>}
           </p>
         </div>
 
@@ -317,7 +358,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
 
         <div className="mx-auto mt-10 max-w-5xl">
           <h2 className="mb-1 text-2xl">All spots.</h2>
-          <p className="mb-4 text-sm text-[#64748b]">{takenCount} of {listing.spots.length} taken — tap an open one to {isAuction ? 'bid' : 'claim'}.</p>
+          <p className="mb-4 text-sm text-[#64748b]">{takenCount} of {listing.spots.length} taken{ended ? ' — ended.' : <> — tap an open one to {isAuction ? 'bid' : 'claim'}.</>}</p>
           <div className="overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white">
             {listing.spots.map((sp, i) => {
               const held = sp.claimedBy ?? sp.bidBy
@@ -344,7 +385,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {spotBidCount(sp) > 0 && <span className="text-[#64748b]"> · {spotBidCount(sp)} bid{spotBidCount(sp) === 1 ? '' : 's'}</span>}
                     </span>
                   )}
-                  {open && (
+                  {open && !ended && (
                     <button
                       type="button"
                       onClick={() => (isAuction ? openBid(sp) : openClaim(sp))}
@@ -353,11 +394,29 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {isAuction ? 'Bid' : 'Claim'}
                     </button>
                   )}
+                  {sp.sold && (sp.claimedBy ?? sp.bidBy) && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
+                    sp.artworkSubmittedAt
+                      ? <span className="shrink-0 font-mono text-[11px] font-semibold text-[#16a34a]">ARTWORK IN ✓</span>
+                      : artClosed
+                        ? <span className="shrink-0 font-mono text-[11px] text-[#64748b]">ARTWORK CLOSED</span>
+                        : <label htmlFor="artwork-file" onClick={() => setArtSpot(sp.id)} className="shrink-0 cursor-pointer rounded-full border border-[#4166fb] px-4 py-2 text-[13px] font-medium text-[#4166fb] transition hover:bg-[#e9edfe]">
+                            {artBusy && artSpot === sp.id ? 'Sending…' : 'Submit artwork'}
+                          </label>
+                  )}
                 </div>
               )
             })}
           </div>
         </div>
+
+        <input
+          id="artwork-file"
+          type="file"
+          accept="image/*"
+          className="sr-only"
+          aria-label="Upload final artwork"
+          onChange={(e) => { if (artSpot) onArtFile(artSpot, e.target.files?.[0]); e.target.value = '' }}
+        />
 
         {allBids.length > 0 && (
           <div className="mx-auto mt-10 max-w-5xl">
