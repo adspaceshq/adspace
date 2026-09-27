@@ -11,7 +11,7 @@ import { fetchProfile, updateMyProfile } from '@/lib/auth-api'
 import type { PublicProfile } from '@/lib/types'
 import { useStore } from '@/components/StoreProvider'
 
-const RESERVED = new Set(['browse', 'list', 'listings', 'dashboard', 'api', 'favicon.ico'])
+const RESERVED = new Set(['browse', 'list', 'listings', 'dashboard', 'review', 'api', 'favicon.ico'])
 
 export default function SellerPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle: raw } = use(params)

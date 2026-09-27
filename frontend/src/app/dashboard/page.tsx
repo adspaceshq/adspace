@@ -6,7 +6,7 @@ import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3 } from 'l
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
-import { approveApiSpot, fetchSellerDashboard, fulfillApiSpot, rejectApiSpot } from '@/lib/auth-api'
+import { approveApiSpot, closeApiListing, deleteApiListing, fetchSellerDashboard, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto } from '@/lib/listings'
 import type { SellerDashboard } from '@/lib/types'
 
@@ -50,6 +50,18 @@ export default function DashboardPage() {
     finally { setBusy(undefined) }
   }
 
+  const actListing = async (slug: string, action: 'close' | 'reopen' | 'delete') => {
+    if (action === 'delete' && !window.confirm('Delete this listing forever? Spots and bids go with it.')) return
+    setBusy(slug); setError(undefined)
+    try {
+      if (action === 'close') await closeApiListing(slug)
+      else if (action === 'reopen') await reopenApiListing(slug)
+      else await deleteApiListing(slug)
+      await load()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Action failed.') }
+    finally { setBusy(undefined) }
+  }
+
   return <>
     <Header />
     <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
@@ -62,7 +74,7 @@ export default function DashboardPage() {
       ) : (
         <>
           <div className="mb-7 flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-            <div><h1 className="text-[clamp(38px,5vw,58px)]">Seller dashboard</h1><p className="mt-1 text-[16px] text-[#64748b]">Manage your spaces, buyers, and fulfillment.</p></div>
+            <div><h1 className="text-[clamp(38px,5vw,58px)]">Seller dashboard</h1><p className="mt-1 text-[16px] text-[#64748b]">Manage your spaces, buyers, and fulfillment.{auth.isReviewer && <> <Link href="/review" className="font-medium text-[#4166fb]">Review queue →</Link></>}</p></div>
             <Link href="/list" className="inline-flex w-fit items-center gap-2 rounded-md bg-[#4166fb] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#3154e8]"><Plus size={17}/>List a new space</Link>
           </div>
           {error && <div role="alert" className="mb-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
@@ -80,10 +92,12 @@ export default function DashboardPage() {
                 <table className="w-full min-w-[820px] border-collapse text-left text-sm">
                   <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Listing','Status','Spots sold / open','Pricing mode','Revenue','Action'].map(x=><th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
                   <tbody>{data.listings.map(l=><tr key={l.id} className="border-b border-[#e7e5e0] last:border-0">
-                    <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="h-11 w-16 overflow-hidden bg-[#f1f0ec]">{cardPhoto(l) && <img src={cardPhoto(l)} alt="" className="h-full w-full object-cover"/>}</div><span className="font-medium">{l.title}</span></div></td>
-                    <td className="px-4 py-4"><span className={`inline-flex items-center gap-2 text-xs font-medium ${l.status==='active'?'text-emerald-700':'text-[#64748b]'}`}><span className={`h-1.5 w-1.5 rounded-full ${l.status==='active'?'bg-emerald-500':'bg-slate-400'}`}/>{l.status==='active'?'Active':'Closed'}</span></td>
+                    <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="h-11 w-16 overflow-hidden bg-[#f1f0ec]">{cardPhoto(l) && <img src={cardPhoto(l)} alt="" className="h-full w-full object-cover"/>}</div><span className="font-medium">{l.title}{l.reviewNote && <span className="mt-1 block max-w-[280px] text-[12px] font-normal text-[#dc2626]">Review: {l.reviewNote}</span>}</span></div></td>
+                    <td className="px-4 py-4"><span className={`inline-flex items-center gap-2 text-xs font-medium ${l.status==='active'?'text-emerald-700':l.status==='submitted'?'text-amber-700':'text-[#64748b]'}`}><span className={`h-1.5 w-1.5 rounded-full ${l.status==='active'?'bg-emerald-500':l.status==='submitted'?'bg-amber-500':'bg-slate-400'}`}/>{l.status==='active'?'Active':l.status==='submitted'?'Submitted':'Closed'}</span>{l.status==='submitted'&&<span className="mt-1 block text-[11px] font-normal text-[#64748b]">Awaiting review</span>}</td>
                     <td className="px-4 py-4 font-mono text-xs">{l.sold} / {l.open}</td><td className="px-4 py-4 capitalize">{l.mode==='fixed'?'Fixed price':'Auction'}</td><td className="px-4 py-4 font-mono text-xs">{money(l.revenue,l.currency)}</td>
-                    <td className="px-4 py-4"><Link href={`/listings/${l.slug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link></td>
+                    <td className="px-4 py-4"><div className="flex gap-2">{l.status==='active'&&<Link href={`/listings/${l.slug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link>}{l.status!=='closed'
+                      ? <button disabled={busy===l.slug} onClick={()=>void actListing(l.slug,'close')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Close</button>
+                      : <button disabled={busy===l.slug} onClick={()=>void actListing(l.slug,'reopen')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Resubmit</button>}<button disabled={busy===l.slug} onClick={()=>void actListing(l.slug,'delete')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold text-[#dc2626] disabled:opacity-50">Delete</button></div></td>
                   </tr>)}</tbody>
                 </table>
                 {data.listings.length===0 && <Empty text="You haven’t listed a space yet." action="List your first space" href="/list"/>}
