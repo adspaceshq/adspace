@@ -13,6 +13,9 @@ export interface MarketplaceRepository {
   close(slug: string, actorUserId: string): Promise<Listing>;
   reopen(slug: string, actorUserId: string): Promise<Listing>;
   remove(slug: string, actorUserId: string): Promise<{ ok: true }>;
+  reviewQueue(): Promise<Listing[]>;
+  approveReview(slug: string): Promise<Listing>;
+  rejectReview(slug: string, reason: string): Promise<Listing>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
   fulfill(spotId: string, actorUserId: string): Promise<Spot>;
@@ -22,7 +25,8 @@ export interface MarketplaceRepository {
 type ListingRow = {
   id: string; slug: string; title: string; seller_user_id: string; seller_handle: string;
   surface: string; story: string; image_url: string; fabric: string; mode: "fixed" | "auction"; currency: string;
-  deadline: Date; artwork_close: string; min_increment: string | null; double_up: boolean; status: "active" | "closed";
+  deadline: Date; artwork_close: string; min_increment: string | null; double_up: boolean; status: "active" | "submitted" | "closed";
+  review_note: string | null;
 };
 type SpotRow = {
   id: string; listing_id: string; label: string; location: string; size: string; price: string;
@@ -41,6 +45,15 @@ const MAX_LOGO_URL_LENGTH = 3_000_000;
 /** Tee base color. Strict #rrggbb — anything else falls back to the default white. */
 const parseFabric = (value: unknown): string =>
   typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : "#f6f6f7";
+
+/** Seller surface photo. Empty stays empty (preset photos); otherwise a data:image URL under ~3 MB. */
+function parseListingImage(value: unknown): string {
+  const image = typeof value === "string" ? value.trim() : "";
+  if (!image) return "";
+  if (!image.startsWith("data:image/")) throw httpError("image must be an image upload", 400);
+  if (image.length > MAX_LOGO_URL_LENGTH) throw httpError("image is too large", 400);
+  return image;
+}
 
 /** Seller placement in % of the photo. Non-finite values fall back to auto layout. */
 const placementNumber = (value: unknown): number | null =>
@@ -74,7 +87,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
         image_url text NOT NULL DEFAULT '', mode text NOT NULL CHECK (mode IN ('fixed','auction')),
         currency text NOT NULL DEFAULT 'USD', deadline timestamptz NOT NULL, artwork_close text NOT NULL DEFAULT '',
         min_increment numeric(14,2), double_up boolean NOT NULL DEFAULT false,
-        status text NOT NULL DEFAULT 'active' CHECK (status IN ('active','closed')),
+        status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('active','submitted','closed')),
         created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE TABLE IF NOT EXISTS spots (
@@ -96,6 +109,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       CREATE INDEX IF NOT EXISTS spots_buyer_user_id_idx ON spots(buyer_user_id);
       CREATE INDEX IF NOT EXISTS bids_spot_created_idx ON bids(spot_id, created_at);
       CREATE INDEX IF NOT EXISTS bids_bidder_user_id_idx ON bids(bidder_user_id);
+      ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_status_check;
+      ALTER TABLE listings ADD CHECK (status IN ('active','submitted','closed'));
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_note text NOT NULL DEFAULT '';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS view text NOT NULL DEFAULT 'lid';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS website_url text NOT NULL DEFAULT '';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS logo_url text NOT NULL DEFAULT '';
@@ -153,12 +169,14 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const mode = body.mode === "auction" ? "auction" : "fixed";
       const currency = body.currency?.trim().toUpperCase() || "USD";
       const fabric = parseFabric(body.fabric);
-      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,mode,currency,deadline,artwork_close,fabric)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",mode,currency,deadlineIso,body.artworkClose?.trim() ?? "",fabric]);
+      const image = parseListingImage(body.image);
+      // Step 2: submissions land as submitted — platform review activates them.
+      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,status)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'submitted')`,
+      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,body.artworkClose?.trim() ?? "",fabric]);
       for (let i=0;i<drafts.length;i++) {
         const spot=drafts[i];
-        const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" ? spot.view : "lid";
+        const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" || spot.view === "tee-left" || spot.view === "tee-right" ? spot.view : "lid";
         await client.query(`INSERT INTO spots(id,listing_id,label,location,size,price,currency,view,x,y,w) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
           [randomUUID(),id,spot.label?.trim() || `Spot ${i+1}`,spot.location?.trim() ?? "",spot.size?.trim() ?? "",Number(spot.price),currency,view,placementNumber(spot.x),placementNumber(spot.y),placementNumber(spot.w)]);
       }
@@ -175,7 +193,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return (await this.get(slug))!;
   }
 
-  private async setStatus(slug: string, actorUserId: string, status: "active" | "closed"): Promise<Listing> {
+  private async setStatus(slug: string, actorUserId: string, status: "active" | "submitted" | "closed"): Promise<Listing> {
     const result = await this.pool.query(`UPDATE listings SET status=$3,updated_at=now()
       WHERE slug=$1 AND seller_user_id=$2 RETURNING slug`, [slug,actorUserId,status]);
     if (!result.rows[0]) await this.throwListingAccess(slug, actorUserId);
@@ -187,7 +205,52 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async reopen(slug: string, actorUserId: string): Promise<Listing> {
-    return this.setStatus(slug, actorUserId, "active");
+    // Reopening resubmits for review — it must never self-publish.
+    const current = await this.pool.query("SELECT status, seller_user_id FROM listings WHERE slug=$1", [slug]);
+    const row = current.rows[0];
+    if (!row) throw httpError("listing not found", 404);
+    if (row.seller_user_id !== actorUserId) throw httpError("forbidden", 403);
+    if (row.status === "submitted") throw httpError("listing is already submitted for review", 409);
+    if (row.status === "active") return (await this.get(slug))!;
+    await this.pool.query("UPDATE listings SET status='submitted', review_note='', updated_at=now() WHERE slug=$1", [slug]);
+    return (await this.get(slug))!;
+  }
+
+  async reviewQueue(): Promise<Listing[]> {
+    const result = await this.pool.query<ListingRow>(
+      "SELECT * FROM listings WHERE status='submitted' ORDER BY created_at DESC",
+    );
+    return Promise.all(result.rows.map((row) => this.hydrate(row)));
+  }
+
+  async approveReview(slug: string): Promise<Listing> {
+    const result = await this.pool.query(
+      `UPDATE listings SET status='active', review_note='', updated_at=now()
+       WHERE slug=$1 AND status='submitted' RETURNING slug`,
+      [slug],
+    );
+    if (!result.rows[0]) await this.throwReviewAccess(slug);
+    return (await this.get(slug))!;
+  }
+
+  async rejectReview(slug: string, reason: string): Promise<Listing> {
+    const note = typeof reason === "string" ? reason.trim() : "";
+    if (note.length > 500) throw httpError("reason must be at most 500 characters", 400);
+    const result = await this.pool.query(
+      `UPDATE listings SET status='closed', review_note=$2, updated_at=now()
+       WHERE slug=$1 AND status='submitted' RETURNING slug`,
+      [slug, note],
+    );
+    if (!result.rows[0]) await this.throwReviewAccess(slug);
+    return (await this.get(slug))!;
+  }
+
+  private async throwReviewAccess(slug: string): Promise<never> {
+    const existing = await this.pool.query("SELECT status FROM listings WHERE slug=$1", [slug]);
+    throw httpError(
+      !existing.rows[0] ? "listing not found" : "listing is not awaiting review",
+      !existing.rows[0] ? 404 : 409,
+    );
   }
 
   async remove(slug: string, actorUserId: string): Promise<{ ok: true }> {
@@ -252,7 +315,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async dashboard(actorUserId:string):Promise<SellerDashboard>{
-    const listings=await this.pool.query(`SELECT l.id,l.slug,l.title,l.image_url,l.status,l.mode,l.currency,
+    const listings=await this.pool.query(`SELECT l.id,l.slug,l.title,l.image_url,l.status,l.review_note,l.mode,l.currency,
       COUNT(s.id)::int total,COUNT(*) FILTER(WHERE s.status='open' AND s.buyer_user_id IS NULL)::int open,COUNT(*) FILTER(WHERE s.status='sold')::int sold,
       COALESCE(SUM(CASE WHEN s.status='sold' THEN COALESCE(s.current_bid,s.price) ELSE 0 END),0) revenue
       FROM listings l LEFT JOIN spots s ON s.listing_id=l.id WHERE l.seller_user_id=$1 GROUP BY l.id ORDER BY l.created_at DESC`,[actorUserId]);
@@ -261,7 +324,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       CASE WHEN s.status='claimed' THEN 'pending' ELSE 'approved' END status
       FROM spots s JOIN listings l ON l.id=s.listing_id WHERE l.seller_user_id=$1 AND s.buyer_user_id IS NOT NULL
       AND ((s.status IN('open','claimed') AND s.claimed_at IS NOT NULL) OR (s.status='sold' AND s.fulfilled_at IS NULL)) ORDER BY s.claimed_at DESC`,[actorUserId]);
-    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,revenue:Number(r.revenue)}));
+    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,reviewNote:r.review_note || undefined,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,revenue:Number(r.revenue)}));
     const pending=attention.rows.filter(r=>r.status==="pending").length;
     return {summary:{activeListings:rows.filter(r=>r.status==="active").length,openSpots:rows.reduce((a,r)=>a+r.open,0),pendingApproval:pending,revenue:rows.reduce((a,r)=>a+r.revenue,0),currency:rows[0]?.currency ?? "USD"},listings:rows,attention:attention.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,submittedAt:new Date(r.submitted_at).toISOString(),status:r.status}))};
   }
@@ -270,7 +333,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const spotsResult=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE listing_id=$1 ORDER BY created_at,id",[row.id]);
     const ids=spotsResult.rows.map(s=>s.id); const bids=new Map<string,Bid[]>();
     if(ids.length){const br=await this.pool.query("SELECT spot_id,bidder_handle,amount,created_at FROM bids WHERE spot_id=ANY($1) ORDER BY created_at",[ids]);for(const b of br.rows)bids.set(b.spot_id,[...(bids.get(b.spot_id)??[]),{bidder:b.bidder_handle,amount:Number(b.amount),at:new Date(b.created_at).toISOString()}]);}
-    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
+    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,reviewNote:row.review_note || undefined,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
   }
   private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString()};}
   private async getSpot(id:string):Promise<Spot|undefined>{const r=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE id=$1",[id]);if(!r.rows[0])return undefined;const b=await this.pool.query("SELECT bidder_handle,amount,created_at FROM bids WHERE spot_id=$1 ORDER BY created_at",[id]);return this.mapSpot(r.rows[0],b.rows.map(x=>({bidder:x.bidder_handle,amount:Number(x.amount),at:new Date(x.created_at).toISOString()})));}
