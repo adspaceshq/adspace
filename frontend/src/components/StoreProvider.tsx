@@ -10,10 +10,14 @@ import {
 import {
   bidApiSpot,
   claimApiSpot,
+  confirmSpotReceipt,
   createApiListing,
+  disputeSpotDelivery,
   fetchListing,
   fetchListingSummaries,
   submitSpotArtwork,
+  submitSpotProof,
+  withdrawSpotDispute,
 } from '@/lib/auth-api'
 
 interface SpotExtras {
@@ -28,6 +32,8 @@ interface StoreValue {
   placeBid: (listingId: string, spotId: string, bidder: string, amount: number, extras?: SpotExtras) => Promise<void>
   addListing: (listing: Listing) => Promise<string>
   submitArtwork: (listingId: string, spotId: string, extras: SpotExtras) => Promise<void>
+  submitProof: (listingId: string, spotId: string, proof: { photos: string[]; postUrl?: string }) => Promise<void>
+  reviewSpot: (listingId: string, spotId: string, action: 'confirm' | 'withdraw' | { dispute: string }) => Promise<void>
   getListing: (id: string) => Listing | undefined
   /** Re-fetch the marketplace (summaries only ever carry active listings). */
   refresh: () => Promise<void>
@@ -143,10 +149,30 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
       : l))
   }
 
+  // Delivery proof: the server echo replaces the photo set in place.
+  const submitProof = async (listingId: string, spotId: string, proof: { photos: string[]; postUrl?: string }) => {
+    const updated = await submitSpotProof(spotId, proof)
+    setListings((prev) => prev.map((l) => l.id === listingId
+      ? { ...l, spots: l.spots.map((s) => s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s) }
+      : l))
+  }
+
+  // Buyer receipt: confirm, dispute (with reason), or withdraw — the server echo is the source.
+  const reviewSpot = async (listingId: string, spotId: string, action: 'confirm' | 'withdraw' | { dispute: string }) => {
+    const updated = action === 'confirm'
+      ? await confirmSpotReceipt(spotId)
+      : action === 'withdraw'
+        ? await withdrawSpotDispute(spotId)
+        : await disputeSpotDelivery(spotId, action.dispute)
+    setListings((prev) => prev.map((l) => l.id === listingId
+      ? { ...l, spots: l.spots.map((s) => s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s) }
+      : l))
+  }
+
   const getListing = (id: string) => listings.find((l) => l.id === id)
 
   return (
-    <StoreContext.Provider value={{ listings, claims, claimSpot, placeBid, addListing, submitArtwork, getListing, refresh, hydrated, live }}>
+    <StoreContext.Provider value={{ listings, claims, claimSpot, placeBid, addListing, submitArtwork, submitProof, reviewSpot, getListing, refresh, hydrated, live }}>
       {children}
     </StoreContext.Provider>
   )
