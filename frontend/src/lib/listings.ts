@@ -13,8 +13,15 @@ export interface Spot {
   size: string;
   price: number;
   currency?: string;
-  /** Which Mac photo the sticker lives on: "lid" or "inside". */
+  /** Which photo the sticker lives on: "lid" | "inside" (Mac) or "tee-front" | "tee-back" | "tee-left" | "tee-right" (T-shirt). */
   view?: string;
+  /** Buyer brand assets attached at purchase (from the server echo). */
+  logoImage?: string;
+  website?: string;
+  /** Seller hand placement in % of the photo. Absent → auto layout. */
+  x?: number;
+  y?: number;
+  w?: number;
   bid?: number;
   bidBy?: string;
   bids?: Bid[];
@@ -39,6 +46,8 @@ export interface MockupView {
   id: string;
   label: string;
   photo?: string;
+  /** Flat-photo tint (#rrggbb): the seller's tee base color, multiplied over the white flat art. */
+  tint?: string;
   spots?: MockupSpot[];
   grid?: GridCell[][];
   dims?: { h: string; v: string };
@@ -51,6 +60,8 @@ export interface Listing {
   description: string;
   image: string;
   surface: string;
+  /** Tee base color (#rrggbb) chosen by the seller. */
+  fabric?: string;
   seller: { name: string; handle: string; color: string };
   deadline: string;
   endsAt: string;
@@ -58,17 +69,37 @@ export interface Listing {
   currency?: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  status?: "active" | "submitted" | "closed";
   spots: Spot[];
   mockup: { views: MockupView[] };
 }
 
 export const surfaceLabels: Record<string, string> = {
   gear: "Gear",
+  apparel: "T-shirt",
   body: "Body",
   physical: "Physical space",
   digital: "Digital space",
   reach: "Reach",
 };
+
+/** Seller-offered tee base colors. */
+export const FABRIC_PRESETS = [
+  { key: "white", label: "White", hex: "#f6f6f7" },
+  { key: "black", label: "Black", hex: "#1b1b20" },
+  { key: "navy", label: "Navy", hex: "#24406b" },
+  { key: "forest", label: "Forest", hex: "#33503c" },
+  { key: "sand", label: "Sand", hex: "#e7d9c3" },
+] as const;
+
+export const DEFAULT_FABRIC = FABRIC_PRESETS[0].hex;
+
+/** Any strict #rrggbb, else the default white — mirrors the backend's parseFabric verbatim. */
+export function normalizeFabric(value: unknown): string {
+  if (typeof value !== "string") return DEFAULT_FABRIC;
+  const hex = value.trim();
+  return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : DEFAULT_FABRIC;
+}
 
 /* Mac photos (public/mac/). The lid and the top-down deck shot are both sticker surfaces on the gear
  * spec sheet; the open shot is only the card hero. */
@@ -156,6 +187,77 @@ function insideSlots(n: number): { x: number; y: number }[] {
   });
 }
 
+/** Minimal draft shape for layout helpers: which photo, plus any hand placement. */
+export interface DraftSpot {
+  view?: string;
+  x?: number;
+  y?: number;
+  w?: number;
+}
+
+/**
+ * Freeze the auto layout into explicit points: every draft without a hand-picked
+ * x/y keeps the exact slot it sits on right now, so adding or removing a sticker
+ * never teleports the ones already placed. Width stays auto until resized by hand.
+ * Slots are per view: Mac lid / deck keep their own layouts, each tee angle its own.
+ */
+export function pinDraftPositions<T extends DraftSpot>(drafts: T[], unlabeledView?: string): T[] {
+  // Bucket per view so each photo lays out only its own stickers; a draft with
+  // no view yet belongs to the caller's working view (lid for Mac, front for tee).
+  const orders: Record<string, number[]> = {};
+  drafts.forEach((d, i) => {
+    const key = d.view ?? unlabeledView ?? LID_VIEW_ID;
+    (orders[key] ??= []).push(i);
+  });
+  const slotsByView: Record<string, { x: number; y: number }[]> = {};
+  for (const key of Object.keys(orders)) {
+    slotsByView[key] =
+      key === INSIDE_VIEW_ID
+        ? insideSlots(orders[key].length)
+        : key === TEE_FRONT_VIEW_ID || key === TEE_BACK_VIEW_ID || key === TEE_LEFT_VIEW_ID || key === TEE_RIGHT_VIEW_ID
+          ? teeSlots(orders[key].length, key)
+          : lidSlots(orders[key].length);
+  }
+  const slotFor = (d: T, i: number) => {
+    const key = d.view ?? unlabeledView ?? LID_VIEW_ID;
+    const slots = slotsByView[key];
+    return slots[orders[key].indexOf(i)];
+  };
+  return drafts.map((d, i) => {
+    if (d.x != null && d.y != null) return d;
+    return { ...d, x: slotFor(d, i)?.x ?? 50, y: slotFor(d, i)?.y ?? 50 };
+  });
+}
+
+/**
+ * Pick a home for a toolbar-added sticker: the preset slot farthest from every
+ * sticker already on that view, so it lands in open space instead of a pile.
+ */
+export function freeSlotOnView(taken: LidPoint[], viewId: string): LidPoint {
+  const slots =
+    viewId === INSIDE_VIEW_ID
+      ? MAC_INSIDE_SLOTS
+      : viewId === TEE_BACK_VIEW_ID
+        ? TEE_BACK_SLOTS
+        : viewId === TEE_LEFT_VIEW_ID || viewId === TEE_RIGHT_VIEW_ID
+          ? TEE_SIDE_SLOTS
+          : viewId === TEE_FRONT_VIEW_ID
+            ? TEE_FRONT_SLOTS
+            : MAC_LID_SLOTS;
+  let best = slots[0];
+  let bestDistance = -1;
+  for (const slot of slots) {
+    const nearest = taken.length
+      ? Math.min(...taken.map((t) => Math.hypot(t.x - slot.x, t.y - slot.y)))
+      : Infinity;
+    if (nearest > bestDistance) {
+      bestDistance = nearest;
+      best = slot;
+    }
+  }
+  return { x: best.x, y: best.y };
+}
+
 /* Photo aspect ratios. Stickers are square in pixels, so a width in % of a photo becomes a height in %
  * of that same photo via the photo's own ratio — and the two Mac shots have different crops. */
 const MAC_LID_AR = 1484 / 1060;
@@ -169,7 +271,7 @@ const MAC_INSIDE_AR = 1402 / 1122;
 export type LidPlacement = { x?: number; y?: number; w?: number };
 
 /** A concrete point on a photo, in % of that photo. */
-type LidPoint = { x: number; y: number };
+export type LidPoint = { x: number; y: number };
 
 /** Sticker width bounds, in % of the photo, for the seller's resize handle. */
 export const STICKER_MIN_W = 6;
@@ -264,6 +366,118 @@ export function gearInsideView(spotIds: string[] = [], placements?: Record<strin
   };
 }
 
+/* T-shirt (apparel surface). Four model shots are the seller's editor
+ * surfaces and the buyer's views — the same sticker treatment as the Mac
+ * lid. Each angle owns its own preset slots, since the crops lay out
+ * differently: chest box on the front, upper back on the back, the torso
+ * strip on the sides. */
+export const TEE_FRONT_VIEW_ID = "tee-front";
+export const TEE_BACK_VIEW_ID = "tee-back";
+export const TEE_LEFT_VIEW_ID = "tee-left";
+export const TEE_RIGHT_VIEW_ID = "tee-right";
+export const TEE_FRONT_PHOTO = "/tee/tee-front.png";
+export const TEE_BACK_PHOTO = "/tee/tee-back.png";
+export const TEE_LEFT_PHOTO = "/tee/tee-left.png";
+export const TEE_RIGHT_PHOTO = "/tee/tee-right.png";
+
+const TEE_FRONT_SLOTS = [
+  { x: 50, y: 33 }, // 0  chest centre (the "YOUR BRAND HERE" box)
+  { x: 50, y: 26 }, // 1  upper chest
+  { x: 50, y: 41 }, // 2  lower chest
+  { x: 41, y: 33 }, // 3  left chest
+  { x: 59, y: 33 }, // 4  right chest
+  { x: 41, y: 41 }, // 5  left lower
+  { x: 59, y: 41 }, // 6  right lower
+];
+
+const TEE_BACK_SLOTS = [
+  { x: 50, y: 27 }, // 0  upper-back centre
+  { x: 50, y: 20 }, // 1  nape
+  { x: 50, y: 36 }, // 2  lower back
+  { x: 42, y: 27 }, // 3  left back
+  { x: 58, y: 27 }, // 4  right back
+];
+
+const TEE_SIDE_SLOTS = [
+  { x: 50, y: 30 }, // 0  torso centre
+  { x: 50, y: 23 }, // 1  upper torso
+  { x: 50, y: 38 }, // 2  lower torso
+  { x: 45, y: 30 }, // 3  front edge
+  { x: 55, y: 30 }, // 4  back edge
+];
+
+/* Portrait model photos (roughly 2:3): a width-% maps to a smaller height-%. */
+const TEE_AR = 2 / 3;
+
+function teeSlots(n: number, viewId: string): { x: number; y: number }[] {
+  const base =
+    viewId === TEE_BACK_VIEW_ID
+      ? TEE_BACK_SLOTS
+      : viewId === TEE_LEFT_VIEW_ID || viewId === TEE_RIGHT_VIEW_ID
+        ? TEE_SIDE_SLOTS
+        : TEE_FRONT_SLOTS;
+  return Array.from({ length: n }, (_, i) => {
+    const slot = base[i % base.length];
+    const wrap = Math.floor(i / base.length);
+    return wrap ? { x: slot.x, y: Math.min(60, slot.y + 6 * wrap) } : slot;
+  });
+}
+
+/**
+ * Tee print zones are large: one zone can fill the chest, so the auto width starts
+ * bigger than a Mac sticker and shrinks as zones stack.
+ */
+function autoTeeWidth(count: number): number {
+  return Math.min(30, Math.max(16, 120 / Math.max(1, count)));
+}
+
+function teeView(
+  viewId: string,
+  label: string,
+  photo: string,
+  spotIds: string[],
+  placements?: Record<string, LidPlacement>,
+): MockupView {
+  const slots = teeSlots(spotIds.length, viewId);
+  const autoW = autoTeeWidth(spotIds.length);
+  return {
+    id: viewId,
+    label,
+    photo,
+    spots: spotIds.map((id, i) => {
+      const placed = placements?.[id];
+      const w = clampStickerWidth(placed?.w ?? autoW);
+      const point =
+        placed?.x != null && placed?.y != null
+          ? clampToPhoto({ x: placed.x, y: placed.y }, w, TEE_AR)
+          : clampToPhoto(slots[i], w, TEE_AR);
+      return { id, x: point.x, y: point.y, w };
+    }),
+    dims: { h: "", v: "" },
+  };
+}
+
+/* No tint on any tee view: the shots are full-bleed (skin, backdrop), not
+ * white flat art, so multiplying a fabric color would recolor the whole image. */
+export function teeFrontView(spotIds: string[] = [], placements?: Record<string, LidPlacement>): MockupView {
+  return teeView(TEE_FRONT_VIEW_ID, "Front", TEE_FRONT_PHOTO, spotIds, placements);
+}
+
+/** Upper back of the tee on the model. */
+export function teeBackView(spotIds: string[] = [], placements?: Record<string, LidPlacement>): MockupView {
+  return teeView(TEE_BACK_VIEW_ID, "Back", TEE_BACK_PHOTO, spotIds, placements);
+}
+
+/** Side profile of the tee on the model. */
+export function teeLeftView(spotIds: string[] = [], placements?: Record<string, LidPlacement>): MockupView {
+  return teeView(TEE_LEFT_VIEW_ID, "Left", TEE_LEFT_PHOTO, spotIds, placements);
+}
+
+/** Other side profile of the tee on the model. */
+export function teeRightView(spotIds: string[] = [], placements?: Record<string, LidPlacement>): MockupView {
+  return teeView(TEE_RIGHT_VIEW_ID, "Right", TEE_RIGHT_PHOTO, spotIds, placements);
+}
+
 /** URL handle without the leading @, e.g. `@notcodesid` → `notcodesid`. */
 export function handleSlug(handleOrName: string): string {
   return (handleOrName ?? '').trim().replace(/^@+/, '') || 'seller';
@@ -328,10 +542,12 @@ export function resolveNestedListing(
   );
 }
 
-/** Card thumbnail: the listing's own photo, else the MacBook hero shot (gear is the only surface the listing flow creates today). */
+/** Card thumbnail: the listing's own photo, else the MacBook hero shot for gear, the tee flat for apparel. */
 export function cardPhoto(listing: { image: string; surface?: string }): string {
   if (listing.image) return listing.image;
-  return !listing.surface || listing.surface === "gear" ? MAC_HERO_PHOTO : "";
+  if (!listing.surface || listing.surface === "gear") return MAC_HERO_PHOTO;
+  if (listing.surface === "apparel") return TEE_FRONT_PHOTO;
+  return "";
 }
 
 export function formatMoney(n: number, currency?: string): string {
@@ -357,6 +573,21 @@ export function sellerColor(name: string): string {
   return SELLER_COLORS[h % SELLER_COLORS.length];
 }
 
+/** One seller label: the handle when name and handle match, otherwise both. */
+export function sellerDisplay(seller: { name: string; handle: string }): string {
+  const handle = (seller.handle ?? '').trim();
+  const name = (seller.name ?? '').trim();
+  if (!handle) return name;
+  if (!name || name.replace(/^@+/, '').toLowerCase() === handle.replace(/^@+/, '').toLowerCase()) return handle;
+  return `${name} ${handle}`;
+}
+
+/** X username without the @, for avatar lookup. */
+export function sellerUsername(seller: { name: string; handle: string }): string {
+  const from = seller.handle || seller.name;
+  return (from ?? '').trim().replace(/^@+/, '');
+}
+
 export function deadlineLabel(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -371,6 +602,13 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
   const claimed = mode === "fixed" && s.status !== "open" && !!s.buyer;
   const topBid = mode === "auction" ? s.currentBid : undefined;
   const actor = claimed ? s.buyer! : topBid != null ? s.buyer : undefined;
+  const placement = (v: number | null | undefined) =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  // Views pass through: Mac ("lid"/"inside") and the four tee angles
+  // ("tee-front"/"tee-back"/"tee-left"/"tee-right").
+  // Anything else (legacy/unknown) reads as a lid spot, exactly as before.
+  const view =
+    s.view === "inside" || s.view === "tee-front" || s.view === "tee-back" || s.view === "tee-left" || s.view === "tee-right" ? s.view : "lid";
   return {
     id: s.id,
     label: s.label,
@@ -378,7 +616,12 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
     size: s.size,
     price: s.price,
     currency: s.currency,
-    view: s.view === "inside" ? "inside" : "lid",
+    view,
+    x: placement(s.x),
+    y: placement(s.y),
+    w: placement(s.w),
+    website: s.website || undefined,
+    logoImage: s.logoUrl || undefined,
     bid: topBid ?? (claimed ? s.price : undefined),
     bidBy: mode === "auction" ? s.buyer : undefined,
     bids: s.bids?.map((b) => ({ bidder: b.bidder, amount: b.amount, at: b.at })),
@@ -396,8 +639,22 @@ export function apiListingToUi(a: ApiListing): Listing {
   const spots = a.spots.map((s) => apiSpotToUi(s, a.mode));
   const description = a.artworkClose ? `${a.story} (Artwork: ${a.artworkClose}.)` : a.story;
   // Stickers live on exactly one photo: the lid gets every non-inside spot, the deck only its own.
-  const lidIds = spots.filter((s) => s.view !== "inside").map((s) => s.id);
-  const deckIds = spots.filter((s) => s.view === "inside").map((s) => s.id);
+  // Hand placements ride along — buyers see the seller's exact layout, not a re-layout.
+  // Tee listings split across the four model shots; a spot with no recorded
+  // view (or a legacy unknown one) reads as front, so nothing goes missing.
+  const isTee = a.surface === "apparel";
+  const fabric = normalizeFabric(a.fabric);
+  const lidIds = isTee ? [] : spots.filter((s) => s.view !== "inside").map((s) => s.id);
+  const deckIds = isTee ? [] : spots.filter((s) => s.view === "inside").map((s) => s.id);
+  const onTeeView = (v: string) => (isTee ? spots.filter((s) => s.view === v).map((s) => s.id) : []);
+  const frontIds = isTee ? [...onTeeView("tee-front"), ...onTeeView("lid")] : [];
+  const backIds = onTeeView("tee-back");
+  const leftIds = onTeeView("tee-left");
+  const rightIds = onTeeView("tee-right");
+  const placed: Record<string, LidPlacement> = {};
+  for (const s of spots) {
+    if (s.x != null || s.y != null || s.w != null) placed[s.id] = { x: s.x, y: s.y, w: s.w };
+  }
   return {
     id: a.slug,
     title: a.title,
@@ -405,6 +662,7 @@ export function apiListingToUi(a: ApiListing): Listing {
     description,
     image,
     surface: a.surface,
+    fabric,
     seller: { name: a.seller, handle: a.sellerHandle, color: sellerColor(a.seller) },
     deadline: deadlineLabel(a.deadline),
     endsAt: a.deadline,
@@ -412,21 +670,24 @@ export function apiListingToUi(a: ApiListing): Listing {
     currency: a.currency,
     minIncrement: a.minIncrement,
     doubleUp: a.doubleUp,
+    status: a.status,
     spots,
-    mockup: {
-      views: image
-        ? [{ id: "main", label: "Overview", photo: image, dims: { h: "", v: "" } }]
-        : a.surface === "gear"
-          ? [gearPhotoView(lidIds), gearInsideView(deckIds)]
-          : [{
-              id: "main",
-              label: "Spots",
-              grid: chunk(spots.map((s) => s.id), 3).map((row) =>
-                row.map((spot) => ({ spot, span: Math.max(1, Math.floor(12 / row.length)) })),
-              ),
-              dims: { h: "", v: "" },
-            }],
-    },
+      mockup: {
+        views: image
+          ? [{ id: "main", label: "Overview", photo: image, dims: { h: "", v: "" } }]
+          : isTee
+            ? [teeFrontView(frontIds, placed), teeBackView(backIds, placed), teeLeftView(leftIds, placed), teeRightView(rightIds, placed)]
+            : a.surface === "gear"
+              ? [gearPhotoView(lidIds, placed), gearInsideView(deckIds, placed)]
+              : [{
+                  id: "main",
+                  label: "Spots",
+                  grid: chunk(spots.map((s) => s.id), 3).map((row) =>
+                    row.map((spot) => ({ spot, span: Math.max(1, Math.floor(12 / row.length)) })),
+                  ),
+                  dims: { h: "", v: "" },
+                }],
+      },
   };
 }
 

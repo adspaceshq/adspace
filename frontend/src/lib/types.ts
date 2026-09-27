@@ -50,7 +50,8 @@ export interface ApiListing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
-  status: "active" | "closed";
+  status: "active" | "submitted" | "closed";
+  reviewNote?: string;
   spots: ApiSpot[];
 }
 
@@ -100,6 +101,7 @@ export interface SessionUser {
   avatar?: string;
   csrfToken: string;
   expiresAt: string;
+  isReviewer: boolean;
 }
 
 /** Public seller profile at /{username}. payoutWallet is only ever returned to the owner. */
@@ -123,7 +125,8 @@ export interface SellerDashboardListing {
   slug: string;
   title: string;
   image: string;
-  status: "active" | "closed";
+  status: "active" | "submitted" | "closed";
+  reviewNote?: string;
   mode: ApiMode;
   currency: string;
   sold: number;
