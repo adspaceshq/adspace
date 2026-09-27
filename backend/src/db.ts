@@ -26,6 +26,20 @@ export function normalizeHandle(handle: string | undefined | null): string {
   return (handle ?? "").trim().replace(/^@+/, "").toLowerCase();
 }
 
+/**
+ * Step 3: platform reviewers are named in PLATFORM_REVIEWERS. Each entry
+ * matches an X handle (case-insensitive, `@` optional) or a stable user ID —
+ * so a handle rename never locks the operator out when the ID is listed.
+ */
+export function isReviewer(user: Pick<SessionUser, "id" | "handle">, reviewers: readonly string[]): boolean {
+  const cleanHandle = normalizeHandle(user.handle);
+  return reviewers.some((entry) => {
+    const clean = entry.trim();
+    if (!clean) return false;
+    return clean === user.id || normalizeHandle(clean) === cleanHandle;
+  });
+}
+
 /** Bio: trimmed, at most 280 chars. */
 export function parseBio(value: unknown): string {
   const bio = typeof value === "string" ? value.trim() : "";
