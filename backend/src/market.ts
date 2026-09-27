@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
+import { TERMS_VERSION } from "./types.js";
 import type { Bid, CreateListingRequest, Listing, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 export interface MarketplaceRepository {
@@ -16,6 +17,7 @@ export interface MarketplaceRepository {
   reviewQueue(): Promise<Listing[]>;
   approveReview(slug: string): Promise<Listing>;
   rejectReview(slug: string, reason: string): Promise<Listing>;
+  acceptTerms(slug: string, actorUserId: string, version: string): Promise<Listing>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
   fulfill(spotId: string, actorUserId: string): Promise<Spot>;
@@ -25,8 +27,8 @@ export interface MarketplaceRepository {
 type ListingRow = {
   id: string; slug: string; title: string; seller_user_id: string; seller_handle: string;
   surface: string; story: string; image_url: string; fabric: string; mode: "fixed" | "auction"; currency: string;
-  deadline: Date; artwork_close: string; min_increment: string | null; double_up: boolean; status: "active" | "submitted" | "closed";
-  review_note: string | null;
+  deadline: Date; artwork_close: string; min_increment: string | null; double_up: boolean; status: "active" | "approved" | "submitted" | "closed";
+  review_note: string | null; terms_version: string | null; terms_accepted_at: Date | null;
 };
 type SpotRow = {
   id: string; listing_id: string; label: string; location: string; size: string; price: string;
@@ -87,7 +89,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
         image_url text NOT NULL DEFAULT '', mode text NOT NULL CHECK (mode IN ('fixed','auction')),
         currency text NOT NULL DEFAULT 'USD', deadline timestamptz NOT NULL, artwork_close text NOT NULL DEFAULT '',
         min_increment numeric(14,2), double_up boolean NOT NULL DEFAULT false,
-        status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('active','submitted','closed')),
+        status text NOT NULL DEFAULT 'submitted' CHECK (status IN ('active','approved','submitted','closed')),
         created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
       );
       CREATE TABLE IF NOT EXISTS spots (
@@ -110,8 +112,10 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       CREATE INDEX IF NOT EXISTS bids_spot_created_idx ON bids(spot_id, created_at);
       CREATE INDEX IF NOT EXISTS bids_bidder_user_id_idx ON bids(bidder_user_id);
       ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_status_check;
-      ALTER TABLE listings ADD CHECK (status IN ('active','submitted','closed'));
+      ALTER TABLE listings ADD CHECK (status IN ('active','approved','submitted','closed'));
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_note text NOT NULL DEFAULT '';
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_version text NOT NULL DEFAULT '';
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS view text NOT NULL DEFAULT 'lid';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS website_url text NOT NULL DEFAULT '';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS logo_url text NOT NULL DEFAULT '';
@@ -193,7 +197,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return (await this.get(slug))!;
   }
 
-  private async setStatus(slug: string, actorUserId: string, status: "active" | "submitted" | "closed"): Promise<Listing> {
+  private async setStatus(slug: string, actorUserId: string, status: "active" | "approved" | "submitted" | "closed"): Promise<Listing> {
     const result = await this.pool.query(`UPDATE listings SET status=$3,updated_at=now()
       WHERE slug=$1 AND seller_user_id=$2 RETURNING slug`, [slug,actorUserId,status]);
     if (!result.rows[0]) await this.throwListingAccess(slug, actorUserId);
@@ -216,6 +220,21 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return (await this.get(slug))!;
   }
 
+  async acceptTerms(slug: string, actorUserId: string, version: string): Promise<Listing> {
+    if (version !== TERMS_VERSION) throw httpError(`terms version ${version || "(missing)"} is stale — accept ${TERMS_VERSION}`, 400);
+    const current = await this.pool.query("SELECT status, seller_user_id FROM listings WHERE slug=$1", [slug]);
+    const row = current.rows[0];
+    if (!row) throw httpError("listing not found", 404);
+    if (row.seller_user_id !== actorUserId) throw httpError("forbidden", 403);
+    if (row.status === "active") return (await this.get(slug))!;
+    if (row.status !== "approved") throw httpError("listing is not approved yet", 409);
+    await this.pool.query(
+      "UPDATE listings SET status='active', terms_version=$2, terms_accepted_at=now(), updated_at=now() WHERE slug=$1",
+      [slug, TERMS_VERSION],
+    );
+    return (await this.get(slug))!;
+  }
+
   async reviewQueue(): Promise<Listing[]> {
     const result = await this.pool.query<ListingRow>(
       "SELECT * FROM listings WHERE status='submitted' ORDER BY created_at DESC",
@@ -225,7 +244,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
 
   async approveReview(slug: string): Promise<Listing> {
     const result = await this.pool.query(
-      `UPDATE listings SET status='active', review_note='', updated_at=now()
+      `UPDATE listings SET status='approved', review_note='', updated_at=now()
        WHERE slug=$1 AND status='submitted' RETURNING slug`,
       [slug],
     );
@@ -333,7 +352,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const spotsResult=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE listing_id=$1 ORDER BY created_at,id",[row.id]);
     const ids=spotsResult.rows.map(s=>s.id); const bids=new Map<string,Bid[]>();
     if(ids.length){const br=await this.pool.query("SELECT spot_id,bidder_handle,amount,created_at FROM bids WHERE spot_id=ANY($1) ORDER BY created_at",[ids]);for(const b of br.rows)bids.set(b.spot_id,[...(bids.get(b.spot_id)??[]),{bidder:b.bidder_handle,amount:Number(b.amount),at:new Date(b.created_at).toISOString()}]);}
-    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,reviewNote:row.review_note || undefined,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
+    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,reviewNote:row.review_note || undefined,termsVersion:row.terms_version || undefined,termsAcceptedAt:row.terms_accepted_at?.toISOString(),spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
   }
   private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString()};}
   private async getSpot(id:string):Promise<Spot|undefined>{const r=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE id=$1",[id]);if(!r.rows[0])return undefined;const b=await this.pool.query("SELECT bidder_handle,amount,created_at FROM bids WHERE spot_id=$1 ORDER BY created_at",[id]);return this.mapSpot(r.rows[0],b.rows.map(x=>({bidder:x.bidder_handle,amount:Number(x.amount),at:new Date(x.created_at).toISOString()})));}

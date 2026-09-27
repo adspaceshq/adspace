@@ -1,3 +1,4 @@
+import { TERMS_VERSION } from "./types.js";
 import type { Bid, CreateListingRequest, Listing, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
@@ -232,8 +233,21 @@ export class Store {
     const listing = this.listings.get(slug);
     if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
     if (listing.status !== "submitted") throw Object.assign(new Error("listing is not awaiting review"), { status: 409 });
-    listing.status = "active";
+    listing.status = "approved";
     listing.reviewNote = undefined;
+    return listing;
+  }
+
+  acceptTerms(slug: string, actorUserId: string, version: string): Listing {
+    if (version !== TERMS_VERSION) {
+      throw Object.assign(new Error(`terms version ${version || "(missing)"} is stale — accept ${TERMS_VERSION}`), { status: 400 });
+    }
+    const listing = this.ownedListing(slug, actorUserId);
+    if (listing.status === "active") return listing;
+    if (listing.status !== "approved") throw Object.assign(new Error("listing is not approved yet"), { status: 409 });
+    listing.status = "active";
+    listing.termsVersion = TERMS_VERSION;
+    listing.termsAcceptedAt = new Date().toISOString();
     return listing;
   }
 

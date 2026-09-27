@@ -5,7 +5,8 @@ import { Store } from "./store.js";
 import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken } from "./auth.js";
 import { csrfMatches, isReviewer, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
 import type { MarketplaceRepository } from "./market.js";
-import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, UpdateProfileRequest } from "./types.js";
+import { TERMS_TEXT, TERMS_VERSION } from "./types.js";
+import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
@@ -57,6 +58,7 @@ export function createApp({
     dashboard: async user => store.dashboard(user),
     reviewQueue: async () => store.reviewQueue(), approveReview: async slug => store.approveReview(slug),
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
+    acceptTerms: async (slug,user,version) => store.acceptTerms(slug,user,version),
   };
   const app = express();
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
@@ -155,6 +157,13 @@ export function createApp({
   app.post("/api/listings/:slug/reject", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
     const reason = (req.body as { reason?: unknown } | null)?.reason;
     try { res.json(await repo.rejectReview(req.params.slug, typeof reason === "string" ? reason : "")); } catch (e) { sendErr(res, e); }
+  });
+  app.get("/api/terms", (_req, res) => {
+    res.json({ version: TERMS_VERSION, text: TERMS_TEXT } satisfies TermsDoc);
+  });
+  app.post("/api/listings/:slug/accept-terms", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const version = (req.body as { version?: unknown } | null)?.version;
+    try { res.json(await repo.acceptTerms(req.params.slug, req.user!.id, typeof version === "string" ? version : "")); } catch (e) { sendErr(res, e); }
   });
   app.get("/api/listings", async (_req, res) => { try { res.json(await repo.summaries()); } catch(e){sendErr(res,e);} });
   app.get("/api/listings/:slug", async (req, res) => { try { const listing = await repo.get(req.params.slug); listing ? res.json(listing) : res.status(404).json({ error: "listing not found" }); } catch(e){sendErr(res,e);} });

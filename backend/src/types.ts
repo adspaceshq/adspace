@@ -1,6 +1,24 @@
 export type Mode = "fixed" | "auction";
 export type SpotStatus = "open" | "claimed" | "sold";
 
+/** Current seller terms. Bumped by hand; accept calls pin this exact version. */
+export const TERMS_VERSION = "v1";
+
+export const TERMS_TEXT = `Adspaces seller terms (v1, demo).
+
+1. Demo only — claims and bids mark spots. No real money moves yet.
+2. Describe your surface honestly: what buyers get, where, and for how long.
+3. Deliver the campaign as listed, or refund the buyer off-platform.
+4. You approve every claim; unapproved spots never count as sold.
+5. Artwork closes on the date you set. Late artwork may forfeit the spot.
+6. The platform may remove listings that mislead buyers, with a reason.
+7. Payouts are manual until on-chain settlement ships.`;
+
+export interface TermsDoc {
+  version: string;
+  text: string;
+}
+
 export interface Bid {
   bidder: string;
   amount: number;
@@ -49,9 +67,12 @@ export interface Listing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
-  status: "active" | "submitted" | "closed";
+  status: "active" | "approved" | "submitted" | "closed";
   /** Why the platform rejected this submission (set on reject, cleared on approve/resubmit). */
   reviewNote?: string;
+  /** Terms version accepted for this listing, and when (set on accept-terms). */
+  termsVersion?: string;
+  termsAcceptedAt?: string;
   spots: Spot[];
 }
 
@@ -133,7 +154,7 @@ export interface SellerDashboardListing {
   slug: string;
   title: string;
   image: string;
-  status: "active" | "submitted" | "closed";
+  status: "active" | "approved" | "submitted" | "closed";
   reviewNote?: string;
   mode: Mode;
   currency: string;
