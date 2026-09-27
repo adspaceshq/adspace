@@ -59,6 +59,7 @@ export function createApp({
     reviewQueue: async () => store.reviewQueue(), approveReview: async slug => store.approveReview(slug),
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
     acceptTerms: async (slug,user,version) => store.acceptTerms(slug,user,version),
+    submitArtwork: async (id,user,assets) => store.submitArtwork(id,user,assets),
   };
   const app = express();
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
@@ -182,6 +183,9 @@ export function createApp({
     const amount = Number((req.body as { amount?: number } | null)?.amount);
     if (!(amount > 0)) return void res.status(400).json({ error: "positive amount is required" });
     try { res.json(await repo.placeBid(req.params.id, req.user!, amount, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/spots/:id/artwork", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    try { res.json(await repo.submitArtwork(req.params.id, req.user!, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
