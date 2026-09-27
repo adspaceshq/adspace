@@ -15,6 +15,7 @@ async function start() {
     auth,
     market,
     profiles: auth,
+    reviewers: config.platformReviewers,
     frontendUrl: config.frontendUrl,
     trustProxy: config.trustProxy,
     chain: { cluster: config.solana.cluster, programId: config.solana.programId },

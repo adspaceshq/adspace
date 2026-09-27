@@ -9,6 +9,8 @@ export interface AppConfig {
   databaseUrl: string;
   databasePoolSize: number;
   sessionTtlHours: number;
+  /** X handles or stable user IDs allowed to review submissions (Step 3). */
+  platformReviewers: string[];
   solana: { cluster: SolanaCluster; programId: string; rpcUrl?: string; websocketUrl?: string };
 }
 
@@ -61,6 +63,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     databaseUrl,
     databasePoolSize: positiveInteger("DATABASE_POOL_SIZE", env.DATABASE_POOL_SIZE, 10),
     sessionTtlHours: positiveInteger("SESSION_TTL_HOURS", env.SESSION_TTL_HOURS, 168),
+    platformReviewers: (env.PLATFORM_REVIEWERS ?? "").split(",").map((s) => s.trim()).filter(Boolean),
     solana: {
       cluster: cluster(env.SOLANA_NETWORK),
       programId: programId(env.ADSPACES_PROGRAM_ID),
