@@ -3,6 +3,26 @@ import type { Bid, CreateListingRequest, Listing, ListingSummary, PurchaseAssets
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
+/** Step 5: lazy deadline — a listing is over once its deadline passes, whatever its status says. */
+const hasEnded = (deadline: string) => new Date(deadline).getTime() <= Date.now();
+
+/** Step 7: artwork due date. Empty stays empty; otherwise a parseable date. */
+function parseArtworkClose(value: unknown): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  if (Number.isNaN(new Date(raw).getTime())) {
+    throw Object.assign(new Error("artwork close must be a valid date"), { status: 400 });
+  }
+  return new Date(raw).toISOString();
+}
+
+/** Intake is locked once the artwork-close date passes (empty = no lock). */
+function artworkLocked(artworkClose: string): boolean {
+  if (!artworkClose) return false;
+  const t = new Date(artworkClose).getTime();
+  return !Number.isNaN(t) && t <= Date.now();
+}
+
 const MAX_LOGO_URL_LENGTH = 3_000_000;
 
 /** Validate buyer brand assets. Empty/absent stays absent; anything malformed is a 400. */
@@ -71,7 +91,7 @@ export class Store {
   summaries(): ListingSummary[] {
     return this.order.flatMap((slug) => {
       const l = this.listings.get(slug)!;
-      if (l.status !== "active") return [];
+      if (l.status !== "active" || hasEnded(l.deadline)) return [];
       const sum: ListingSummary = {
         id: l.id, slug: l.slug, title: l.title, seller: l.seller,
         surface: l.surface, image: l.image, mode: l.mode, currency: l.currency,
@@ -166,7 +186,7 @@ export class Store {
       surface: req.surface ?? "", story: req.story ?? "",
       image, mode, fabric,
       // Step 2: submissions land as submitted — platform review activates them.
-      currency, deadline, artworkClose: req.artworkClose ?? "", status: "submitted", spots,
+      currency, deadline, artworkClose: parseArtworkClose(req.artworkClose), status: "submitted", spots,
     };
     this.listings.set(id, listing);
     this.order.unshift(id);
@@ -192,6 +212,23 @@ export class Store {
     const { listing, spot } = this.ownedSpot(spotId, actorUserId);
     if (!spot.buyer) throw Object.assign(new Error("spot has no buyer to approve"), { status: 409 });
     spot.status = "sold";
+    return spot;
+  }
+
+  submitArtwork(spotId: string, actor: SessionUser | string, assets?: PurchaseAssets): Spot {
+    const brand = parseBrandAssets(assets);
+    if (!brand.website && !brand.logoUrl) throw Object.assign(new Error("artwork is required"), { status: 400 });
+    const found = this.findSpot(spotId);
+    if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
+    const { listing, spot } = found;
+    if (spot.status !== "sold") throw Object.assign(new Error("artwork intake opens once the spot is sold"), { status: 409 });
+    // The demo store tracks buyers by handle (Postgres compares stable IDs).
+    const actorHandle = typeof actor === "string" ? actor : actor.handle;
+    if (!spot.buyer || spot.buyer !== actorHandle) throw Object.assign(new Error("only the buyer can submit artwork"), { status: 403 });
+    if (artworkLocked(listing.artworkClose)) throw Object.assign(new Error("artwork window has closed"), { status: 409 });
+    if (brand.website) spot.website = brand.website;
+    if (brand.logoUrl) spot.logoUrl = brand.logoUrl;
+    spot.artworkSubmittedAt = new Date().toISOString();
     return spot;
   }
 
@@ -245,6 +282,7 @@ export class Store {
     const listing = this.ownedListing(slug, actorUserId);
     if (listing.status === "active") return listing;
     if (listing.status !== "approved") throw Object.assign(new Error("listing is not approved yet"), { status: 409 });
+    if (hasEnded(listing.deadline)) throw Object.assign(new Error("deadline has passed — close and relist"), { status: 409 });
     listing.status = "active";
     listing.termsVersion = TERMS_VERSION;
     listing.termsAcceptedAt = new Date().toISOString();
@@ -294,6 +332,7 @@ export class Store {
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
     if (listing.status !== "active") throw Object.assign(new Error("listing is closed"), { status: 409 });
+    if (hasEnded(listing.deadline)) throw Object.assign(new Error("listing has ended"), { status: 409 });
     if (listing.mode === "auction") throw Object.assign(new Error("auction spot: place a bid instead"), { status: 409 });
     if (spot.status !== "open") throw Object.assign(new Error("spot already taken"), { status: 409 });
     spot.status = "claimed";
@@ -309,6 +348,7 @@ export class Store {
     if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
     const { listing, spot } = found;
     if (listing.status !== "active") throw Object.assign(new Error("listing is closed"), { status: 409 });
+    if (hasEnded(listing.deadline)) throw Object.assign(new Error("listing has ended"), { status: 409 });
     if (listing.mode !== "auction") throw Object.assign(new Error("fixed-price spot: claim it instead"), { status: 409 });
     if (spot.status !== "open") throw Object.assign(new Error("spot closed"), { status: 409 });
     const hasBids = (spot.bids?.length ?? 0) > 0;
@@ -338,11 +378,11 @@ export class Store {
 
   dashboard(actorUserId: string): SellerDashboard {
     const listings = this.order.map(slug => this.listings.get(slug)!).filter(l => l.sellerUserId === actorUserId).map(l => ({
-      id:l.id,slug:l.slug,title:l.title,image:l.image,status:l.status,reviewNote:l.reviewNote,mode:l.mode,currency:l.currency,
+      id:l.id,slug:l.slug,title:l.title,image:l.image,status:l.status,deadline:l.deadline,reviewNote:l.reviewNote,mode:l.mode,currency:l.currency,
       sold:l.spots.filter(s=>s.status!=="open").length,open:l.spots.filter(s=>s.status==="open").length,total:l.spots.length,
       revenue:l.spots.filter(s=>s.status==="sold").reduce((sum,s)=>sum+(s.currentBid??s.price),0),
     }));
-    const attention = this.order.flatMap(slug => { const l=this.listings.get(slug)!; if(l.sellerUserId!==actorUserId)return []; return l.spots.filter(s=>s.buyer&&(s.status==="claimed"||(s.status==="sold"&&!s.fulfilledAt))).map(s=>({spotId:s.id,listingId:l.id,listingSlug:l.slug,listingTitle:l.title,spotLabel:s.label,buyer:s.buyer!,amount:s.currentBid??s.price,currency:s.currency,submittedAt:new Date().toISOString(),status:s.status==="claimed"?"pending" as const:"approved" as const})); });
-    return {summary:{activeListings:listings.length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),currency:listings[0]?.currency??"USD"},listings,attention};
+    const attention = this.order.flatMap(slug => { const l=this.listings.get(slug)!; if(l.sellerUserId!==actorUserId)return []; return l.spots.filter(s=>s.buyer&&(s.status==="claimed"||(s.status==="sold"&&!s.fulfilledAt))).map(s=>({spotId:s.id,listingId:l.id,listingSlug:l.slug,listingTitle:l.title,spotLabel:s.label,buyer:s.buyer!,amount:s.currentBid??s.price,currency:s.currency,submittedAt:new Date().toISOString(),status:s.status==="claimed"?"pending" as const:"approved" as const,artworkReceived:!!s.artworkSubmittedAt})); });
+    return {summary:{activeListings:listings.filter(l=>l.status==="active" && !hasEnded(l.deadline)).length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),currency:listings[0]?.currency??"USD"},listings,attention};
   }
 }
