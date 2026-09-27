@@ -31,6 +31,53 @@ export interface Spot {
   sold?: boolean;
   /** When the buyer submitted final artwork (Step 7 intake). */
   artworkSubmittedAt?: string;
+  /** When the seller marked the campaign delivered (Step 8). */
+  fulfilledAt?: string;
+  /** Delivery evidence photos pinned by the seller (Step 9 proof). */
+  proofPhotos?: string[];
+  /** X post distributing the delivered campaign. */
+  proofPost?: string;
+  /** Buyer receipt: confirmed delivery (early payout release). */
+  confirmedAt?: string;
+  /** Open buyer dispute (blocks payout until withdrawn). */
+  disputedAt?: string;
+  disputeReason?: string;
+  /** Manual-USDC payout record (reviewer-posted transfer signature). */
+  paidAt?: string;
+  payoutAmount?: number;
+  payoutFee?: number;
+  payoutReference?: string;
+  payoutDestination?: string;
+}
+
+/** Solana tx signatures are 64 raw bytes → 87–88 base58 chars. */
+export function isSignatureLike(value: string): boolean {
+  return /^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(value);
+}
+
+export function explorerTxUrl(signature: string): string {
+  const cluster = process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? "devnet";
+  const base = `https://explorer.solana.com/tx/${signature}`;
+  return cluster === "mainnet-beta" ? base : `${base}?cluster=${cluster}`;
+}
+
+/** Lazy 3-day review window from fulfillment (mirrors the API rule). */
+export const REVIEW_WINDOW_MS = 3 * 86_400_000;
+
+/** Payout-releasable: undisputed AND (confirmed OR the window elapsed). */
+export function payoutReleased(spot: { fulfilledAt?: string; confirmedAt?: string; disputedAt?: string }): boolean {
+  if (!spot.fulfilledAt) return false;
+  if (spot.disputedAt) return false;
+  if (spot.confirmedAt) return true;
+  return new Date(spot.fulfilledAt).getTime() + REVIEW_WINDOW_MS <= Date.now();
+}
+
+/** Whole days left in the buyer's review window (0 once elapsed). */
+export function reviewDaysLeft(fulfilledAt: string | undefined): number {
+  if (!fulfilledAt) return 0;
+  const t = new Date(fulfilledAt).getTime();
+  if (Number.isNaN(t)) return 0;
+  return Math.max(0, Math.ceil((t + REVIEW_WINDOW_MS - Date.now()) / 86_400_000));
 }
 
 export interface MockupSpot {
@@ -642,6 +689,17 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
     logoColor: actor ? sellerColor(actor) : undefined,
     sold: s.status === "sold",
     artworkSubmittedAt: s.artworkSubmittedAt || undefined,
+    fulfilledAt: s.fulfilledAt || undefined,
+    proofPhotos: s.proofPhotos?.length ? [...s.proofPhotos] : undefined,
+    proofPost: s.proofPost || undefined,
+    confirmedAt: s.confirmedAt || undefined,
+    disputedAt: s.disputedAt || undefined,
+    disputeReason: s.disputeReason || undefined,
+    paidAt: s.paidAt || undefined,
+    payoutAmount: s.payoutAmount,
+    payoutFee: s.payoutFee,
+    payoutReference: s.payoutReference || undefined,
+    payoutDestination: s.payoutDestination || undefined,
   };
 }
 
