@@ -5,9 +5,9 @@ import Link from 'next/link'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
-import { approveReviewListing, fetchReviewQueue, rejectReviewListing } from '@/lib/auth-api'
-import { cardPhoto, sellerDisplay } from '@/lib/listings'
-import type { ApiListing } from '@/lib/types'
+import { approveReviewListing, fetchPayableQueue, fetchReviewQueue, payApiSpot, rejectReviewListing } from '@/lib/auth-api'
+import { cardPhoto, explorerTxUrl, isSignatureLike, sellerDisplay } from '@/lib/listings'
+import type { ApiListing, PayoutItem } from '@/lib/types'
 
 export default function ReviewPage() {
   const auth = useAuthSession()
@@ -15,6 +15,10 @@ export default function ReviewPage() {
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState<string>()
   const [reasons, setReasons] = useState<Record<string, string>>({})
+  const [payouts, setPayouts] = useState<PayoutItem[] | null>(null)
+  const [payRefs, setPayRefs] = useState<Record<string, string>>({})
+  const [payBusy, setPayBusy] = useState<string>()
+  const [payError, setPayError] = useState<string>()
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -25,6 +29,13 @@ export default function ReviewPage() {
       setQueue(null)
       setError(e instanceof Error ? e.message : 'Could not load the review queue.')
     }
+    try {
+      setPayouts(await fetchPayableQueue())
+      setPayError(undefined)
+    } catch (e) {
+      setPayouts(null)
+      setPayError(e instanceof Error ? e.message : 'Could not load the payout queue.')
+    }
   }, [auth.authenticated])
 
   useEffect(() => {
@@ -33,6 +44,10 @@ export default function ReviewPage() {
     fetchReviewQueue().then(
       (q) => { if (!cancelled) { setQueue(q); setError(undefined) } },
       (e) => { if (!cancelled) { setQueue(null); setError(e instanceof Error ? e.message : 'Could not load the review queue.') } },
+    )
+    fetchPayableQueue().then(
+      (p) => { if (!cancelled) { setPayouts(p); setPayError(undefined) } },
+      (e) => { if (!cancelled) { setPayouts(null); setPayError(e instanceof Error ? e.message : 'Could not load the payout queue.') } },
     )
     return () => { cancelled = true }
   }, [auth.authenticated])
@@ -96,6 +111,44 @@ export default function ReviewPage() {
                         <button disabled={busy === l.slug} onClick={() => void act(l.slug, 'approve')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button>
                         <button disabled={busy === l.slug} onClick={() => void act(l.slug, 'reject')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold text-[#dc2626] disabled:opacity-50">Reject</button>
                       </div></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+            <div className="mb-7 mt-12">
+              <h2 className="text-[28px]">Payouts</h2>
+              <p className="mt-1 text-[14px] text-[#64748b]">Released spots awaiting manual USDC. Send the transfer from your wallet, then paste the transaction signature to record it.</p>
+            </div>
+            {payError && <div role="alert" className="mb-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{payError}</div>}
+            {payouts === null ? (
+              !payError && <p className="py-12 text-center text-[#64748b]">Loading payouts…</p>
+            ) : payouts.length === 0 ? (
+              <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center">
+                <h3 className="text-xl">Nothing to pay.</h3>
+                <p className="mt-2 text-sm text-[#64748b]">No released-but-unpaid spots.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-[#e7e5e0] bg-white">
+                <table className="w-full min-w-[820px] border-collapse text-left text-sm">
+                  <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Spot', 'Seller', 'Buyer', 'Amount', 'Tx signature', 'Action'].map(x => <th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
+                  <tbody>{payouts.map(p => (
+                    <tr key={p.spotId} className="border-b border-[#e7e5e0] last:border-0">
+                      <td className="px-4 py-4"><Link href={`/listings/${p.listingSlug}`} className="font-medium text-[#4166fb]">{p.listingTitle} · {p.spotLabel}</Link></td>
+                      <td className="px-4 py-4 font-mono text-xs">{p.seller}</td>
+                      <td className="px-4 py-4 font-mono text-xs">{p.buyer}</td>
+                      <td className="px-4 py-4 font-mono text-xs">{p.amount} {p.currency}</td>
+                      <td className="px-4 py-4"><input value={payRefs[p.spotId] ?? ''} onChange={(e) => setPayRefs((prev) => ({ ...prev, [p.spotId]: e.target.value }))} placeholder="Solana tx signature" spellCheck={false} className="w-full min-w-[220px] rounded-lg border border-[#e7e5e0] px-3 py-2 font-mono text-[12px] outline-none transition focus:border-[#4166fb]" /></td>
+                      <td className="px-4 py-4"><button disabled={payBusy === p.spotId || !isSignatureLike((payRefs[p.spotId] ?? '').trim())} onClick={() => void (async () => {
+                        setPayBusy(p.spotId); setPayError(undefined)
+                        try {
+                          const paid = await payApiSpot(p.spotId, (payRefs[p.spotId] ?? '').trim())
+                          setPayRefs((prev) => { const next = { ...prev }; delete next[p.spotId]; return next })
+                          await load()
+                          if (paid.payoutReference) window.open(explorerTxUrl(paid.payoutReference), '_blank', 'noopener')
+                        } catch (e) { setPayError(e instanceof Error ? e.message : 'Payout failed.') }
+                        finally { setPayBusy(undefined) }
+                      })()} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Record payout</button></td>
                     </tr>
                   ))}</tbody>
                 </table>
