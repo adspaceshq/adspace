@@ -13,6 +13,7 @@ import {
   createApiListing,
   fetchListing,
   fetchListingSummaries,
+  submitSpotArtwork,
 } from '@/lib/auth-api'
 
 interface SpotExtras {
@@ -26,6 +27,7 @@ interface StoreValue {
   claimSpot: (listingId: string, spotId: string, name: string, extras?: SpotExtras) => Promise<void>
   placeBid: (listingId: string, spotId: string, bidder: string, amount: number, extras?: SpotExtras) => Promise<void>
   addListing: (listing: Listing) => Promise<string>
+  submitArtwork: (listingId: string, spotId: string, extras: SpotExtras) => Promise<void>
   getListing: (id: string) => Listing | undefined
   /** Re-fetch the marketplace (summaries only ever carry active listings). */
   refresh: () => Promise<void>
@@ -109,6 +111,7 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
         mode: listing.priceType,
         currency: listing.currency ?? 'USD',
         deadline: listing.endsAt,
+        ...(listing.artworkClose ? { artworkClose: listing.artworkClose } : {}),
         spots: listing.spots.map((s) => ({
           label: s.label,
           location: s.location,
@@ -131,10 +134,19 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
     return adopted.id
   }
 
+  // Post-purchase artwork intake: the server echo replaces the purchase
+  // assets in place and stamps when they arrived.
+  const submitArtwork = async (listingId: string, spotId: string, extras: SpotExtras) => {
+    const updated = await submitSpotArtwork(spotId, extras)
+    setListings((prev) => prev.map((l) => l.id === listingId
+      ? { ...l, spots: l.spots.map((s) => s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s) }
+      : l))
+  }
+
   const getListing = (id: string) => listings.find((l) => l.id === id)
 
   return (
-    <StoreContext.Provider value={{ listings, claims, claimSpot, placeBid, addListing, getListing, refresh, hydrated, live }}>
+    <StoreContext.Provider value={{ listings, claims, claimSpot, placeBid, addListing, submitArtwork, getListing, refresh, hydrated, live }}>
       {children}
     </StoreContext.Provider>
   )

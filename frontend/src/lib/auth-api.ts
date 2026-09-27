@@ -146,6 +146,10 @@ export function bidApiSpot(spotId: string, amount: number, assets?: { website?: 
   return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/bid`, { amount, ...(assets ?? {}) });
 }
 
+export function submitSpotArtwork(spotId: string, assets: { website?: string; logoUrl?: string }): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/artwork`, { ...(assets ?? {}) });
+}
+
 export function fetchSellerDashboard(): Promise<SellerDashboard> {
   return apiGet<SellerDashboard>("/api/seller/dashboard");
 }
