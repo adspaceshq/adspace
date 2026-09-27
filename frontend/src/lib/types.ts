@@ -32,6 +32,17 @@ export interface ApiSpot {
   bids?: ApiBid[];
   fulfilledAt?: string;
   artworkSubmittedAt?: string;
+  proofPhotos?: string[];
+  proofPost?: string;
+  confirmedAt?: string;
+  disputedAt?: string;
+  disputeReason?: string;
+  /** Manual-USDC payout record (reviewer-posted transfer signature). */
+  paidAt?: string;
+  payoutAmount?: number;
+  payoutFee?: number;
+  payoutReference?: string;
+  payoutDestination?: string;
 }
 
 export interface ApiListing {
@@ -141,6 +152,7 @@ export interface SellerDashboardListing {
   sold: number;
   open: number;
   total: number;
+  paid: number;
   revenue: number;
 }
 
@@ -154,12 +166,26 @@ export interface SellerAttentionItem {
   amount: number;
   currency: string;
   submittedAt: string;
-  status: "pending" | "approved";
+  status: "pending" | "approved" | "delivered" | "disputed";
   artworkReceived: boolean;
+  disputeReason?: string;
 }
 
 export interface SellerDashboard {
-  summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; currency: string };
+  summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; paidOut: number; currency: string };
   listings: SellerDashboardListing[];
   attention: SellerAttentionItem[];
+}
+
+export interface PayoutItem {
+  spotId: string;
+  listingId: string;
+  listingSlug: string;
+  listingTitle: string;
+  spotLabel: string;
+  seller: string;
+  buyer: string;
+  amount: number;
+  currency: string;
+  releasedAt: string;
 }
