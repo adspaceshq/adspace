@@ -7,6 +7,7 @@ import type {
   PublicProfile,
   SessionUser,
   SellerDashboard,
+  TermsDoc,
   UpdateProfileRequest,
 } from "./types";
 
@@ -159,6 +160,14 @@ export function approveReviewListing(slug: string): Promise<ApiListing> {
 
 export function rejectReviewListing(slug: string, reason: string): Promise<ApiListing> {
   return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/reject`, { reason });
+}
+
+export function fetchTerms(): Promise<TermsDoc> {
+  return apiGet<TermsDoc>("/api/terms");
+}
+
+export function acceptListingTerms(slug: string, version: string): Promise<ApiListing> {
+  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/accept-terms`, { version });
 }
 
 export function approveApiSpot(spotId: string): Promise<ApiSpot> {

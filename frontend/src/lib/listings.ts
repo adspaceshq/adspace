@@ -69,7 +69,7 @@ export interface Listing {
   currency?: string;
   minIncrement?: number;
   doubleUp?: boolean;
-  status?: "active" | "submitted" | "closed";
+  status?: "active" | "approved" | "submitted" | "closed";
   spots: Spot[];
   mockup: { views: MockupView[] };
 }

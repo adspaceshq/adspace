@@ -50,9 +50,16 @@ export interface ApiListing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
-  status: "active" | "submitted" | "closed";
+  status: "active" | "approved" | "submitted" | "closed";
   reviewNote?: string;
+  termsVersion?: string;
+  termsAcceptedAt?: string;
   spots: ApiSpot[];
+}
+
+export interface TermsDoc {
+  version: string;
+  text: string;
 }
 
 export interface ApiListingSummary {
@@ -125,7 +132,7 @@ export interface SellerDashboardListing {
   slug: string;
   title: string;
   image: string;
-  status: "active" | "submitted" | "closed";
+  status: "active" | "approved" | "submitted" | "closed";
   reviewNote?: string;
   mode: ApiMode;
   currency: string;

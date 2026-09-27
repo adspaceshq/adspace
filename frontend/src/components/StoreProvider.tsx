@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import {
   apiListingToUi,
   applyApiSpotToUi,
@@ -27,6 +27,8 @@ interface StoreValue {
   placeBid: (listingId: string, spotId: string, bidder: string, amount: number, extras?: SpotExtras) => Promise<void>
   addListing: (listing: Listing) => Promise<string>
   getListing: (id: string) => Listing | undefined
+  /** Re-fetch the marketplace (summaries only ever carry active listings). */
+  refresh: () => Promise<void>
   hydrated: boolean
   live: boolean
 }
@@ -38,6 +40,22 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
   const [claims, setClaims] = useState<Record<string, string>>({})
   const [hydrated, setHydrated] = useState(false)
   const [live, setLive] = useState(false)
+
+  // Summaries only ever carry active listings, so a refresh both picks up
+  // newly live spaces and drops ones that were closed or deleted elsewhere.
+  const refresh = useCallback(async () => {
+    try {
+      const summaries = await fetchListingSummaries()
+      const full = await Promise.all(summaries.map((s) => fetchListing(s.slug)))
+      setListings(full.map(apiListingToUi))
+      setLive(true)
+    } catch {
+      setLive(false)
+    } finally {
+      setHydrated(true)
+    }
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -107,14 +125,16 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
       ...apiListingToUi(api),
       mockup: remapMockupIds(listing.mockup, idMap),
     }
-    setListings((prev) => [adopted, ...prev])
+    // The store mirrors the marketplace: only live listings live here.
+    // Submissions surface in the dashboard until review + terms activate them.
+    if (api.status === 'active') setListings((prev) => [adopted, ...prev])
     return adopted.id
   }
 
   const getListing = (id: string) => listings.find((l) => l.id === id)
 
   return (
-    <StoreContext.Provider value={{ listings, claims, claimSpot, placeBid, addListing, getListing, hydrated, live }}>
+    <StoreContext.Provider value={{ listings, claims, claimSpot, placeBid, addListing, getListing, refresh, hydrated, live }}>
       {children}
     </StoreContext.Provider>
   )
