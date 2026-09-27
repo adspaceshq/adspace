@@ -4,6 +4,7 @@ import type {
   ApiListing,
   ApiListingSummary,
   ApiSpot,
+  PayoutItem,
   PublicProfile,
   SessionUser,
   SellerDashboard,
@@ -150,6 +151,22 @@ export function submitSpotArtwork(spotId: string, assets: { website?: string; lo
   return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/artwork`, { ...(assets ?? {}) });
 }
 
+export function submitSpotProof(spotId: string, proof: { photos: string[]; postUrl?: string }): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/proof`, proof);
+}
+
+export function confirmSpotReceipt(spotId: string): Promise<ApiSpot> {
+  return apiPostEmpty<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/confirm`);
+}
+
+export function disputeSpotDelivery(spotId: string, reason: string): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/dispute`, { reason });
+}
+
+export function withdrawSpotDispute(spotId: string): Promise<ApiSpot> {
+  return apiPostEmpty<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/withdraw`);
+}
+
 export function fetchSellerDashboard(): Promise<SellerDashboard> {
   return apiGet<SellerDashboard>("/api/seller/dashboard");
 }
@@ -184,6 +201,14 @@ export function rejectApiSpot(spotId: string): Promise<ApiSpot> {
 
 export function fulfillApiSpot(spotId: string): Promise<ApiSpot> {
   return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/fulfill`, {});
+}
+
+export function fetchPayableQueue(): Promise<PayoutItem[]> {
+  return apiGet<PayoutItem[]>("/api/review/payable");
+}
+
+export function payApiSpot(spotId: string, reference: string): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/pay`, { reference });
 }
 
 /** Exchange the Privy access token for an API session cookie. */
