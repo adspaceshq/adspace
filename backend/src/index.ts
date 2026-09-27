@@ -60,6 +60,12 @@ export function createApp({
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
     acceptTerms: async (slug,user,version) => store.acceptTerms(slug,user,version),
     submitArtwork: async (id,user,assets) => store.submitArtwork(id,user,assets),
+    submitProof: async (id,user,proof) => store.submitProof(id,user,proof),
+    confirmSpot: async (id,user) => store.confirmSpot(id,user),
+    disputeSpot: async (id,user,reason) => store.disputeSpot(id,user,reason),
+    withdrawDispute: async (id,user) => store.withdrawDispute(id,user),
+    payableQueue: async () => store.payableQueue(),
+    paySpot: async (id,reference) => store.paySpot(id,reference),
   };
   const app = express();
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
@@ -186,6 +192,27 @@ export function createApp({
   });
   app.post("/api/spots/:id/artwork", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     try { res.json(await repo.submitArtwork(req.params.id, req.user!, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/spots/:id/proof", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const body = (req.body ?? {}) as { photos?: unknown; postUrl?: unknown };
+    try { res.json(await repo.submitProof(req.params.id, req.user!.id, { photos: body.photos, postUrl: body.postUrl })); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/spots/:id/confirm", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    try { res.json(await repo.confirmSpot(req.params.id, req.user!)); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/spots/:id/dispute", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const reason = (req.body as { reason?: unknown } | null)?.reason;
+    try { res.json(await repo.disputeSpot(req.params.id, req.user!, typeof reason === "string" ? reason : "")); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/spots/:id/withdraw", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    try { res.json(await repo.withdrawDispute(req.params.id, req.user!)); } catch (e) { sendErr(res, e); }
+  });
+  app.get("/api/review/payable", attachUser, requireUser, requireReviewer, async (_req, res) => {
+    try { res.json(await repo.payableQueue()); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/spots/:id/pay", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
+    const reference = (req.body as { reference?: unknown } | null)?.reference;
+    try { res.json(await repo.paySpot(req.params.id, typeof reference === "string" ? reference : "")); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });

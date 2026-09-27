@@ -20,6 +20,12 @@ export interface MarketplaceRepository {
   rejectReview(slug: string, reason: string): Promise<Listing>;
   acceptTerms(slug: string, actorUserId: string, version: string): Promise<Listing>;
   submitArtwork(spotId: string, actor: SessionUser, assets?: PurchaseAssets): Promise<Spot>;
+  submitProof(spotId: string, actorUserId: string, proof: { photos: unknown; postUrl?: unknown }): Promise<Spot>;
+  confirmSpot(spotId: string, actor: SessionUser): Promise<Spot>;
+  disputeSpot(spotId: string, actor: SessionUser, reason: string): Promise<Spot>;
+  withdrawDispute(spotId: string, actor: SessionUser): Promise<Spot>;
+  payableQueue(): Promise<PayoutItem[]>;
+  paySpot(spotId: string, reference: string): Promise<Spot>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
   fulfill(spotId: string, actorUserId: string): Promise<Spot>;
