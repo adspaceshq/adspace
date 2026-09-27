@@ -97,7 +97,7 @@ test("intake on a merely claimed spot is refused", async () => {
   const spotId = created.body.spots[0].id as string;
   await owner.post(`/api/listings/${slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
   await owner.post(`/api/listings/${slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v1" }).expect(200);
-  await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({}).expect(200);
+  await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ logoUrl: ART }).expect(200);
   const refused = await buyer.post(`/api/spots/${spotId}/artwork`).set("X-CSRF-Token", buyerCsrf).send({ logoUrl: FINAL }).expect(409);
   assert.equal(refused.body.error, "artwork intake opens once the spot is sold");
 });

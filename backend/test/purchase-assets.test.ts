@@ -32,6 +32,7 @@ async function login(agent: ReturnType<typeof request.agent>, token: keyof typeo
 }
 
 const LOGO = "data:image/png;base64,iVBORw0KGgo=";
+const LOGO2 = "data:image/png;base64,cnZ2YWw=";
 
 test("claim persists brand assets and rejects malformed ones", async () => {
   const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token], reviewers: ["@owner"] });
@@ -44,7 +45,9 @@ test("claim persists brand assets and rejects malformed ones", async () => {
   await owner.post(`/api/listings/${created.body.slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
   await owner.post(`/api/listings/${created.body.slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v1" }).expect(200);
 
-  await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ website: "not a url" }).expect(400);
+  await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({}).expect(400);
+  await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ website: "https://buyer.example" }).expect(400);
+  await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ website: "not a url", logoUrl: LOGO }).expect(400);
   await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ logoUrl: "https://evil.example/logo.png" }).expect(400);
 
   const claimed = await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ website: "https://buyer.example", logoUrl: LOGO }).expect(200);
@@ -93,9 +96,10 @@ test("bid takeover replaces brand assets", async () => {
   await owner.post(`/api/listings/${created.body.slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
   await owner.post(`/api/listings/${created.body.slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v1" }).expect(200);
 
+  await buyer.post(`/api/spots/${spotId}/bid`).set("X-CSRF-Token", buyerCsrf).send({ amount: 10 }).expect(400);
   await buyer.post(`/api/spots/${spotId}/bid`).set("X-CSRF-Token", buyerCsrf).send({ amount: 10, website: "https://buyer.example", logoUrl: LOGO }).expect(200);
-  const taken = await rival.post(`/api/spots/${spotId}/bid`).set("X-CSRF-Token", rivalCsrf).send({ amount: 20, website: "https://rival.example" }).expect(200);
+  const taken = await rival.post(`/api/spots/${spotId}/bid`).set("X-CSRF-Token", rivalCsrf).send({ amount: 20, website: "https://rival.example", logoUrl: LOGO2 }).expect(200);
   assert.equal(taken.body.buyer, "@rival");
   assert.equal(taken.body.website, "https://rival.example");
-  assert.equal(taken.body.logoUrl, undefined);
+  assert.equal(taken.body.logoUrl, LOGO2);
 });

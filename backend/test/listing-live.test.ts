@@ -60,7 +60,7 @@ test("ended fixed listing leaves the marketplace but keeps its link, refusing cl
   assert.ok(!after.body.some((s: { slug: string }) => s.slug === slug));
   const direct = await request(app).get(`/api/listings/${slug}`).expect(200);
   assert.equal(direct.body.status, "active");
-  const refused = await buyer.post(`/api/spots/${spots[0].id}/claim`).set("X-CSRF-Token", buyerCsrf).send({}).expect(409);
+  const refused = await buyer.post(`/api/spots/${spots[0].id}/claim`).set("X-CSRF-Token", buyerCsrf).send({ logoUrl: "data:image/png;base64,iVBORw0KGgo=" }).expect(409);
   assert.equal(refused.body.error, "listing has ended");
 });
 
@@ -88,7 +88,7 @@ test("ended auction refuses bids and the dashboard still reports the deadline", 
 
   await sleep(1300);
 
-  const refused = await buyer.post(`/api/spots/${spots[0].id}/bid`).set("X-CSRF-Token", buyerCsrf).send({ amount: 10 }).expect(409);
+  const refused = await buyer.post(`/api/spots/${spots[0].id}/bid`).set("X-CSRF-Token", buyerCsrf).send({ amount: 10, logoUrl: "data:image/png;base64,iVBORw0KGgo=" }).expect(409);
   assert.equal(refused.body.error, "listing has ended");
 
   const dashboard = await owner.get("/api/seller/dashboard").expect(200);

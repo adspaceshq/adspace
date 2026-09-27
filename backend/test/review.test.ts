@@ -76,7 +76,7 @@ test("approve stages, accept-terms goes live, then buyers can claim", async () =
   // Approved is still hidden and unbuyable — terms come first.
   const summaries = await request(app).get("/api/listings").expect(200);
   assert.ok(!summaries.body.some((s: { slug: string }) => s.slug === created.body.slug));
-  await buyer.post(`/api/spots/${created.body.spots[0].id}/claim`).set("X-CSRF-Token", buyerCsrf).send({}).expect(409);
+  await buyer.post(`/api/spots/${created.body.spots[0].id}/claim`).set("X-CSRF-Token", buyerCsrf).send({ logoUrl: "data:image/png;base64,iVBORw0KGgo=" }).expect(409);
 
   // Stale versions and strangers are refused; the owner pins the live version.
   await owner.post(`/api/listings/${created.body.slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v0" }).expect(400);
@@ -89,7 +89,7 @@ test("approve stages, accept-terms goes live, then buyers can claim", async () =
   const listed = await request(app).get("/api/listings").expect(200);
   assert.ok(listed.body.some((s: { slug: string }) => s.slug === created.body.slug));
 
-  const claimed = await buyer.post(`/api/spots/${created.body.spots[0].id}/claim`).set("X-CSRF-Token", buyerCsrf).send({}).expect(200);
+  const claimed = await buyer.post(`/api/spots/${created.body.spots[0].id}/claim`).set("X-CSRF-Token", buyerCsrf).send({ logoUrl: "data:image/png;base64,iVBORw0KGgo=" }).expect(200);
   assert.equal(claimed.body.buyer, "@buyer");
 
   // Accepting a live listing is a no-op; approving twice is a 409.
