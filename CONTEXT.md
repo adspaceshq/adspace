@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-27 (Step 4: accept terms goes live).
+Last updated: 2026-09-27 (Step 7: artwork intake).
 
 ---
 
@@ -529,6 +529,38 @@ docker run -p 8080:8080 adspaces-api
     Approved badge with a Review-terms modal (Accept & go live); the
     `/list` dialog notes terms follow approval. Buyer happy-path tests
     now run approve → accept → claim/bid (28 pass).
+28. **Lazy deadline enforcement (2026-09-27, workflow Step 5).**
+    Jev picked lazy over scheduler/ended-status (0.99), resolving direct
+    links (0.89), artwork display-only until intake (0.15), no deadline
+    extension (0.42). No migration, no new status: Postgres summaries
+    exclude past-deadline actives (`AND l.deadline > now()`), claim/bid
+    409 with `listing has ended` (explicit check in `placeBid`, diagnostic
+    on claim's failure path), direct links still resolve. `artworkClose`
+    stays display-only — intake enforcement lands in Step 7. Deadlines
+    can't be extended; close and relist. UI: `isEnded()` helper gates
+    browse/landing/profile grids, Ended badges on cards/detail/dashboard
+    (dashboard rows carry `deadline` now), detail disables claim/bid with
+    an ended notice. Tests use a 1s deadline + sleep (31 pass, including
+    accept-past-deadline → 409 close-and-relist). Follow-up fixes Jev
+    surfaced: dashboard `activeListings` counts only live listings (not
+    ended actives), and `acceptTerms` refuses past-deadline approvals.
+    Fixed alongside: the client store exposes `refresh()` (dashboard calls
+    it after mutations — accepting terms used to land on a 404 detail page)
+    and `GET /api/review/queue` dropped its CSRF gate (reads need the
+    session only). Also fixed: session-less Bearer mutations now 401
+    ("log out and log in again") instead of a misleading 403.
+29. **Artwork intake (2026-09-27, workflow Step 7).**
+    Jev picked sold-only intake (1.0), a real optional date for
+    `artworkClose` (0.89), and replace-in-place storage (0.93). `POST
+    /api/spots/:id/artwork` (buyer + CSRF) takes the same assets (no
+    client shrink, at least one required): sold spots only (409),
+    buyer-only (403), locked after `artworkClose` (409). It replaces
+    `website`/`logoUrl` in place and stamps `artworkSubmittedAt`, which
+    the seller dashboard reads as awaiting-artwork vs artwork-in.
+    `artworkClose` is validated date-or-empty at create (was free text)
+    with a new optional due-date input on `/list`. Buyers upload from
+    the detail page (sold own spots); reminders are UI surfacing only.
+    Tests: new `artwork-intake.test.ts` (35 pass).
 
 ---
 

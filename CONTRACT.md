@@ -57,6 +57,7 @@ compares stable user IDs, never X handles.
 | DELETE | `/api/listings/{slug}` | owner + CSRF | — | `{ ok: true }` |
 | POST | `/api/spots/{id}/claim` | required | `{ website?, logoUrl? }` | `Spot` |
 | POST | `/api/spots/{id}/bid` | required | `{ amount, website?, logoUrl? }` | `Spot` |
+| POST | `/api/spots/{id}/artwork` | buyer + CSRF | `{ website?, logoUrl? }` | `Spot` |
 | POST | `/api/spots/{id}/approve` | owner + CSRF | — | `Spot` |
 | POST | `/api/spots/{id}/reject` | owner + CSRF | — | `Spot` |
 | POST | `/api/spots/{id}/fulfill` | owner + CSRF | — | `Spot` |
@@ -78,10 +79,25 @@ compares stable user IDs, never X handles.
   `GET /api/terms` version, else 400) — this records `termsVersion` +
   `termsAcceptedAt` on the listing and flips it `active`. Accepting a
   non-approved listing is a 409, a non-owner gets 403, accepting a live
-  listing is a no-op.
+  listing is a no-op, and accepting past the deadline is a 409
+  (close and relist).
+- Step 5 (live): the deadline is enforced lazily — no scheduler, no `ended`
+  status. Summaries exclude past-deadline actives; claim/bid on one is a 409
+  (`listing has ended`); the direct link still resolves so sellers and buyers
+  see the outcome. `artworkClose` stays display-only until artwork intake
+  (step 7) gives it something to enforce. Deadlines can't be extended —
+  close and relist.
 - Listing `image` is the seller's surface photo as a `data:image/*` URL under
   ~3 MB (mock-grade inline storage until object storage lands, same pattern
   as buyer logos). Anything else → 400. Omitted → the preset surface photos.
+- Step 7 (artwork): `artworkClose` is an optional ISO date (empty = none,
+  else must parse, 400). After a spot is sold, its buyer submits final
+  artwork with `POST /api/spots/{id}/artwork` — same asset rules, no client
+  shrink, at least one of `website`/`logoUrl` required. Only the buyer
+  (403 otherwise), only sold spots (409), locked after `artworkClose`
+  (409). Intake replaces the purchase assets in place and stamps
+  `artworkSubmittedAt`, which is how the seller tells awaiting-artwork
+  from ready. Reminders are UI surfacing only — no email rail exists.
 - Step 3 (review): reviewers are named in `PLATFORM_REVIEWERS` (X handles,
   `@` optional, or stable user IDs — IDs survive renames). The queue lists
   `submitted` listings newest-first; approve flips to `active` (visible,
