@@ -17,6 +17,7 @@ export default function BrowsePage() {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return listings.filter((l) => {
+      if (l.status !== 'active') return false
       if (surface !== 'all' && l.surface !== surface) return false
       if (!q) return true
       return (

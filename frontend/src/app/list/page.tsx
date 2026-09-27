@@ -677,7 +677,7 @@ export default function ListPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="review-title" className="mb-1 text-[22px]">Review before you submit</h2>
-            <p className="mb-6 text-[14px] text-[#64748b]">This sends your space for platform review — it goes live only once approved.</p>
+            <p className="mb-6 text-[14px] text-[#64748b]">This sends your space for platform review — once approved, you accept the seller terms and it goes live.</p>
             <dl className="mb-4 space-y-3 text-[14px]">
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="shrink-0 text-[#64748b]">Surface</dt>

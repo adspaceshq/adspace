@@ -72,6 +72,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
   }
 
   const mine = listings.filter((l) => {
+    if (l.status !== 'active') return false
     const h = (l.seller.handle ?? '').replace(/^@+/, '').toLowerCase()
     const n = (l.seller.name ?? '').replace(/^@+/, '').toLowerCase()
     return h === clean || n === clean

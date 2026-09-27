@@ -61,7 +61,7 @@ const faqs = [
 
 export default function Home() {
   const { listings } = useStore()
-  const live = listings.filter((l) => l.spots.some((s) => !s.claimedBy))
+  const live = listings.filter((l) => l.status === 'active' && l.spots.some((s) => !s.claimedBy))
   const openSpots = live.reduce((a, l) => a + l.spots.filter((s) => !s.claimedBy).length, 0)
 
   return (

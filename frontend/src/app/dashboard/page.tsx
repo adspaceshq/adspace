@@ -6,9 +6,10 @@ import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3 } from 'l
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
-import { approveApiSpot, closeApiListing, deleteApiListing, fetchSellerDashboard, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
+import { useStore } from '@/components/StoreProvider'
+import { acceptListingTerms, approveApiSpot, closeApiListing, deleteApiListing, fetchSellerDashboard, fetchTerms, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto } from '@/lib/listings'
-import type { SellerDashboard } from '@/lib/types'
+import type { SellerDashboard, TermsDoc } from '@/lib/types'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
 const relative = (iso: string) => {
@@ -20,9 +21,13 @@ const relative = (iso: string) => {
 
 export default function DashboardPage() {
   const auth = useAuthSession()
+  const { refresh } = useStore()
   const [data, setData] = useState<SellerDashboard | null>(null)
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState<string>()
+  const [terms, setTerms] = useState<TermsDoc | null>(null)
+  const [termsFor, setTermsFor] = useState<string | null>(null)
+  const [termsError, setTermsError] = useState<string>()
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -58,7 +63,28 @@ export default function DashboardPage() {
       else if (action === 'reopen') await reopenApiListing(slug)
       else await deleteApiListing(slug)
       await load()
+      await refresh()
     } catch (e) { setError(e instanceof Error ? e.message : 'Action failed.') }
+    finally { setBusy(undefined) }
+  }
+
+  const openTerms = async (slug: string) => {
+    setTermsFor(slug); setTermsError(undefined)
+    if (terms) return
+    try {
+      setTerms(await fetchTerms())
+    } catch (e) { setTermsError(e instanceof Error ? e.message : 'Could not load the terms.') }
+  }
+
+  const accept = async () => {
+    if (!termsFor || !terms) return
+    setBusy(termsFor); setTermsError(undefined)
+    try {
+      await acceptListingTerms(termsFor, terms.version)
+      setTermsFor(null)
+      await load()
+      await refresh()
+    } catch (e) { setTermsError(e instanceof Error ? e.message : 'Could not accept the terms.') }
     finally { setBusy(undefined) }
   }
 
@@ -93,9 +119,9 @@ export default function DashboardPage() {
                   <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Listing','Status','Spots sold / open','Pricing mode','Revenue','Action'].map(x=><th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
                   <tbody>{data.listings.map(l=><tr key={l.id} className="border-b border-[#e7e5e0] last:border-0">
                     <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="h-11 w-16 overflow-hidden bg-[#f1f0ec]">{cardPhoto(l) && <img src={cardPhoto(l)} alt="" className="h-full w-full object-cover"/>}</div><span className="font-medium">{l.title}{l.reviewNote && <span className="mt-1 block max-w-[280px] text-[12px] font-normal text-[#dc2626]">Review: {l.reviewNote}</span>}</span></div></td>
-                    <td className="px-4 py-4"><span className={`inline-flex items-center gap-2 text-xs font-medium ${l.status==='active'?'text-emerald-700':l.status==='submitted'?'text-amber-700':'text-[#64748b]'}`}><span className={`h-1.5 w-1.5 rounded-full ${l.status==='active'?'bg-emerald-500':l.status==='submitted'?'bg-amber-500':'bg-slate-400'}`}/>{l.status==='active'?'Active':l.status==='submitted'?'Submitted':'Closed'}</span>{l.status==='submitted'&&<span className="mt-1 block text-[11px] font-normal text-[#64748b]">Awaiting review</span>}</td>
+                    <td className="px-4 py-4"><span className={`inline-flex items-center gap-2 text-xs font-medium ${l.status==='active'?'text-emerald-700':l.status==='approved'?'text-[#4166fb]':l.status==='submitted'?'text-amber-700':'text-[#64748b]'}`}><span className={`h-1.5 w-1.5 rounded-full ${l.status==='active'?'bg-emerald-500':l.status==='approved'?'bg-[#4166fb]':l.status==='submitted'?'bg-amber-500':'bg-slate-400'}`}/>{l.status==='active'?'Active':l.status==='approved'?'Approved':l.status==='submitted'?'Submitted':'Closed'}</span>{l.status==='submitted'&&<span className="mt-1 block text-[11px] font-normal text-[#64748b]">Awaiting review</span>}{l.status==='approved'&&<span className="mt-1 block text-[11px] font-normal text-[#64748b]">Accept terms to go live</span>}</td>
                     <td className="px-4 py-4 font-mono text-xs">{l.sold} / {l.open}</td><td className="px-4 py-4 capitalize">{l.mode==='fixed'?'Fixed price':'Auction'}</td><td className="px-4 py-4 font-mono text-xs">{money(l.revenue,l.currency)}</td>
-                    <td className="px-4 py-4"><div className="flex gap-2">{l.status==='active'&&<Link href={`/listings/${l.slug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link>}{l.status!=='closed'
+                    <td className="px-4 py-4"><div className="flex gap-2">{l.status==='active'&&<Link href={`/listings/${l.slug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link>}{l.status==='approved'&&<button disabled={busy===l.slug} onClick={()=>void openTerms(l.slug)} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Review terms</button>}{l.status!=='closed'
                       ? <button disabled={busy===l.slug} onClick={()=>void actListing(l.slug,'close')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Close</button>
                       : <button disabled={busy===l.slug} onClick={()=>void actListing(l.slug,'reopen')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Resubmit</button>}<button disabled={busy===l.slug} onClick={()=>void actListing(l.slug,'delete')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold text-[#dc2626] disabled:opacity-50">Delete</button></div></td>
                   </tr>)}</tbody>
@@ -116,6 +142,20 @@ export default function DashboardPage() {
                 {data.attention.length===0 && <Empty text="Nothing needs your attention."/>}
               </div>
             </section>
+            {termsFor && (
+              <div role="dialog" aria-modal="true" aria-labelledby="terms-title" className="fixed inset-0 z-50 flex items-center justify-center bg-[#020817]/50 p-6" onClick={() => { if (busy !== termsFor) setTermsFor(null) }}>
+                <div className="max-h-[85vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]" onClick={(e) => e.stopPropagation()}>
+                  <h2 id="terms-title" className="mb-1 text-[22px]">Seller terms{terms && ` (${terms.version})`}</h2>
+                  <p className="mb-4 text-[14px] text-[#64748b]">Your space was approved. Accept the terms to put it live.</p>
+                  <pre className="mb-6 whitespace-pre-wrap rounded-xl bg-[#f6f6f4] p-4 font-sans text-[13px] leading-relaxed text-[#020817]/80">{terms ? terms.text : 'Loading terms…'}</pre>
+                  {termsError && <p role="alert" className="mb-4 text-sm text-[#dc2626]">{termsError}</p>}
+                  <div className="flex items-center justify-between gap-3">
+                    <button type="button" onClick={() => setTermsFor(null)} disabled={busy === termsFor} className="text-[14px] font-medium text-[#020817] transition hover:text-[#64748b] disabled:opacity-60">Not yet</button>
+                    <button type="button" onClick={() => void accept()} disabled={!terms || busy === termsFor} className="inline-flex items-center whitespace-nowrap rounded-full bg-[#4166fb] px-6 py-[10px] text-[14px] font-medium text-white shadow-sm transition hover:bg-[#3558e8] disabled:opacity-60">{busy === termsFor ? 'Accepting…' : 'Accept & go live'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </>}
         </>
       )}
