@@ -510,12 +510,15 @@ export class Store {
   }
 
   dashboard(actorUserId: string): SellerDashboard {
-    const listings = this.order.map(slug => this.listings.get(slug)!).filter(l => l.sellerUserId === actorUserId).map(l => ({
+    const mine = this.order.map(slug => this.listings.get(slug)!).filter(l => l.sellerUserId === actorUserId);
+    const listings = mine.map(l => ({
       id:l.id,slug:l.slug,title:l.title,image:l.image,status:l.status,deadline:l.deadline,reviewNote:l.reviewNote,mode:l.mode,currency:l.currency,
       sold:l.spots.filter(s=>s.status!=="open").length,open:l.spots.filter(s=>s.status==="open").length,total:l.spots.length,
+      paid:l.spots.filter(s=>!!s.paidAt).length,
       revenue:l.spots.filter(s=>s.status==="sold").reduce((sum,s)=>sum+(s.currentBid??s.price),0),
     }));
-    const attention = this.order.flatMap(slug => { const l=this.listings.get(slug)!; if(l.sellerUserId!==actorUserId)return []; return l.spots.filter(s=>s.buyer&&(s.status==="claimed"||(s.status==="sold"&&!s.fulfilledAt))).map(s=>({spotId:s.id,listingId:l.id,listingSlug:l.slug,listingTitle:l.title,spotLabel:s.label,buyer:s.buyer!,amount:s.currentBid??s.price,currency:s.currency,submittedAt:new Date().toISOString(),status:s.status==="claimed"?"pending" as const:"approved" as const,artworkReceived:!!s.artworkSubmittedAt})); });
-    return {summary:{activeListings:listings.filter(l=>l.status==="active" && !hasEnded(l.deadline)).length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),currency:listings[0]?.currency??"USD"},listings,attention};
+    const attention = this.order.flatMap(slug => { const l=this.listings.get(slug)!; if(l.sellerUserId!==actorUserId)return []; return l.spots.filter(s=>s.buyer&&(s.status==="claimed"||(s.status==="sold"&&(!s.fulfilledAt||!(s.proofPhotos?.length)))||!!s.disputedAt)).map(s=>({spotId:s.id,listingId:l.id,listingSlug:l.slug,listingTitle:l.title,spotLabel:s.label,buyer:s.buyer!,amount:s.currentBid??s.price,currency:s.currency,submittedAt:new Date().toISOString(),status:(s.disputedAt?"disputed":s.status==="claimed"?"pending":s.fulfilledAt?"delivered":"approved") as "pending" | "approved" | "delivered" | "disputed",artworkReceived:!!s.artworkSubmittedAt,disputeReason:s.disputeReason})); });
+    const paidOut = mine.flatMap(l => l.spots).filter(s=>s.paidAt).reduce((a,s)=>a+((s.payoutAmount ?? 0) - (s.payoutFee ?? 0)),0);
+    return {summary:{activeListings:listings.filter(l=>l.status==="active" && !hasEnded(l.deadline)).length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),paidOut,currency:listings[0]?.currency??"USD"},listings,attention};
   }
 }
