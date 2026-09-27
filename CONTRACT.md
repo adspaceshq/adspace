@@ -28,8 +28,10 @@ with zero listings. The profile is public; editing is owner-only.
 | GET | `/api/users/{handle}` | public | — | `Profile` (404 if unknown) |
 | PATCH | `/api/users/me` | required + CSRF | `{ bio?, payoutWallet? }` | `Profile` |
 | GET | `/api/review/queue` | reviewer (session) | — | `Listing[]` (`submitted`, oldest last) |
-| POST | `/api/listings/{slug}/approve` | reviewer + CSRF | — | `Listing` (`active`) |
+| POST | `/api/listings/{slug}/approve` | reviewer + CSRF | — | `Listing` (`approved`) |
 | POST | `/api/listings/{slug}/reject` | reviewer + CSRF | `{ reason? }` | `Listing` (`closed` + `reviewNote`) |
+| GET | `/api/terms` | public | — | `{ version, text }` (current seller terms) |
+| POST | `/api/listings/{slug}/accept-terms` | owner + CSRF | `{ version }` | `Listing` (`active`) |
 
 `Profile = { id, handle, displayName?, avatar?, bio, payoutWallet?, verified }`.
 `handle` lookup is case-insensitive with a leading `@` optional. `verified`
@@ -64,11 +66,19 @@ compares stable user IDs, never X handles.
 - Step 2 (submit): `POST /api/listings` creates the listing as `submitted` —
   hidden from the marketplace, summaries, and claim/bid (which require
   `active`), visible to the owner via the dashboard and the direct link.
-  `submitted` goes live only through platform review (next step) — there is
+  `submitted` goes live only through platform review, then terms — there is
   no seller-side publish. Closing withdraws from any status; reopening a
   closed listing resubmits it (`closed` → `submitted`), never activates it;
-  reopening a `submitted` listing is a 409, reopening an `active` one is a
-  no-op. Statuses: `"active" | "submitted" | "closed"`.
+  reopening a `submitted` listing is a 409, reopening `approved` resubmits it,
+  reopening an `active` one is a no-op.
+  Statuses: `"active" | "approved" | "submitted" | "closed"`.
+- Step 4 (terms): reviewer approval moves `submitted` → `approved` (still
+  hidden and unbuyable). The owner then accepts the current terms with
+  `POST /api/listings/:slug/accept-terms` (`{ version }` must equal the
+  `GET /api/terms` version, else 400) — this records `termsVersion` +
+  `termsAcceptedAt` on the listing and flips it `active`. Accepting a
+  non-approved listing is a 409, a non-owner gets 403, accepting a live
+  listing is a no-op.
 - Listing `image` is the seller's surface photo as a `data:image/*` URL under
   ~3 MB (mock-grade inline storage until object storage lands, same pattern
   as buyer logos). Anything else → 400. Omitted → the preset surface photos.

@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-27 (Step 3: platform review with allowlist).
+Last updated: 2026-09-27 (Step 4: accept terms goes live).
 
 ---
 
@@ -516,6 +516,19 @@ docker run -p 8080:8080 adspaces-api
     operator sets `PLATFORM_REVIEWERS=@you` (see `backend/.env.example`);
     reviewers work the `/review` page (`review` added to the profile
     `RESERVED` set so the route can't collide with a username).
+27. **Accept terms goes live (2026-09-27, workflow Step 4).**
+    Jev picked per-listing acceptance (1.0), a distinct `approved` state
+    (0.87), and version pinning (0.92). `GET /api/terms` serves the
+    versioned doc (`TERMS_VERSION = "v1"`, short demo terms in
+    `backend/src/types.ts`); reviewer approval now lands `submitted` →
+    `approved` (still hidden, unbuyable). Owners activate with `POST
+    /api/listings/:slug/accept-terms` (`{ version }` must equal current,
+    else 400; non-approved → 409; non-owner → 403; live → no-op),
+    recording `termsVersion` + `termsAcceptedAt` and flipping `active`.
+    Reopening an `approved` listing resubmits it. The dashboard shows an
+    Approved badge with a Review-terms modal (Accept & go live); the
+    `/list` dialog notes terms follow approval. Buyer happy-path tests
+    now run approve → accept → claim/bid (28 pass).
 
 ---
 
