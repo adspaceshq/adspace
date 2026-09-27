@@ -41,7 +41,7 @@ test("mutations require a valid session-bound CSRF token", async () => {
 });
 
 test("non-owners cannot edit, approve, or fulfill a seller listing", async () => {
-  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token] });
+  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token], reviewers: ["@owner"] });
   const owner = request.agent(app);
   const attacker = request.agent(app);
   const ownerCsrf = await login(owner, "owner");
@@ -49,6 +49,7 @@ test("non-owners cannot edit, approve, or fulfill a seller listing", async () =>
   const created = await owner.post("/api/listings").set("X-CSRF-Token", ownerCsrf).send({ title: "Owner listing", spots: [{ price: 10 }] }).expect(201);
   const slug = created.body.slug as string;
   const spotId = created.body.spots[0].id as string;
+  await owner.post(`/api/listings/${slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
 
   await attacker.patch(`/api/listings/${slug}`).set("X-CSRF-Token", attackerCsrf).send({ title: "Stolen" }).expect(403);
   await attacker.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", attackerCsrf).send({}).expect(200);

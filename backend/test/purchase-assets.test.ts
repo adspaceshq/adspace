@@ -34,18 +34,17 @@ async function login(agent: ReturnType<typeof request.agent>, token: keyof typeo
 const LOGO = "data:image/png;base64,iVBORw0KGgo=";
 
 test("claim persists brand assets and rejects malformed ones", async () => {
-  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token] });
+  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token], reviewers: ["@owner"] });
   const owner = request.agent(app);
   const buyer = request.agent(app);
   const ownerCsrf = await login(owner, "owner");
   const buyerCsrf = await login(buyer, "buyer");
   const created = await owner.post("/api/listings").set("X-CSRF-Token", ownerCsrf).send({ title: "Fixed", spots: [{ price: 10 }] }).expect(201);
   const spotId = created.body.spots[0].id as string;
+  await owner.post(`/api/listings/${created.body.slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
 
   await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ website: "not a url" }).expect(400);
   await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ logoUrl: "https://evil.example/logo.png" }).expect(400);
-  // Oversized data URLs never reach validation over HTTP (100kb body cap) —
-  // the 3MB server cap is backstop for direct repo callers only.
 
   const claimed = await buyer.post(`/api/spots/${spotId}/claim`).set("X-CSRF-Token", buyerCsrf).send({ website: "https://buyer.example", logoUrl: LOGO }).expect(200);
   assert.equal(claimed.body.website, "https://buyer.example");
@@ -81,7 +80,7 @@ test("create persists view and hand placement", async () => {
 });
 
 test("bid takeover replaces brand assets", async () => {
-  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token] });
+  const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token], reviewers: ["@owner"] });
   const owner = request.agent(app);
   const buyer = request.agent(app);
   const rival = request.agent(app);
@@ -90,6 +89,7 @@ test("bid takeover replaces brand assets", async () => {
   const rivalCsrf = await login(rival, "rival");
   const created = await owner.post("/api/listings").set("X-CSRF-Token", ownerCsrf).send({ title: "Auction", mode: "auction", spots: [{ price: 10 }] }).expect(201);
   const spotId = created.body.spots[0].id as string;
+  await owner.post(`/api/listings/${created.body.slug}/approve`).set("X-CSRF-Token", ownerCsrf).expect(200);
 
   await buyer.post(`/api/spots/${spotId}/bid`).set("X-CSRF-Token", buyerCsrf).send({ amount: 10, website: "https://buyer.example", logoUrl: LOGO }).expect(200);
   const taken = await rival.post(`/api/spots/${spotId}/bid`).set("X-CSRF-Token", rivalCsrf).send({ amount: 20, website: "https://rival.example" }).expect(200);
