@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Pool } from "pg";
-import type { AuthenticatedIdentity, SessionUser } from "./types.js";
+import type { AuthenticatedIdentity, PublicProfile, SessionUser, UpdateProfileRequest } from "./types.js";
 
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_HOURS ?? 168) * 60 * 60 * 1000;
 
@@ -11,6 +11,80 @@ export interface AuthRepository {
   readSession(token: string | undefined): Promise<StoredSession | undefined>;
   destroySession(token: string | undefined): Promise<void>;
   close?(): Promise<void>;
+}
+
+/** Step 1 profile store. Postgres is the source of truth; memory is the test/demo adapter. */
+export interface ProfileRepository {
+  /** Ensure a row exists for a freshly logged-in session user (no-op when already present). */
+  upsertFromSession(user: SessionUser): Promise<void>;
+  getProfileByHandle(handle: string): Promise<PublicProfile | undefined>;
+  updateProfile(userId: string, patch: UpdateProfileRequest): Promise<PublicProfile>;
+}
+
+/** URL handle without @, lowercase: `@NotCodeSid` → `notcodesid`. */
+export function normalizeHandle(handle: string | undefined | null): string {
+  return (handle ?? "").trim().replace(/^@+/, "").toLowerCase();
+}
+
+/** Bio: trimmed, at most 280 chars. */
+export function parseBio(value: unknown): string {
+  const bio = typeof value === "string" ? value.trim() : "";
+  if (bio.length > 280) throw Object.assign(new Error("bio must be at most 280 characters"), { status: 400 });
+  return bio;
+}
+
+/** Payout wallet: empty clears it, otherwise a Solana base58 address (32–44 chars). */
+export function parsePayoutWallet(value: unknown): string {
+  const wallet = typeof value === "string" ? value.trim() : "";
+  if (!wallet) return "";
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(wallet)) {
+    throw Object.assign(new Error("payout wallet must be a Solana address"), { status: 400 });
+  }
+  return wallet;
+}
+
+/** In-memory ProfileRepository for tests and the demo adapter. */
+export class MemoryProfileRepository implements ProfileRepository {
+  private byUserId = new Map<string, { user: SessionUser; bio: string; payoutWallet: string }>();
+
+  async upsertFromSession(user: SessionUser): Promise<void> {
+    const existing = this.byUserId.get(user.id);
+    if (existing) {
+      existing.user = { ...user };
+      return;
+    }
+    this.byUserId.set(user.id, { user: { ...user }, bio: "", payoutWallet: "" });
+  }
+
+  async getProfileByHandle(handle: string): Promise<PublicProfile | undefined> {
+    const clean = normalizeHandle(handle);
+    if (!clean) return undefined;
+    for (const record of this.byUserId.values()) {
+      if (normalizeHandle(record.user.handle) === clean) return this.toProfile(record);
+    }
+    return undefined;
+  }
+
+  async updateProfile(userId: string, patch: UpdateProfileRequest): Promise<PublicProfile> {
+    const record = this.byUserId.get(userId);
+    if (!record) throw Object.assign(new Error("profile not found"), { status: 404 });
+    if (patch.bio !== undefined) record.bio = parseBio(patch.bio);
+    if (patch.payoutWallet !== undefined) record.payoutWallet = parsePayoutWallet(patch.payoutWallet);
+    return this.toProfile(record);
+  }
+
+  private toProfile(record: { user: SessionUser; bio: string; payoutWallet: string }): PublicProfile {
+    const profile: PublicProfile = {
+      id: record.user.id,
+      handle: record.user.handle,
+      bio: record.bio,
+      verified: true,
+    };
+    if (record.user.name) profile.displayName = record.user.name;
+    if (record.user.avatar) profile.avatar = record.user.avatar;
+    if (record.payoutWallet) profile.payoutWallet = record.payoutWallet;
+    return profile;
+  }
 }
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -33,7 +107,25 @@ export function createDatabasePool(
   });
 }
 
-export class PostgresAuthRepository implements AuthRepository {
+type ProfileRow = {
+  id: string; x_handle: string; display_name: string | null; avatar_url: string | null;
+  bio: string | null; payout_wallet: string | null; verified: boolean | null;
+};
+
+function mapProfileRow(row: ProfileRow): PublicProfile {
+  const profile: PublicProfile = {
+    id: row.id,
+    handle: row.x_handle,
+    bio: row.bio ?? "",
+    verified: row.verified ?? true,
+  };
+  if (row.display_name) profile.displayName = row.display_name;
+  if (row.avatar_url) profile.avatar = row.avatar_url;
+  if (row.payout_wallet) profile.payoutWallet = row.payout_wallet;
+  return profile;
+}
+
+export class PostgresAuthRepository implements AuthRepository, ProfileRepository {
   private pool: Pool;
   constructor(poolOrConnection?: Pool | string) { this.pool = poolOrConnection instanceof Pool ? poolOrConnection : createDatabasePool(poolOrConnection); }
   async migrate(): Promise<void> {
@@ -49,6 +141,9 @@ export class PostgresAuthRepository implements AuthRepository {
       );
       CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_wallet text NOT NULL DEFAULT '';
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS verified boolean NOT NULL DEFAULT true;
       ALTER TABLE users ENABLE ROW LEVEL SECURITY;
       ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
       DO $$ BEGIN
@@ -96,6 +191,40 @@ export class PostgresAuthRepository implements AuthRepository {
   }
   async destroySession(token: string | undefined): Promise<void> { if (token) await this.pool.query("DELETE FROM sessions WHERE token_hash=$1", [digest(token)]); }
   async close(): Promise<void> { await this.pool.end(); }
+
+  async upsertFromSession(): Promise<void> {
+    // The users row is already created/updated inside createSession's
+    // transaction, so there is nothing extra to do for Postgres.
+  }
+
+  async getProfileByHandle(handle: string): Promise<PublicProfile | undefined> {
+    const clean = normalizeHandle(handle);
+    if (!clean) return undefined;
+    const result = await this.pool.query(
+      `SELECT id, x_handle, display_name, avatar_url, bio, payout_wallet, verified
+       FROM users WHERE LOWER(REPLACE(x_handle, '@', '')) = $1 LIMIT 1`,
+      [clean],
+    );
+    const row = result.rows[0];
+    return row ? mapProfileRow(row) : undefined;
+  }
+
+  async updateProfile(userId: string, patch: UpdateProfileRequest): Promise<PublicProfile> {
+    const bio = patch.bio !== undefined ? parseBio(patch.bio) : undefined;
+    const payoutWallet = patch.payoutWallet !== undefined ? parsePayoutWallet(patch.payoutWallet) : undefined;
+    const result = await this.pool.query(
+      `UPDATE users SET
+         bio = COALESCE($2, bio),
+         payout_wallet = COALESCE($3, payout_wallet),
+         updated_at = now()
+       WHERE id = $1
+       RETURNING id, x_handle, display_name, avatar_url, bio, payout_wallet, verified`,
+      [userId, bio ?? null, payoutWallet ?? null],
+    );
+    const row = result.rows[0];
+    if (!row) throw Object.assign(new Error("profile not found"), { status: 404 });
+    return mapProfileRow(row);
+  }
 }
 
 export function csrfMatches(session: StoredSession, supplied: string | undefined): boolean {

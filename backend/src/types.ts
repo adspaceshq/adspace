@@ -15,7 +15,7 @@ export interface Spot {
   size: string;
   price: number;
   currency: string;
-  /** Which photo the sticker lives on: "lid" | "inside" (Mac) or "tee-front" | "tee-back" (T-shirt). */
+  /** Which photo the sticker lives on: "lid" | "inside" (Mac) or "tee-front" | "tee-back" | "tee-left" | "tee-right" (T-shirt). */
   view: string;
   /** Seller hand placement in % of the photo (position + width). Absent → auto layout. */
   x?: number;
@@ -107,6 +107,22 @@ export interface SessionUser {
 
 export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId: string }
 export interface SessionResponse extends SessionUser { csrfToken: string; expiresAt: string }
+
+/** Public seller profile at 3000/{username}. payoutWallet is only ever returned to the owner. */
+export interface PublicProfile {
+  id: string;
+  handle: string;
+  displayName?: string;
+  avatar?: string;
+  bio: string;
+  payoutWallet?: string;
+  verified: boolean;
+}
+
+export interface UpdateProfileRequest {
+  bio?: string;
+  payoutWallet?: string;
+}
 
 export interface SellerDashboardListing {
   id: string;
