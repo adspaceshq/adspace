@@ -49,7 +49,9 @@ export interface Listing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
-  status: "active" | "closed";
+  status: "active" | "submitted" | "closed";
+  /** Why the platform rejected this submission (set on reject, cleared on approve/resubmit). */
+  reviewNote?: string;
   spots: Spot[];
 }
 
@@ -72,6 +74,8 @@ export interface CreateListingRequest {
   title: string;
   surface?: string;
   story?: string;
+  /** Seller's surface photo as a data:image/* URL (mock-grade until object storage). */
+  image?: string;
   fabric?: string;
   mode?: string;
   currency?: string;
@@ -106,7 +110,7 @@ export interface SessionUser {
 }
 
 export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId: string }
-export interface SessionResponse extends SessionUser { csrfToken: string; expiresAt: string }
+export interface SessionResponse extends SessionUser { csrfToken: string; expiresAt: string; isReviewer: boolean }
 
 /** Public seller profile at 3000/{username}. payoutWallet is only ever returned to the owner. */
 export interface PublicProfile {
@@ -129,7 +133,8 @@ export interface SellerDashboardListing {
   slug: string;
   title: string;
   image: string;
-  status: "active" | "closed";
+  status: "active" | "submitted" | "closed";
+  reviewNote?: string;
   mode: Mode;
   currency: string;
   sold: number;
