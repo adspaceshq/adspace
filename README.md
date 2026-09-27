@@ -1,4 +1,4 @@
-# Spotboard — peer-to-peer ad-space marketplace
+# Adspaces — peer-to-peer ad-space marketplace
 
 Anyone lists a surface, brands claim fixed-price spots or bid in auctions.
 X login via Privy; the API verifies the token and owns the session.
