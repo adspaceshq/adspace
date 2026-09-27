@@ -6,9 +6,10 @@ import { ArrowLeft, Calendar, Trophy } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import SpecSheet from '@/components/SpecSheet'
+import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { formatMoney, listingUrl, minBidFor, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
+import { formatMoney, listingUrl, minBidFor, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -47,9 +48,68 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const [modal, setModal] = useState<{ spot: Spot; mode: 'claim' | 'bid' } | null>(null)
   const [success, setSuccess] = useState<{ spotLabel: string; text: string } | null>(null)
   const [name, setName] = useState('')
+  const [website, setWebsite] = useState('')
+  const [logo, setLogo] = useState<string | null>(null)
+  const [step, setStep] = useState<'brand' | 'pay'>('brand')
+  const [paying, setPaying] = useState(false)
   const [amount, setAmount] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [x, setX] = useState<XIdentity | null>(null)
+
+  // Brand site → clickable link. Bare domains get https:// so the link works.
+  const normalizeWebsite = (raw: string) => {
+    const v = raw.trim()
+    if (!v) return ''
+    return /^[a-z][a-z0-9+.-]*:\/\//i.test(v) ? v : `https://${v}`
+  }
+
+  // Shrink uploads to sticker size (max 256px) so the data URL always fits
+  // the API's 100kb body limit. PNG first (keeps transparency), JPEG fallback.
+  const logoDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      for (const size of [256, 128]) {
+        const scale = Math.min(1, size / Math.max(img.width, img.height))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(img.width * scale))
+        canvas.height = Math.max(1, Math.round(img.height * scale))
+        const ctx = canvas.getContext('2d')
+        if (!ctx) break
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        const png = canvas.toDataURL('image/png')
+        if (png.length <= 90_000) {
+          resolve(png)
+          return
+        }
+        const jpg = canvas.toDataURL('image/jpeg', 0.85)
+        if (jpg.length <= 90_000 || size === 128) {
+          resolve(jpg)
+          return
+        }
+      }
+      reject(new Error('could not shrink logo'))
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('could not read logo'))
+    }
+    img.src = url
+  })
+
+  const onLogoFile = (file: File | undefined) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      showToast('Logo must be an image file.')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      showToast('Logo must be under 2 MB.')
+      return
+    }
+    logoDataUrl(file).then(setLogo, () => showToast('Could not read that file.'))
+  }
 
   const countdown = useCountdown(listing?.endsAt ?? '')
 
@@ -91,12 +151,20 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   }
 
   const openClaim = (spot: Spot) => {
-    setName('')
+    setName(x?.handle ?? '')
+    setWebsite('')
+    setLogo(null)
+    setStep('brand')
+    setPaying(false)
     setSuccess(null)
     setModal({ spot, mode: 'claim' })
   }
   const openBid = (spot: Spot) => {
-    setName('')
+    setName(x?.handle ?? '')
+    setWebsite('')
+    setLogo(null)
+    setStep('brand')
+    setPaying(false)
     setAmount(String(minBidFor(listing, spot)))
     setSuccess(null)
     setModal({ spot, mode: 'bid' })
@@ -110,7 +178,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!modal) return
+    if (!modal || paying) return
     if (PRIVY_ENABLED) {
       if (!x?.ready || x.loggingIn) return
       if (!x.authenticated || !x.handle) {
@@ -119,25 +187,49 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       }
     }
     if (!actor) return
+    const extras = {
+      ...(logo ? { logoUrl: logo } : {}),
+      ...(normalizeWebsite(website) ? { website: normalizeWebsite(website) } : {}),
+    }
+    // Mock checkout: visibly fake processing, then the same API-only mutation as before.
+    setPaying(true)
+    await new Promise((r) => setTimeout(r, 1200))
     try {
       if (modal.mode === 'claim') {
-        await claimSpot(listing.id, modal.spot.id, actor)
+        await claimSpot(listing.id, modal.spot.id, actor, extras)
         setSuccess({ spotLabel: modal.spot.label, text: `${modal.spot.label} claimed by ${actor} — mock, no charge.` })
       } else {
         const amt = Number(amount)
         const min = minBidFor(listing, modal.spot)
         if (!amt || amt < min) {
           showToast(`Bid must be at least ${formatMoney(min, listing.currency)}.`)
+          setPaying(false)
           return
         }
-        await placeBid(listing.id, modal.spot.id, actor, amt)
+        await placeBid(listing.id, modal.spot.id, actor, amt, extras)
         setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt, listing.currency)} on ${modal.spot.label} — mock.` })
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Something went wrong.')
+      setPaying(false)
       return
     }
+    setPaying(false)
     setModal(null)
+  }
+
+  // Brand step → pay step. Login first when Privy is on, same rule as submit.
+  const continueToPay = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (PRIVY_ENABLED) {
+      if (!x?.ready || x.loggingIn) return
+      if (!x.authenticated || !x.handle) {
+        x.login()
+        return
+      }
+    }
+    if (!actor) return
+    setStep('pay')
   }
 
   const back = backHref ?? '/browse'
@@ -178,13 +270,8 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
               href={sellerUrl(listing.seller.handle || listing.seller.name)}
               className="inline-flex items-center gap-2 rounded-full transition hover:opacity-80"
             >
-              <span
-                className="grid h-6 w-6 place-items-center rounded-full text-xs font-semibold text-white"
-                style={{ background: listing.seller.color }}
-              >
-                {listing.seller.name.charAt(0)}
-              </span>
-              <strong className="text-[#020817]">{listing.seller.name}</strong> {listing.seller.handle}
+              <SellerAvatar seller={listing.seller} />
+              <strong className="text-[#020817]">{sellerDisplay(listing.seller)}</strong>
             </Link>
             <span className="inline-flex items-center gap-[6px]"><Calendar size={14} /> Ends {listing.deadline}</span>
           </div>
@@ -243,7 +330,14 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     {sp.size}
                   </span>
                   {held ? (
-                    <span className="truncate text-[13px] text-[#64748b]">{held} · {formatMoney(sp.bid ?? sp.price, listing.currency)}</span>
+                    sp.website ? (
+                      <span className="truncate text-[13px] text-[#64748b]">
+                        <a href={normalizeWebsite(sp.website)} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#4166fb] hover:underline" onClick={(e) => e.stopPropagation()}>{held} ↗</a>
+                        {' '}· {formatMoney(sp.bid ?? sp.price, listing.currency)}
+                      </span>
+                    ) : (
+                      <span className="truncate text-[13px] text-[#64748b]">{held} · {formatMoney(sp.bid ?? sp.price, listing.currency)}</span>
+                    )
                   ) : (
                     <span className="whitespace-nowrap font-mono text-[13px]">
                       {isAuction ? `from ${formatMoney(sp.price, listing.currency)}` : formatMoney(sp.price, listing.currency)}
@@ -282,7 +376,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       </main>
 
       {(modal || success) && (
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-[#020817]/55 p-6 backdrop-blur-sm" onClick={() => { setModal(null); setSuccess(null) }}>
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-[#020817]/55 p-6 backdrop-blur-sm" onClick={() => { setModal(null); setSuccess(null); setPaying(false) }}>
           <div className="w-full max-w-[440px] rounded-2xl bg-white p-8 shadow-[0_16px_40px_rgba(2,8,23,0.1)]" onClick={(e) => e.stopPropagation()}>
             {success ? (
               <>
@@ -305,15 +399,15 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                   </button>
                 </div>
               </>
-            ) : modal && (
+            ) : modal && step === 'brand' && (
               <>
                 <h3 className="mb-1 text-2xl">{modal.mode === 'claim' ? 'Claim' : 'Bid on'} {modal.spot.label}</h3>
                 <p className="mb-6 text-sm text-[#64748b]">
                   {modal.mode === 'claim'
-                    ? `${formatMoney(modal.spot.price, listing.currency)} fixed — mock checkout, no charge.`
-                    : `current ${formatMoney(modal.spot.bid ?? modal.spot.price, listing.currency)} — mock bid.`}
+                    ? `${formatMoney(modal.spot.price, listing.currency)} fixed — your brand goes on the real thing.`
+                    : `current ${formatMoney(modal.spot.bid ?? modal.spot.price, listing.currency)} — your brand goes on the real thing.`}
                 </p>
-                <form onSubmit={submit}>
+                <form onSubmit={continueToPay}>
                   {PRIVY_ENABLED ? (
                     <div className="mb-5 rounded-xl border border-[#e7e5e0] bg-[#fafaf7] px-[14px] py-3 text-[14px]">
                       {x?.authenticated && x.handle ? (
@@ -333,24 +427,43 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     </div>
                   ) : (
                     <div className="mb-5 flex flex-col gap-[6px]">
-                      <label className="text-[13px] font-semibold" htmlFor="modal-name">Your name or brand</label>
+                      <label className="text-[13px] font-semibold" htmlFor="modal-name">X handle</label>
                       <input
                         id="modal-name" required value={name} onChange={(e) => setName(e.target.value)}
-                        placeholder="Acme" className={field} autoFocus
+                        placeholder="@acme" className={field} autoFocus
                       />
                     </div>
                   )}
-                  {modal.mode === 'bid' && (
-                    <div className="mb-5 flex flex-col gap-[6px]">
-                      <label className="text-[13px] font-semibold" htmlFor="modal-amount">
-                        Bid (min {formatMoney(minBidFor(listing, modal.spot), listing.currency)})
+                  <div className="mb-5 flex flex-col gap-[6px]">
+                    <label className="text-[13px] font-semibold" htmlFor="modal-website">Website <span className="font-normal text-[#64748b]">(optional)</span></label>
+                    <input
+                      id="modal-website" type="text" inputMode="url" value={website} onChange={(e) => setWebsite(e.target.value)}
+                      placeholder="acme.com" className={field}
+                    />
+                  </div>
+                  <div className="mb-5 flex flex-col gap-[6px]">
+                    <span className="text-[13px] font-semibold" id="modal-logo-label">Logo <span className="font-normal text-[#64748b]">(optional)</span></span>
+                    <div className="flex items-center gap-3">
+                      {logo && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={logo} alt="Logo preview" className="h-12 w-12 shrink-0 rounded-xl border border-[#e7e5e0] object-cover" />
+                      )}
+                      <label htmlFor="modal-logo" className="cursor-pointer rounded-full border border-[#e7e5e0] px-[18px] py-[10px] text-[14px] font-medium transition hover:bg-[#f1f0ec]">
+                        {logo ? 'Replace logo' : 'Upload logo'}
                       </label>
                       <input
-                        id="modal-amount" required type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                        min={minBidFor(listing, modal.spot)} className={field}
+                        id="modal-logo" type="file" accept="image/*" className="sr-only"
+                        aria-labelledby="modal-logo-label"
+                        onChange={(e) => { onLogoFile(e.target.files?.[0]); e.target.value = '' }}
                       />
+                      {logo && (
+                        <button type="button" onClick={() => setLogo(null)} className="text-[13px] font-medium text-[#dc2626] transition hover:text-[#991b1b]">
+                          Remove
+                        </button>
+                      )}
                     </div>
-                  )}
+                    <p className="text-[12px] text-[#64748b]">Shows on your sticker right away. Auto-shrunk to fit.</p>
+                  </div>
                   <div className="mt-6 flex justify-end gap-3">
                     <button type="button" onClick={() => setModal(null)} className="rounded-full border border-[#e7e5e0] px-[22px] py-[13px] text-[15px] font-medium transition hover:bg-[#f1f0ec]">
                       Cancel
@@ -358,7 +471,45 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     <button type="submit" className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8]">
                       {PRIVY_ENABLED && (!x?.authenticated || !x.handle)
                         ? (x?.loggingIn ? 'Redirecting…' : 'Log in with X')
-                        : modal.mode === 'claim' ? 'Confirm claim' : 'Place bid'}
+                        : 'Continue to pay'}
+                    </button>
+                  </div>
+                </form>
+                <p className="mt-4 text-center text-xs text-[#64748b]">Demo only — nothing is charged.</p>
+              </>
+            )}
+            {modal && step === 'pay' && !success && (
+              <>
+                <h3 className="mb-1 text-2xl">Pay{modal.mode === 'claim' ? ` ${formatMoney(modal.spot.price, listing.currency)}` : ''}</h3>
+                <p className="mb-6 text-sm text-[#64748b]">
+                  {modal.spot.label} · {name || actor}{website.trim() ? ` · ${website.trim()}` : ''} — mock payment, no real charge.
+                </p>
+                <form onSubmit={submit}>
+                  {modal.mode === 'bid' && (
+                    <div className="mb-5 flex flex-col gap-[6px]">
+                      <label className="text-[13px] font-semibold" htmlFor="modal-amount">
+                        Bid (min {formatMoney(minBidFor(listing, modal.spot), listing.currency)})
+                      </label>
+                      <input
+                        id="modal-amount" required type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
+                        min={minBidFor(listing, modal.spot)} className={field} autoFocus
+                      />
+                    </div>
+                  )}
+                  <div className="mb-5 flex items-center justify-between rounded-xl border border-[#e7e5e0] bg-[#fafaf7] px-[14px] py-3 text-[14px]">
+                    <span className="text-[#64748b]">{modal.mode === 'claim' ? 'Fixed price' : 'Your bid'}</span>
+                    <span className="font-mono font-semibold">
+                      {modal.mode === 'claim'
+                        ? formatMoney(modal.spot.price, listing.currency)
+                        : (Number(amount) > 0 ? formatMoney(Number(amount), listing.currency) : '—')}
+                    </span>
+                  </div>
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button type="button" onClick={() => !paying && setStep('brand')} disabled={paying} className="rounded-full border border-[#e7e5e0] px-[22px] py-[13px] text-[15px] font-medium transition hover:bg-[#f1f0ec] disabled:opacity-60">
+                      Back
+                    </button>
+                    <button type="submit" disabled={paying} className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8] disabled:opacity-60">
+                      {paying ? 'Paying (mock)…' : modal.mode === 'claim' ? 'Pay and claim' : 'Pay and bid'}
                     </button>
                   </div>
                 </form>

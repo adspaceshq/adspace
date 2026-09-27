@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Apple, X } from 'lucide-react'
 import { formatMoney, clampStickerWidth, lidPointFromPointer, type GridCell, type Listing, type Spot } from '@/lib/listings'
 
@@ -78,7 +78,7 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
 const dotBase =
   "absolute h-3 w-3 touch-none select-none rounded-full border border-[#020817] bg-white shadow-[0_1px_3px_rgba(2,8,23,0.3)] transition before:absolute before:-inset-2 before:content-[''] hover:scale-125"
 
-export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMoveSpot, onResizeSpot, onRemoveSpot, onSelectSpot, selectedSpotId, spotPanel, activeViewId, onActiveViewChange, hideTabs }: {
+export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMoveSpot, onResizeSpot, onRemoveSpot, onSelectSpot, onDismissSpotPanel, selectedSpotId, spotPanel, activeViewId, onActiveViewChange, hideTabs }: {
   listing: Listing
   onClaim: (spot: Spot) => void
   onBid: (spot: Spot) => void
@@ -92,6 +92,8 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
   onRemoveSpot?: (spotId: string) => void
   /** Seller editor: tap a sticker (press without dragging) to select it — opens the price panel. */
   onSelectSpot?: (spotId: string) => void
+  /** Seller editor: click/tap anywhere outside the open panel (or Escape) to close it. */
+  onDismissSpotPanel?: () => void
   /** Seller editor: the sticker currently being priced — drawn with a ring so the panel's target is obvious. */
   selectedSpotId?: string | null
   /** Seller editor: panel content (e.g. the price form) rendered right next to the selected sticker. */
@@ -114,29 +116,56 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
     if (id) onActiveViewChange?.(id)
   }
   const photoRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  const stickerRefs = useRef(new Map<string, HTMLDivElement>())
+  // Timestamp until which bare-photo clicks only close. A dismissing press that
+  // drags off the photo never clicks, so a boolean flag could linger and eat the
+  // next real placement — an expiry can't go stale.
+  const suppressPlaceUntilRef = useRef(0)
   // sx/sy mark where the press started: a press that barely moves is a tap (select), not a drag.
   const dragRef = useRef<{ id: string; dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const resizeRef = useRef<string | null>(null)
   const [resizingId, setResizingId] = useState<string | null>(null)
 
+  // Outside-click (or Escape) closes the open price panel. Presses inside the panel
+  // or on the selected sticker itself are left alone so pricing, dragging, and the
+  // sticker's own dots keep working. Lives above the empty-views return so the hook
+  // order never changes.
+  const panelOpen = !!onPlaceSpot && !!(views[activeIdx] || views[0])?.spots && !!spotPanel && !!selectedSpotId
+  useEffect(() => {
+    if (!panelOpen || !onDismissSpotPanel) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node | null
+      if (target && panelRef.current?.contains(target)) return
+      const selected = selectedSpotId ? stickerRefs.current.get(selectedSpotId) : undefined
+      if (target && selected?.contains(target)) return
+      if (target && photoRef.current?.contains(target)) suppressPlaceUntilRef.current = Date.now() + 400
+      onDismissSpotPanel()
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDismissSpotPanel()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [panelOpen, selectedSpotId, onDismissSpotPanel])
+
   if (!views.length) return null
+  const active = views[activeIdx] || views[0]
 
   // Hand-placed stickers only ever exist in the seller's own preview, never on a buyer's page.
   // A `spots` list is what marks a sticker surface: the lid and the deck both carry one, and a photo
   // view without one (a listing's own Overview image) stays read-only. Coordinates are % of whichever
   // photo is on screen, so the view id travels back with the click — each view keeps its own layout.
-  const editing = !!onPlaceSpot && !!(views[activeIdx] || views[0]).spots
+  const editing = !!onPlaceSpot && !!active.spots
   // Resizing shares the sticker's corner handle; a preview can offer it without click-to-place.
   const canResize = !!onResizeSpot
   // Removing mirrors the row button on /list: offered only while more than one spot remains.
   const canRemove = !!onRemoveSpot && listing.spots.length > 1
-  // Buyer pages hide sticker surfaces with nothing on them — an empty deck tab is a dead end
-  // when the seller never placed a sticker there. The seller preview keeps every view: the
-  // deck is a drop target there. Grids and Overview photos always stay visible.
-  const shownViews = editing ? views : views.filter((v) => v.grid || !v.spots || v.spots.length > 0)
-  const shown = shownViews.length ? shownViews : views
-  const active = shown[activeIdx] || shown[0]
   const pointFromPointer = (e: { clientX: number; clientY: number }) => {
     const rect = photoRef.current?.getBoundingClientRect()
     return rect ? lidPointFromPointer(rect, e.clientX, e.clientY) : null
@@ -164,9 +193,9 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
 
   return (
     <div className="w-full">
-      {shown.length > 1 && !hideTabs && (
+      {views.length > 1 && !hideTabs && (
         <div className="mb-4 flex flex-wrap justify-center gap-2" role="tablist" aria-label="Product views">
-          {shown.map((v, i) => (
+          {views.map((v, i) => (
             <button
               key={v.id}
               type="button"
@@ -211,11 +240,32 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
         <div>
           <div className="flex min-h-[320px] items-center justify-center">
             <div ref={photoRef} className="relative inline-block leading-[0]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={active.photo}
                 alt={`${listing.title} — ${active.label}`}
                 className="block h-auto max-h-[680px] w-auto max-w-full rounded-2xl"
               />
+              {/* Tee base color: multiplied over the white flat art, masked to the
+                  shirt silhouette so the backdrop stays clean. No tint on Mac views. */}
+              {active.tint && active.photo && (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 rounded-2xl"
+                  style={{
+                    background: active.tint,
+                    mixBlendMode: 'multiply',
+                    WebkitMaskImage: `url("${active.photo}")`,
+                    maskImage: `url("${active.photo}")`,
+                    WebkitMaskRepeat: 'no-repeat',
+                    maskRepeat: 'no-repeat',
+                    WebkitMaskPosition: 'center',
+                    maskPosition: 'center',
+                    WebkitMaskSize: 'contain',
+                    maskSize: 'contain',
+                  }}
+                />
+              )}
               {/* Seller editor: a transparent sibling *behind* the stickers, so a press on bare photo
                   drops a spot there while a press that lands on a sticker still reaches the sticker. */}
               {editing && (
@@ -223,6 +273,9 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                   type="button"
                   aria-label={`Add a spot on the ${active.label}`}
                   onClick={(e) => {
+                    // A dismissing click never places: the pointerdown already closed the
+                    // panel, so swallow this click instead of dropping a surprise sticker.
+                    if (Date.now() < suppressPlaceUntilRef.current) return
                     // Keyboard "clicks" carry no coordinates — fall back to the top-centre slot.
                     const p = e.clientX || e.clientY ? pointFromPointer(e) : null
                     onPlaceSpot?.(p?.x ?? 50, p?.y ?? 20, active.id)
@@ -253,7 +306,13 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                   >
                     {/* Wrapper exists so the handles can hug the sticker instead of the caption under it.
                         It is also the hover group that reveals the remove dot. */}
-                    <div className="group relative w-full">
+                    <div
+                      className="group relative w-full"
+                      ref={(el) => {
+                        if (el) stickerRefs.current.set(spot.id, el)
+                        else stickerRefs.current.delete(spot.id)
+                      }}
+                    >
                       <button
                         type="button"
                         onClick={() => {
@@ -312,24 +371,29 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                                 ? `${spot.label}, top bid ${formatMoney(amount, listing.currency)} by ${spot.bidBy}`
                                 : `${spot.label}, ${formatMoney(amount, listing.currency)}`
                         }
-                        className={`flex aspect-square w-full flex-col items-center justify-center gap-[3px] rounded-xl px-1 py-2 font-mono leading-normal transition ${
+                        className={`relative flex aspect-square w-full flex-col items-center justify-center gap-[3px] rounded-xl px-1 py-2 font-mono leading-normal transition ${
                           taken
                             ? 'text-white shadow-[0_6px_18px_rgba(0,0,0,0.28)]'
                             : 'border-[1.5px] border-dashed border-[#94a3b8] text-[#020817] hover:z-[3] hover:border-[#4166fb] hover:shadow-[0_8px_24px_rgba(65,102,251,0.28)]'
-                        } ${
+                        } ${taken && spot.logoImage ? 'overflow-hidden p-0' : ''} ${
                           editing
                             ? `touch-none select-none ${draggingId === spot.id ? 'cursor-grabbing scale-[1.06] ring-2 ring-[#4166fb]' : 'cursor-grab'} ${selectedSpotId === spot.id ? 'ring-2 ring-[#4166fb]' : ''}`
                             : taken
                               ? 'cursor-default'
                               : 'cursor-pointer hover:scale-[1.06]'
                         }`}
-                        style={taken ? { background: spot.logoColor || '#3b82f6' } : undefined}
+                        style={taken && !spot.logoImage ? { background: spot.logoColor || '#3b82f6' } : undefined}
                       >
                         {taken ? (
-                          <>
-                            <span className="text-[16px] font-bold leading-none">{(who ?? '?').charAt(0).toUpperCase()}</span>
-                            <span className="w-full truncate px-1 text-center text-[10px] font-medium leading-tight">{who}</span>
-                          </>
+                          spot.logoImage ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={spot.logoImage} alt={`${who} logo`} className="absolute inset-0 h-full w-full object-cover" />
+                          ) : (
+                            <>
+                              <span className="text-[16px] font-bold leading-none">{(who ?? '?').charAt(0).toUpperCase()}</span>
+                              <span className="w-full truncate px-1 text-center text-[10px] font-medium leading-tight">{who}</span>
+                            </>
+                          )
                         ) : (
                           <>
                             <span className="text-[13px] font-bold leading-none tracking-wide">
@@ -411,6 +475,7 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                 return (
                   <div
                     className="absolute z-[6] w-[230px] leading-normal"
+                    ref={panelRef}
                     style={{
                       left: `${sel.x + (flipX ? -sel.w / 2 : sel.w / 2)}%`,
                       top: `${Math.min(Math.max(sel.y, 18), 82)}%`,

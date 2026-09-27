@@ -1,6 +1,7 @@
 'use client'
 
-import { cardPhoto, formatMoney, surfaceLabels, type Listing } from '@/lib/listings'
+import { cardPhoto, formatMoney, sellerDisplay, surfaceLabels, type Listing } from '@/lib/listings'
+import SellerAvatar from '@/components/SellerAvatar'
 
 function SpotProgress({ spots }: { spots: Listing['spots'] }) {
   const claimed = spots.filter((s) => s.claimedBy).length
@@ -64,14 +65,8 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         <h3 className="font-display text-[22px] leading-tight">{listing.title}</h3>
         <p className="text-sm text-[#64748b]">{listing.goal}</p>
         <div className="flex items-center gap-2 text-sm">
-          <span
-            className="grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full text-xs font-semibold text-white"
-            style={{ background: listing.seller.color }}
-          >
-            {listing.seller.name.charAt(0)}
-          </span>
-          <span className="font-semibold">{listing.seller.name}</span>
-          <span className="text-[13px] text-[#64748b]">{listing.seller.handle}</span>
+          <SellerAvatar seller={listing.seller} className="h-[26px] w-[26px] text-xs" />
+          <span className="truncate font-semibold">{sellerDisplay(listing.seller)}</span>
         </div>
         <SpotProgress spots={listing.spots} />
         <div className="flex justify-between border-t border-[#e7e5e0] pt-3 text-[13px] text-[#64748b]">

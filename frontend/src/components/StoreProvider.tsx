@@ -15,11 +15,16 @@ import {
   fetchListingSummaries,
 } from '@/lib/auth-api'
 
+interface SpotExtras {
+  website?: string;
+  logoUrl?: string;
+}
+
 interface StoreValue {
   listings: Listing[]
   claims: Record<string, string>
-  claimSpot: (listingId: string, spotId: string, name: string) => Promise<void>
-  placeBid: (listingId: string, spotId: string, bidder: string, amount: number) => Promise<void>
+  claimSpot: (listingId: string, spotId: string, name: string, extras?: SpotExtras) => Promise<void>
+  placeBid: (listingId: string, spotId: string, bidder: string, amount: number, extras?: SpotExtras) => Promise<void>
   addListing: (listing: Listing) => Promise<string>
   getListing: (id: string) => Listing | undefined
   hydrated: boolean
@@ -57,8 +62,10 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
     }
   }, [])
 
-  const claimSpot = async (listingId: string, spotId: string, name: string) => {
-    const updated = await claimApiSpot(spotId)
+  // Brand extras travel in the claim/bid body and come back on the spot —
+  // the server echo is the single source, so every viewer sees the logo.
+  const claimSpot = async (listingId: string, spotId: string, name: string, extras?: SpotExtras) => {
+    const updated = await claimApiSpot(spotId, extras)
     const buyer = updated.buyer ?? name
     setListings((prev) => prev.map((l) => l.id === listingId
       ? { ...l, spots: l.spots.map((s) => s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s) }
@@ -66,9 +73,9 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
     setClaims((prev) => ({ ...prev, [`${listingId}:${spotId}`]: buyer }))
   }
 
-  const placeBid = async (listingId: string, spotId: string, bidder: string, amount: number) => {
+  const placeBid = async (listingId: string, spotId: string, bidder: string, amount: number, extras?: SpotExtras) => {
     void bidder
-    const updated = await bidApiSpot(spotId, amount)
+    const updated = await bidApiSpot(spotId, amount, extras)
     setListings((prev) => prev.map((l) => l.id === listingId
       ? { ...l, spots: l.spots.map((s) => s.id === spotId ? applyApiSpotToUi(s, updated, l.priceType) : s) }
       : l))
@@ -79,6 +86,8 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
         title: listing.title,
         surface: listing.surface,
         story: listing.description,
+        ...(listing.image.startsWith("data:image/") ? { image: listing.image } : {}),
+        fabric: listing.fabric,
         mode: listing.priceType,
         currency: listing.currency ?? 'USD',
         deadline: listing.endsAt,
@@ -88,6 +97,9 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
           size: s.size,
           price: s.price,
           view: s.view ?? 'lid',
+          x: s.x,
+          y: s.y,
+          w: s.w,
         })),
     })
     const idMap = new Map(listing.spots.map((s, i) => [s.id, api.spots[i]?.id ?? s.id] as const))
