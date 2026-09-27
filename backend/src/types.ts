@@ -49,6 +49,55 @@ export interface Spot {
   fulfilledAt?: string;
   /** When the buyer submitted final artwork (Step 7 intake). */
   artworkSubmittedAt?: string;
+  /** Delivery evidence photos pinned by the seller (Step 9 proof). */
+  proofPhotos?: string[];
+  /** X post distributing the delivered campaign. */
+  proofPost?: string;
+  /** Buyer receipt: confirmed delivery (early payout release). */
+  confirmedAt?: string;
+  /** Open buyer dispute (blocks payout until withdrawn). */
+  disputedAt?: string;
+  disputeReason?: string;
+  /** Platform-recorded mock payout (Step 10 ledger). */
+  paidAt?: string;
+  payoutAmount?: number;
+  payoutFee?: number;
+  payoutReference?: string;
+  payoutDestination?: string;
+}
+
+/** One released-but-unpaid spot for the reviewer ops console. */
+export interface PayoutItem {
+  spotId: string;
+  listingId: string;
+  listingSlug: string;
+  listingTitle: string;
+  spotLabel: string;
+  seller: string;
+  buyer: string;
+  amount: number;
+  currency: string;
+  releasedAt: string;
+}
+
+/** Lazy 3-day review window from fulfillment (no scheduler). */
+export const REVIEW_WINDOW_MS = Number(process.env.REVIEW_WINDOW_MS ?? 3 * 86_400_000);
+
+/** Platform fee in basis points, shown on every payout record — not moved (mock). */
+export function platformFeeBps(env: NodeJS.ProcessEnv = process.env): number {
+  const parsed = Number(env.PLATFORM_FEE_BPS ?? 0);
+  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000) {
+    throw Object.assign(new Error("PLATFORM_FEE_BPS must be 0–10000"), { status: 500 });
+  }
+  return parsed;
+}
+
+/** Payout-releasable: undisputed AND (confirmed OR the window elapsed). */
+export function payoutReleased(spot: { fulfilledAt?: string | null; confirmedAt?: string | null; disputedAt?: string | null }, now = Date.now()): boolean {
+  if (!spot.fulfilledAt) return false;
+  if (spot.disputedAt) return false;
+  if (spot.confirmedAt) return true;
+  return new Date(spot.fulfilledAt).getTime() + REVIEW_WINDOW_MS <= now;
 }
 
 export interface Listing {
@@ -159,6 +208,7 @@ export interface SellerDashboardListing {
   status: "active" | "approved" | "submitted" | "closed";
   deadline: string;
   reviewNote?: string;
+  paid: number;
   mode: Mode;
   currency: string;
   sold: number;
@@ -177,12 +227,13 @@ export interface SellerAttentionItem {
   amount: number;
   currency: string;
   submittedAt: string;
-  status: "pending" | "approved";
+  status: "pending" | "approved" | "delivered" | "disputed";
   artworkReceived: boolean;
+  disputeReason?: string;
 }
 
 export interface SellerDashboard {
-  summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; currency: string };
+  summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; paidOut: number; currency: string };
   listings: SellerDashboardListing[];
   attention: SellerAttentionItem[];
 }
