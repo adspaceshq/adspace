@@ -14,6 +14,7 @@ async function start() {
   createApp({
     auth,
     market,
+    profiles: auth,
     frontendUrl: config.frontendUrl,
     trustProxy: config.trustProxy,
     chain: { cluster: config.solana.cluster, programId: config.solana.programId },

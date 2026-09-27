@@ -3,9 +3,9 @@ import cookieParser from "cookie-parser";
 import { rateLimit } from "express-rate-limit";
 import { Store } from "./store.js";
 import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken } from "./auth.js";
-import { csrfMatches, type AuthRepository, type StoredSession } from "./db.js";
+import { csrfMatches, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
 import type { MarketplaceRepository } from "./market.js";
-import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser } from "./types.js";
+import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
@@ -15,6 +15,7 @@ export interface AppDependencies {
   verifyToken?: (token: string, identityToken?: string) => Promise<AuthenticatedIdentity>;
   market?: MarketplaceRepository;
   store?: Store;
+  profiles?: ProfileRepository;
   frontendUrl?: string;
   trustProxy?: number;
   chain?: { cluster: SolanaCluster; programId: string };
@@ -39,6 +40,7 @@ export function createApp({
   verifyToken = userFromAccessToken,
   market,
   store = new Store(),
+  profiles = new MemoryProfileRepository(),
   frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000",
   trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
   chain = { cluster: "devnet", programId: adspacesProgramId },
@@ -97,6 +99,8 @@ export function createApp({
     const identityToken = (typeof req.headers["privy-id-token"] === "string" ? req.headers["privy-id-token"] : undefined) || (req.body as { identityToken?: string } | null)?.identityToken;
     try {
       const created = await auth.createSession(await verifyToken(token, identityToken));
+      // Step 1: every login owns a profile row, even with zero listings.
+      try { await profiles.upsertFromSession(created.session.user); } catch (e) { console.warn("profile upsert:", e instanceof Error ? e.message : e); }
       res.cookie(sessionCookieName, created.token, cookieOptions());
       res.json({ ...created.session.user, csrfToken: created.session.csrfToken, expiresAt: created.session.expiresAt.toISOString() });
     } catch (e) { sendErr(res, e); }
@@ -109,6 +113,26 @@ export function createApp({
     await auth.destroySession(req.cookies?.[sessionCookieName] as string | undefined);
     res.clearCookie(sessionCookieName, { ...cookieOptions(), maxAge: undefined });
     res.json({ ok: true });
+  });
+  app.get("/api/users/:handle", attachUser, async (req, res) => {
+    try {
+      const profile = await profiles.getProfileByHandle(req.params.handle);
+      if (!profile) return void res.status(404).json({ error: "profile not found" });
+      // payoutWallet is owner-only; everyone else gets the public shape.
+      if (!req.user || req.user.id !== profile.id) {
+        const { payoutWallet: _stripped, ...pub } = profile;
+        return void res.json(pub);
+      }
+      res.json(profile);
+    } catch (e) { sendErr(res, e); }
+  });
+  app.patch("/api/users/me", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const body = (req.body ?? {}) as Partial<UpdateProfileRequest>;
+    const patch: UpdateProfileRequest = {
+      ...(typeof body.bio === "string" ? { bio: body.bio } : {}),
+      ...(typeof body.payoutWallet === "string" ? { payoutWallet: body.payoutWallet } : {}),
+    };
+    try { res.json(await profiles.updateProfile(req.user!.id, patch)); } catch (e) { sendErr(res, e); }
   });
   app.get("/api/listings", async (_req, res) => { try { res.json(await repo.summaries()); } catch(e){sendErr(res,e);} });
   app.get("/api/listings/:slug", async (req, res) => { try { const listing = await repo.get(req.params.slug); listing ? res.json(listing) : res.status(404).json({ error: "listing not found" }); } catch(e){sendErr(res,e);} });
