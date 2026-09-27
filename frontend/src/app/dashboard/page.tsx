@@ -105,11 +105,12 @@ export default function DashboardPage() {
           </div>
           {error && <div role="alert" className="mb-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
           {!data ? <DashboardSkeleton /> : <>
-            <section aria-label="Seller summary" className="mb-9 grid border border-[#e7e5e0] bg-white sm:grid-cols-2 lg:grid-cols-4">
+            <section aria-label="Seller summary" className="mb-9 grid border border-[#e7e5e0] bg-white sm:grid-cols-2 lg:grid-cols-5">
               <Metric icon={<LayoutGrid/>} label="Active listings" value={String(data.summary.activeListings)}/>
               <Metric icon={<Rows3/>} label="Open spots" value={String(data.summary.openSpots)}/>
               <Metric icon={<Clock3/>} label="Pending approval" value={String(data.summary.pendingApproval)}/>
               <Metric icon={<CircleDollarSign/>} label="Revenue" value={money(data.summary.revenue, data.summary.currency)}/>
+              <Metric icon={<CircleDollarSign/>} label="Paid out" value={money(data.summary.paidOut ?? 0, data.summary.currency)}/>
             </section>
 
             <section className="mb-10">
