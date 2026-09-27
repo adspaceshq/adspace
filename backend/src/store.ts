@@ -23,10 +23,37 @@ function artworkLocked(artworkClose: string): boolean {
   return !Number.isNaN(t) && t <= Date.now();
 }
 
+const MAX_PROOF_PHOTOS = 5;
+
+/** Step 9 proof: 1–5 inline photos plus an optional X-post link. */
+function parseProof(proof: { photos: unknown; postUrl?: unknown }): { photos: string[]; postUrl?: string } {
+  const photos = Array.isArray(proof.photos) ? proof.photos : [];
+  if (photos.length < 1 || photos.length > MAX_PROOF_PHOTOS) {
+    throw Object.assign(new Error(`proof needs 1 to ${MAX_PROOF_PHOTOS} photos`), { status: 400 });
+  }
+  const clean = photos.map((p) => {
+    const url = typeof p === "string" ? p.trim() : "";
+    if (!url.startsWith("data:image/")) throw Object.assign(new Error("proof photos must be image uploads"), { status: 400 });
+    if (url.length > MAX_LOGO_URL_LENGTH) throw Object.assign(new Error("proof photo is too large"), { status: 400 });
+    return url;
+  });
+  const out: { photos: string[]; postUrl?: string } = { photos: clean };
+  const postUrl = typeof proof.postUrl === "string" ? proof.postUrl.trim() : "";
+  if (postUrl) {
+    let host = "";
+    try { host = new URL(postUrl).hostname.toLowerCase(); } catch { host = ""; }
+    if (!/^https:\/\//i.test(postUrl) || !(host === "x.com" || host.endsWith(".x.com") || host === "twitter.com" || host.endsWith(".twitter.com"))) {
+      throw Object.assign(new Error("proof post must be an X post link"), { status: 400 });
+    }
+    out.postUrl = postUrl;
+  }
+  return out;
+}
+
 const MAX_LOGO_URL_LENGTH = 3_000_000;
 
-/** Validate buyer brand assets. Empty/absent stays absent; anything malformed is a 400. */
-function parseBrandAssets(assets?: PurchaseAssets): { website?: string; logoUrl?: string } {
+/** Validate buyer brand assets. The logo is required at purchase — every sold spot carries art by construction. */
+function parseBrandAssets(assets?: PurchaseAssets, opts: { requireLogo?: boolean } = {}): { website?: string; logoUrl?: string } {
   const out: { website?: string; logoUrl?: string } = {};
   const website = assets?.website?.trim() ?? "";
   if (website) {
