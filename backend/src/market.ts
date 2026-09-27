@@ -18,6 +18,7 @@ export interface MarketplaceRepository {
   approveReview(slug: string): Promise<Listing>;
   rejectReview(slug: string, reason: string): Promise<Listing>;
   acceptTerms(slug: string, actorUserId: string, version: string): Promise<Listing>;
+  submitArtwork(spotId: string, actor: SessionUser, assets?: PurchaseAssets): Promise<Spot>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
   fulfill(spotId: string, actorUserId: string): Promise<Spot>;
@@ -34,8 +35,8 @@ type SpotRow = {
   id: string; listing_id: string; label: string; location: string; size: string; price: string;
   currency: string; view: string | null; website_url: string | null; logo_url: string | null;
   x: string | null; y: string | null; w: string | null;
-  status: "open" | "claimed" | "sold"; buyer_handle: string | null;
-  current_bid: string | null; claimed_at: Date | null; fulfilled_at: Date | null;
+  status: "open" | "claimed" | "sold"; buyer_handle: string | null; buyer_user_id: string | null;
+  current_bid: string | null; claimed_at: Date | null; fulfilled_at: Date | null; artwork_submitted_at: Date | null;
 };
 
 const n = (value: string | number | null | undefined) => value == null ? undefined : Number(value);
@@ -55,6 +56,22 @@ function parseListingImage(value: unknown): string {
   if (!image.startsWith("data:image/")) throw httpError("image must be an image upload", 400);
   if (image.length > MAX_LOGO_URL_LENGTH) throw httpError("image is too large", 400);
   return image;
+}
+
+/** Artwork due date. Empty stays empty; otherwise a parseable date. */
+function parseArtworkClose(value: unknown): string {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return "";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) throw httpError("artwork close must be a valid date", 400);
+  return parsed.toISOString();
+}
+
+/** Intake is locked once the artwork-close date passes (empty = no lock). */
+function artworkLocked(artworkClose: string): boolean {
+  if (!artworkClose) return false;
+  const t = new Date(artworkClose).getTime();
+  return !Number.isNaN(t) && t <= Date.now();
 }
 
 /** Seller placement in % of the photo. Non-finite values fall back to auto layout. */
@@ -116,6 +133,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_note text NOT NULL DEFAULT '';
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_version text NOT NULL DEFAULT '';
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS artwork_submitted_at timestamptz;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS view text NOT NULL DEFAULT 'lid';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS website_url text NOT NULL DEFAULT '';
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS logo_url text NOT NULL DEFAULT '';
@@ -138,11 +156,12 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async summaries(): Promise<ListingSummary[]> {
+    // Step 5: lazy deadline — ended actives drop out of the marketplace, no scheduler.
     const result = await this.pool.query(`SELECT l.id,l.slug,l.title,l.seller_handle,l.surface,l.image_url,l.mode,l.currency,
       COALESCE(MIN(s.price),0) AS from_price,
       COALESCE(SUM(CASE WHEN s.status <> 'open' THEN COALESCE(s.current_bid,s.price) ELSE 0 END),0) AS raised,
       COUNT(*) FILTER (WHERE s.status='open')::int AS open, COUNT(s.id)::int AS total
-      FROM listings l LEFT JOIN spots s ON s.listing_id=l.id WHERE l.status='active'
+      FROM listings l LEFT JOIN spots s ON s.listing_id=l.id WHERE l.status='active' AND l.deadline > now()
       GROUP BY l.id ORDER BY l.created_at DESC`);
     return result.rows.map((r) => ({ id:r.id, slug:r.slug, title:r.title, seller:r.seller_handle, surface:r.surface, image:r.image_url, mode:r.mode, currency:r.currency, fromPrice:Number(r.from_price), raised:Number(r.raised), open:r.open, total:r.total }));
   }
@@ -174,10 +193,11 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const currency = body.currency?.trim().toUpperCase() || "USD";
       const fabric = parseFabric(body.fabric);
       const image = parseListingImage(body.image);
+      const artworkClose = parseArtworkClose(body.artworkClose);
       // Step 2: submissions land as submitted — platform review activates them.
       await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,status)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'submitted')`,
-      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,body.artworkClose?.trim() ?? "",fabric]);
+      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,artworkClose,fabric]);
       for (let i=0;i<drafts.length;i++) {
         const spot=drafts[i];
         const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" || spot.view === "tee-left" || spot.view === "tee-right" ? spot.view : "lid";
@@ -222,12 +242,13 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
 
   async acceptTerms(slug: string, actorUserId: string, version: string): Promise<Listing> {
     if (version !== TERMS_VERSION) throw httpError(`terms version ${version || "(missing)"} is stale — accept ${TERMS_VERSION}`, 400);
-    const current = await this.pool.query("SELECT status, seller_user_id FROM listings WHERE slug=$1", [slug]);
+    const current = await this.pool.query("SELECT status, seller_user_id, deadline FROM listings WHERE slug=$1", [slug]);
     const row = current.rows[0];
     if (!row) throw httpError("listing not found", 404);
     if (row.seller_user_id !== actorUserId) throw httpError("forbidden", 403);
     if (row.status === "active") return (await this.get(slug))!;
     if (row.status !== "approved") throw httpError("listing is not approved yet", 409);
+    if (new Date(row.deadline).getTime() <= Date.now()) throw httpError("deadline has passed — close and relist", 409);
     await this.pool.query(
       "UPDATE listings SET status='active', terms_version=$2, terms_accepted_at=now(), updated_at=now() WHERE slug=$1",
       [slug, TERMS_VERSION],
@@ -289,9 +310,23 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const brand = parseBrandAssets(assets);
     const result = await this.pool.query(`UPDATE spots s SET status='claimed',buyer_user_id=$2,buyer_handle=$3,claimed_at=now(),updated_at=now(),
       website_url=$4,logo_url=$5
-      FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.mode='fixed' AND l.status='active' AND s.status='open' AND l.seller_user_id<>$2 RETURNING s.id`, [spotId,buyer.id,buyer.handle,brand.website ?? "",brand.logoUrl ?? ""]);
-    if (!result.rows[0]) throw httpError("spot is unavailable or belongs to you", 409);
+      FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.mode='fixed' AND l.status='active' AND l.deadline > now() AND s.status='open' AND l.seller_user_id<>$2 RETURNING s.id`, [spotId,buyer.id,buyer.handle,brand.website ?? "",brand.logoUrl ?? ""]);
+    if (!result.rows[0]) await this.throwPurchaseAccess(spotId);
     return (await this.getSpot(spotId))!;
+  }
+
+  /** Failure-path diagnosis so ended listings report themselves instead of a generic 409. */
+  private async throwPurchaseAccess(spotId: string): Promise<never> {
+    const diag = await this.pool.query(
+      `SELECT l.status, l.deadline FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.id=$1`,
+      [spotId],
+    );
+    const row = diag.rows[0];
+    if (!row) throw httpError("spot not found", 404);
+    if (row.status === "active" && new Date(row.deadline).getTime() <= Date.now()) {
+      throw httpError("listing has ended", 409);
+    }
+    throw httpError("spot is unavailable or belongs to you", 409);
   }
 
   async placeBid(spotId: string, bidder: SessionUser, amount: number, assets?: PurchaseAssets): Promise<Spot> {
@@ -299,10 +334,11 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const result = await client.query<SpotRow & { mode:string; min_increment:string|null; double_up:boolean; seller_user_id:string }>(`SELECT s.*,l.mode,l.min_increment,l.double_up,l.seller_user_id
+      const result = await client.query<SpotRow & { mode:string; min_increment:string|null; double_up:boolean; seller_user_id:string; deadline:Date }>(`SELECT s.*,l.mode,l.min_increment,l.double_up,l.seller_user_id,l.deadline
         FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.id=$1 AND l.status='active' FOR UPDATE OF s`, [spotId]);
       const spot=result.rows[0];
       if (!spot) throw httpError("spot not found",404);
+      if (new Date(spot.deadline).getTime() <= Date.now()) throw httpError("listing has ended",409);
       if (spot.mode!=="auction" || spot.status!=="open" || spot.seller_user_id===bidder.id) throw httpError("spot is unavailable or belongs to you",409);
       const current=n(spot.current_bid); const required=current == null ? Number(spot.price) : spot.double_up ? current*2 : current+Number(spot.min_increment ?? 0);
       if (amount<required) throw httpError(`bid must be at least ${required} ${spot.currency}`,409);
@@ -311,6 +347,26 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       await client.query("COMMIT");
       return (await this.getSpot(spotId))!;
     } catch(error){await client.query("ROLLBACK");throw error;} finally{client.release();}
+  }
+
+  async submitArtwork(spotId: string, actor: SessionUser, assets?: PurchaseAssets): Promise<Spot> {
+    const brand = parseBrandAssets(assets);
+    if (!brand.website && !brand.logoUrl) throw httpError("artwork is required", 400);
+    const found = await this.pool.query<SpotRow & { artwork_close: string }>(
+      `SELECT s.*, l.artwork_close FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.id=$1`,
+      [spotId],
+    );
+    const row = found.rows[0];
+    if (!row) throw httpError("spot not found", 404);
+    if (row.status !== "sold") throw httpError("artwork intake opens once the spot is sold", 409);
+    if (!row.buyer_user_id || row.buyer_user_id !== actor.id) throw httpError("only the buyer can submit artwork", 403);
+    if (artworkLocked(row.artwork_close)) throw httpError("artwork window has closed", 409);
+    await this.pool.query(
+      `UPDATE spots SET website_url=COALESCE(NULLIF($2,''),website_url), logo_url=COALESCE(NULLIF($3,''),logo_url),
+        artwork_submitted_at=now(), updated_at=now() WHERE id=$1`,
+      [spotId, brand.website ?? "", brand.logoUrl ?? ""],
+    );
+    return (await this.getSpot(spotId))!;
   }
 
   async approve(spotId:string, actorUserId:string):Promise<Spot>{
@@ -334,18 +390,20 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async dashboard(actorUserId:string):Promise<SellerDashboard>{
-    const listings=await this.pool.query(`SELECT l.id,l.slug,l.title,l.image_url,l.status,l.review_note,l.mode,l.currency,
+    const listings=await this.pool.query(`SELECT l.id,l.slug,l.title,l.image_url,l.status,l.review_note,l.deadline,l.mode,l.currency,
       COUNT(s.id)::int total,COUNT(*) FILTER(WHERE s.status='open' AND s.buyer_user_id IS NULL)::int open,COUNT(*) FILTER(WHERE s.status='sold')::int sold,
       COALESCE(SUM(CASE WHEN s.status='sold' THEN COALESCE(s.current_bid,s.price) ELSE 0 END),0) revenue
       FROM listings l LEFT JOIN spots s ON s.listing_id=l.id WHERE l.seller_user_id=$1 GROUP BY l.id ORDER BY l.created_at DESC`,[actorUserId]);
     const attention=await this.pool.query(`SELECT s.id spot_id,l.id listing_id,l.slug listing_slug,l.title listing_title,s.label spot_label,
       s.buyer_handle buyer,COALESCE(s.current_bid,s.price) amount,s.currency,s.claimed_at submitted_at,
-      CASE WHEN s.status='claimed' THEN 'pending' ELSE 'approved' END status
+      CASE WHEN s.status='claimed' THEN 'pending' ELSE 'approved' END status,
+      (s.artwork_submitted_at IS NOT NULL) AS artwork_received
       FROM spots s JOIN listings l ON l.id=s.listing_id WHERE l.seller_user_id=$1 AND s.buyer_user_id IS NOT NULL
       AND ((s.status IN('open','claimed') AND s.claimed_at IS NOT NULL) OR (s.status='sold' AND s.fulfilled_at IS NULL)) ORDER BY s.claimed_at DESC`,[actorUserId]);
-    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,reviewNote:r.review_note || undefined,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,revenue:Number(r.revenue)}));
+    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,deadline:new Date(r.deadline).toISOString(),reviewNote:r.review_note || undefined,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,revenue:Number(r.revenue)}));
     const pending=attention.rows.filter(r=>r.status==="pending").length;
-    return {summary:{activeListings:rows.filter(r=>r.status==="active").length,openSpots:rows.reduce((a,r)=>a+r.open,0),pendingApproval:pending,revenue:rows.reduce((a,r)=>a+r.revenue,0),currency:rows[0]?.currency ?? "USD"},listings:rows,attention:attention.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,submittedAt:new Date(r.submitted_at).toISOString(),status:r.status}))};
+    const live = (r: { status: string; deadline: string }) => r.status === "active" && new Date(r.deadline).getTime() > Date.now();
+    return {summary:{activeListings:rows.filter(live).length,openSpots:rows.reduce((a,r)=>a+r.open,0),pendingApproval:pending,revenue:rows.reduce((a,r)=>a+r.revenue,0),currency:rows[0]?.currency ?? "USD"},listings:rows,attention:attention.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,submittedAt:new Date(r.submitted_at).toISOString(),status:r.status,artworkReceived:Boolean(r.artwork_received)}))};
   }
 
   private async hydrate(row:ListingRow):Promise<Listing>{
@@ -354,7 +412,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     if(ids.length){const br=await this.pool.query("SELECT spot_id,bidder_handle,amount,created_at FROM bids WHERE spot_id=ANY($1) ORDER BY created_at",[ids]);for(const b of br.rows)bids.set(b.spot_id,[...(bids.get(b.spot_id)??[]),{bidder:b.bidder_handle,amount:Number(b.amount),at:new Date(b.created_at).toISOString()}]);}
     return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,reviewNote:row.review_note || undefined,termsVersion:row.terms_version || undefined,termsAcceptedAt:row.terms_accepted_at?.toISOString(),spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
   }
-  private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString()};}
+  private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString(),artworkSubmittedAt:s.artwork_submitted_at?.toISOString()};}
   private async getSpot(id:string):Promise<Spot|undefined>{const r=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE id=$1",[id]);if(!r.rows[0])return undefined;const b=await this.pool.query("SELECT bidder_handle,amount,created_at FROM bids WHERE spot_id=$1 ORDER BY created_at",[id]);return this.mapSpot(r.rows[0],b.rows.map(x=>({bidder:x.bidder_handle,amount:Number(x.amount),at:new Date(x.created_at).toISOString()})));}
   private async ownerTransition(id:string,userId:string,from:string,to:string):Promise<Spot>{const r=await this.pool.query(`UPDATE spots s SET status=$4,updated_at=now() FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.seller_user_id=$2 AND s.status=$3 RETURNING s.id`,[id,userId,from,to]);if(!r.rows[0])await this.throwSpotAccess(id,userId);return(await this.getSpot(id))!;}
   private async throwListingAccess(slug:string,userId:string):Promise<never>{const r=await this.pool.query("SELECT seller_user_id FROM listings WHERE slug=$1",[slug]);throw httpError(!r.rows[0]?"listing not found":r.rows[0].seller_user_id!==userId?"forbidden":"listing cannot be updated",!r.rows[0]?404:r.rows[0].seller_user_id!==userId?403:409);}
