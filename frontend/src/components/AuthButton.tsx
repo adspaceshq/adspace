@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect } from 'react';
+import Link from 'next/link';
 import { useAuthSession, type AuthSession } from '@/components/AuthSessionProvider';
 import { PRIVY_ENABLED } from '@/lib/privy';
+import { sellerUrl } from '@/lib/listings';
 
 export type XIdentity = AuthSession;
 
@@ -26,7 +28,7 @@ export default function AuthButton() {
 }
 
 function PrivyAuthButton() {
-  const { ready, authenticated, handle, avatar, loggingIn, error, login, logout } = useAuthSession();
+  const { ready, authenticated, handle, avatar, loggingIn, error, login } = useAuthSession();
 
   if (!ready && !authenticated) {
     return (
@@ -61,28 +63,20 @@ function PrivyAuthButton() {
   const label = handle ?? 'Connected';
 
   return (
-    <span className="flex items-center gap-2">
-      <span
-        title={handle ?? ''}
-        className="flex max-w-[180px] items-center gap-2 truncate rounded-full border border-[#e7e5e0] bg-white py-[4px] pl-[5px] pr-3 font-mono text-[12px] font-medium text-[#020817]"
-      >
-        {avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatar} alt="" width={22} height={22} className="h-[22px] w-[22px] rounded-full object-cover" />
-        ) : (
-          <span className="grid h-[22px] w-[22px] place-items-center rounded-full bg-[#4166fb] text-[10px] font-semibold text-white">
-            {label.replace('@', '').charAt(0).toUpperCase()}
-          </span>
-        )}
-        {label}
-      </span>
-      <button
-        type="button"
-        onClick={() => void logout()}
-        className="rounded-lg px-3 py-2 text-[13px] font-medium text-[#020817]/60 transition hover:text-[#020817]"
-      >
-        Log out
-      </button>
-    </span>
+    <Link
+      href={sellerUrl(handle ?? 'seller')}
+      title={handle ?? ''}
+      aria-label={`View ${label} profile`}
+      className="block shrink-0 overflow-hidden rounded-full ring-1 ring-black/10 transition hover:ring-2 hover:ring-[#4166fb]"
+    >
+      {avatar ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={avatar} alt="" width={32} height={32} className="h-8 w-8 rounded-full object-cover" />
+      ) : (
+        <span className="grid h-8 w-8 place-items-center rounded-full bg-[#4166fb] text-sm font-semibold text-white">
+          {label.replace('@', '').charAt(0).toUpperCase()}
+        </span>
+      )}
+    </Link>
   );
 }
