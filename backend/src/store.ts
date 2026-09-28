@@ -414,6 +414,8 @@ export class Store {
     return listing;
   }
 
+  resolveDispute(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});if(!found.spot.disputedAt)throw Object.assign(new Error("spot has no open dispute"),{status:409});found.spot.disputedAt=undefined;found.spot.disputeReason=undefined;found.spot.paidAt=new Date().toISOString();found.spot.payoutReference=reference;return found.spot;}
+
   recordChainPublication(slug: string, publication: ChainPublication): void {
     const listing = this.listings.get(slug);
     if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });

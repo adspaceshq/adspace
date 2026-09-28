@@ -17,6 +17,7 @@ import type { AuctionBidExecutor } from "./auction-bid-chain.js";
 import type { ProofChainExecutor } from "./proof-chain.js";
 import type { SettlementExecutor } from "./settlement-chain.js";
 import type { DisputeChainExecutor } from "./dispute-chain.js";
+import type { DisputeResolutionExecutor } from "./dispute-resolution-chain.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -40,6 +41,7 @@ export interface AppDependencies {
   proofChainExecutor?: ProofChainExecutor;
   settlementExecutor?: SettlementExecutor;
   disputeChainExecutor?: DisputeChainExecutor;
+  disputeResolutionExecutor?: DisputeResolutionExecutor;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -76,6 +78,7 @@ export function createApp({
   proofChainExecutor,
   settlementExecutor,
   disputeChainExecutor,
+  disputeResolutionExecutor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -93,6 +96,7 @@ export function createApp({
     confirmSpot: async (id,user) => store.confirmSpot(id,user),
     disputeSpot: async (id,user,reason) => store.disputeSpot(id,user,reason),
     withdrawDispute: async (id,user) => store.withdrawDispute(id,user),
+    resolveDispute: async (id,reference) => store.resolveDispute(id,reference),
     payableQueue: async () => store.payableQueue(),
     paySpot: async (id,reference) => store.paySpot(id,reference),
   };
@@ -344,6 +348,7 @@ export function createApp({
       res.json(await repo.paySpot(req.params.id, signature));
     } catch (e) { sendErr(res, e); }
   });
+  app.post("/api/spots/:id/resolve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async(req,res)=>{try{if(!disputeResolutionExecutor)return void res.status(503).json({error:"dispute resolution is unavailable"});const body=(req.body??{}) as {sellerShareBps?:unknown;decision?:unknown};const signature=await disputeResolutionExecutor.resolve(req.params.id,Number(body.sellerShareBps),typeof body.decision==="string"?body.decision:"");res.json(await repo.resolveDispute(req.params.id,signature));}catch(e){sendErr(res,e);}});
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/fulfill", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.fulfill(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });

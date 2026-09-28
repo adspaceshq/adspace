@@ -26,6 +26,7 @@ export interface MarketplaceRepository {
   confirmSpot(spotId: string, actor: SessionUser): Promise<Spot>;
   disputeSpot(spotId: string, actor: SessionUser, reason: string): Promise<Spot>;
   withdrawDispute(spotId: string, actor: SessionUser): Promise<Spot>;
+  resolveDispute(spotId:string,reference:string):Promise<Spot>;
   payableQueue(): Promise<PayoutItem[]>;
   paySpot(spotId: string, reference: string): Promise<Spot>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
@@ -59,6 +60,7 @@ type SpotRow = {
   chain_proof_signature: string | null;
   chain_settlement_signature: string | null;
   chain_dispute_signature: string | null;
+  chain_resolution_signature: string | null;
 };
 
 const n = (value: string | number | null | undefined) => value == null ? undefined : Number(value);
@@ -216,6 +218,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_proof_signature text;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_settlement_signature text;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_dispute_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_resolution_signature text;
       ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
       ALTER TABLE spots ENABLE ROW LEVEL SECURITY;
       ALTER TABLE bids ENABLE ROW LEVEL SECURITY;
@@ -518,6 +521,8 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     await this.pool.query("UPDATE spots SET disputed_at=NULL, dispute_reason='', updated_at=now() WHERE id=$1", [spotId]);
     return (await this.getSpot(spotId))!;
   }
+
+  async resolveDispute(spotId:string,reference:string):Promise<Spot>{const result=await this.pool.query(`UPDATE spots SET disputed_at=NULL,dispute_reason='',paid_at=now(),payout_reference=$2,updated_at=now() WHERE id=$1 AND disputed_at IS NOT NULL RETURNING id`,[spotId,reference]);if(!result.rows[0])throw httpError("spot has no open dispute",409);return(await this.getSpot(spotId))!;}
 
   async payableQueue(): Promise<PayoutItem[]> {
     const result = await this.pool.query(
