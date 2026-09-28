@@ -16,7 +16,7 @@ const RESERVED = new Set(['browse', 'list', 'listings', 'dashboard', 'review', '
 export default function SellerPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle: raw } = use(params)
   const { listings, hydrated } = useStore()
-  const { userId, walletAddress, logout } = useAuthSession()
+  const { userId, walletAddress, mfaEnabled, setupMfa, logout } = useAuthSession()
 
   const clean = decodeURIComponent(raw ?? '').trim().replace(/^@+/, '').toLowerCase()
   const reserved = RESERVED.has(clean)
@@ -245,10 +245,13 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
         )}
 
         {isOwner && walletAddress && !editing && (
-          <div className="mb-8 rounded-xl border border-[#e7e5e0] bg-white px-4 py-3">
+          <div className="mb-8 rounded-xl border border-[#e7e5e0] bg-white p-4">
             <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">Privy Solana wallet</p>
             <p className="mt-1 break-all font-mono text-sm text-[#020817]">{walletAddress}</p>
-            <p className="mt-1 text-xs text-[#64748b]">Used for Adspaces transactions and withdrawals.</p>
+            <div className="mt-4 flex items-center justify-between border-t border-[#e7e5e0] pt-4">
+              <div><p className="text-sm font-medium text-[#020817]">Two-factor authentication</p><p className="text-xs text-[#64748b]">Required for withdrawals</p></div>
+              {mfaEnabled ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={setupMfa} className="rounded-full bg-[#020817] px-4 py-2 text-sm font-medium text-white">Set up MFA</button>}
+            </div>
           </div>
         )}
 

@@ -196,7 +196,10 @@ export default function DashboardPage() {
               </div>
               <div className="mt-5 flex flex-col justify-between gap-3 border-t border-[#e7e5e0] pt-4 sm:flex-row sm:items-center">
                 <p className="text-xs text-[#64748b]">Seller settlements arrive here automatically. You can transfer wallet USDC to another Solana address.</p>
-                <button type="button" onClick={() => { setWithdrawOpen(true); setWithdrawError(undefined); setWithdrawSignature(undefined) }} className="shrink-0 rounded-md bg-[#020817] px-5 py-2.5 text-sm font-semibold text-white">Withdraw USDC</button>
+                <button type="button" onClick={() => {
+                  if (mfaMethods.length === 0) { showMfaEnrollmentModal(); return }
+                  setWithdrawOpen(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
+                }} className="shrink-0 rounded-md bg-[#020817] px-5 py-2.5 text-sm font-semibold text-white">Withdraw USDC</button>
               </div>
             </section>
 
