@@ -10,6 +10,8 @@ import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, Sessi
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
 import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdrawals.js";
 import type { WalletWithdrawal } from "./withdrawals.js";
+import type { ListingPublisher } from "./listing-chain.js";
+import type { ReviewPolicy } from "./adspaces-program.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -26,6 +28,8 @@ export interface AppDependencies {
   chain?: { cluster: SolanaCluster; programId: string };
   withdrawals?: WithdrawalRepository;
   withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> };
+  sellerIdentities?: { get(userId: string): Promise<SessionUser | undefined> };
+  listingPublisher?: ListingPublisher;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -54,6 +58,8 @@ export function createApp({
   chain = { cluster: "devnet", programId: adspacesProgramId },
   withdrawals = new MemoryWithdrawalRepository(),
   withdrawalSponsor,
+  sellerIdentities,
+  listingPublisher,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -209,7 +215,29 @@ export function createApp({
     try { res.json(await repo.reviewQueue()); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/listings/:slug/approve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
-    try { res.json(await repo.approveReview(req.params.slug)); } catch (e) { sendErr(res, e); }
+    try {
+      const listing = await repo.get(req.params.slug);
+      if (!listing) return void res.status(404).json({ error: "listing not found" });
+      if (listing.status !== "submitted") return void res.status(409).json({ error: "listing is not awaiting review" });
+      if (listingPublisher) {
+        if (!sellerIdentities || !listing.sellerUserId) return void res.status(503).json({ error: "seller identity lookup is unavailable" });
+        const seller = await sellerIdentities.get(listing.sellerUserId);
+        if (!seller) return void res.status(409).json({ error: "seller account was not found" });
+        const body = (req.body ?? {}) as Partial<ReviewPolicy>;
+        const artworkClose = new Date(listing.artworkClose || listing.deadline).getTime();
+        const policy: ReviewPolicy = {
+          feeBps: Number(body.feeBps ?? 250),
+          upliftFeeBps: Number(body.upliftFeeBps ?? (listing.mode === "auction" ? 250 : 0)),
+          maxFeeBps: Number(body.maxFeeBps ?? 250),
+          reviewWindowSeconds: Number(body.reviewWindowSeconds ?? 172800),
+          deliveryDeadline: typeof body.deliveryDeadline === "string" && body.deliveryDeadline
+            ? body.deliveryDeadline
+            : new Date(artworkClose + 7 * 86_400_000).toISOString(),
+        };
+        await listingPublisher.publish(listing, seller, policy);
+      }
+      res.json(await repo.approveReview(req.params.slug));
+    } catch (e) { sendErr(res, e); }
   });
   app.post("/api/listings/:slug/reject", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
     const reason = (req.body as { reason?: unknown } | null)?.reason;

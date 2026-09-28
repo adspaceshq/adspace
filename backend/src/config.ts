@@ -11,7 +11,7 @@ export interface AppConfig {
   sessionTtlHours: number;
   /** X handles or stable user IDs allowed to review submissions (Step 3). */
   platformReviewers: string[];
-  solana: { cluster: SolanaCluster; programId: string; rpcUrl?: string; websocketUrl?: string };
+  solana: { cluster: SolanaCluster; programId: string; rpcUrl?: string; websocketUrl?: string; reviewerWalletPath?: string };
 }
 
 function positiveInteger(name: string, value: string | undefined, fallback: number): number {
@@ -69,6 +69,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       programId: programId(env.ADSPACES_PROGRAM_ID),
       rpcUrl: env.SOLANA_RPC_URL ? absoluteUrl("SOLANA_RPC_URL", env.SOLANA_RPC_URL) : undefined,
       websocketUrl: env.SOLANA_WEBSOCKET_URL ? absoluteUrl("SOLANA_WEBSOCKET_URL", env.SOLANA_WEBSOCKET_URL) : undefined,
+      reviewerWalletPath: env.ADSPACES_REVIEWER_WALLET?.trim() || undefined,
     },
   };
 }

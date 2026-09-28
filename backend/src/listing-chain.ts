@@ -1,0 +1,145 @@
+import { readFileSync } from "node:fs";
+import type { Pool } from "pg";
+import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import { privy } from "./auth.js";
+import { createListingInstructions, type ReviewPolicy } from "./adspaces-program.js";
+import type { SolanaCluster } from "./config.js";
+import { usdcMintFor } from "./payout.js";
+import type { Listing, SessionUser } from "./types.js";
+
+const caip2: Record<SolanaCluster, `solana:${string}`> = {
+  devnet: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+  testnet: "solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z",
+  "mainnet-beta": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+};
+
+export interface ListingPublisher {
+  publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<string[]>;
+}
+
+export class PostgresSellerIdentityRepository {
+  constructor(private readonly pool: Pool) {}
+
+  async get(userId: string): Promise<SessionUser | undefined> {
+    const result = await this.pool.query(
+      `SELECT id,privy_did,x_handle,x_user_id,display_name,avatar_url,email,wallet_address
+       FROM users WHERE id=$1`,
+      [userId],
+    );
+    const row = result.rows[0];
+    return row ? {
+      id: row.id,
+      did: row.privy_did,
+      handle: row.x_handle,
+      name: row.display_name ?? undefined,
+      avatar: row.avatar_url ?? undefined,
+      email: row.email ?? undefined,
+      walletAddress: row.wallet_address ?? undefined,
+      hasX: Boolean(row.x_user_id),
+    } : undefined;
+  }
+}
+
+export class PrivyListingPublisher implements ListingPublisher {
+  private readonly connection: Connection;
+  private readonly programId: PublicKey;
+  private readonly usdcMint: PublicKey;
+  private readonly reviewer: Keypair;
+
+  constructor(
+    rpcUrl: string,
+    private readonly cluster: SolanaCluster,
+    programId: string,
+    reviewerWalletPath: string,
+    private readonly metadataBaseUrl: string,
+  ) {
+    this.connection = new Connection(rpcUrl, "confirmed");
+    this.programId = new PublicKey(programId);
+    this.usdcMint = new PublicKey(usdcMintFor(cluster, process.env.USDC_MINT));
+    const secret = JSON.parse(readFileSync(reviewerWalletPath, "utf8")) as number[];
+    this.reviewer = Keypair.fromSecretKey(Uint8Array.from(secret));
+  }
+
+  async publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<string[]> {
+    if (!privy) throw Object.assign(new Error("Privy is not configured"), { status: 503 });
+    if (!seller.walletAddress) throw Object.assign(new Error("seller embedded wallet is not ready"), { status: 409 });
+    const authorizationPrivateKey = process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY;
+    if (!authorizationPrivateKey) throw Object.assign(new Error("Privy authorization key is not configured"), { status: 503 });
+    const sellerKey = new PublicKey(seller.walletAddress);
+    const wallet = await this.delegatedWallet(seller, sellerKey);
+    const metadataUri = `${this.metadataBaseUrl.replace(/\/$/, "")}/${encodeURIComponent(listing.sellerHandle)}/${encodeURIComponent(listing.slug)}`;
+    const built = createListingInstructions({
+      programId: this.programId,
+      usdcMint: this.usdcMint,
+      seller: sellerKey,
+      reviewer: this.reviewer.publicKey,
+      listing,
+      metadataUri,
+      policy,
+    });
+    await this.assertReviewerAuthority();
+    const signatures: string[] = [];
+    if (!(await this.connection.getAccountInfo(built.addresses.listing, "confirmed"))) {
+      signatures.push(await this.send(wallet.id, sellerKey, built.instructions[0], true, authorizationPrivateKey));
+    }
+    for (let index = 0; index < built.addresses.spots.length; index += 1) {
+      if (!(await this.connection.getAccountInfo(built.addresses.spots[index].spot, "confirmed"))) {
+        signatures.push(await this.send(wallet.id, sellerKey, built.instructions[index + 1], false, authorizationPrivateKey));
+      }
+    }
+    return signatures;
+  }
+
+  private async delegatedWallet(user: SessionUser, address: PublicKey): Promise<{ id: string }> {
+    const privyUser = await privy!.users()._get(user.did);
+    const wallet = privyUser.linked_accounts.find((account) =>
+      account.type === "wallet"
+      && account.chain_type === "solana"
+      && account.address === address.toBase58()
+      && account.wallet_client_type === "privy",
+    );
+    if (!wallet || !("id" in wallet) || !wallet.id) {
+      throw Object.assign(new Error("seller Privy embedded wallet was not found"), { status: 409 });
+    }
+    if (!("delegated" in wallet) || !wallet.delegated) {
+      throw Object.assign(new Error("seller must enable gasless transactions first"), { status: 409 });
+    }
+    return { id: wallet.id };
+  }
+
+  private async assertReviewerAuthority(): Promise<void> {
+    const config = PublicKey.findProgramAddressSync([Buffer.from("config")], this.programId)[0];
+    const authority = PublicKey.findProgramAddressSync(
+      [Buffer.from("review_authority"), config.toBuffer()],
+      this.programId,
+    )[0];
+    const account = await this.connection.getAccountInfo(authority, "confirmed");
+    if (!account || account.data.length < 72) throw Object.assign(new Error("on-chain review authority is not initialized"), { status: 503 });
+    const configured = new PublicKey(account.data.subarray(40, 72));
+    if (!configured.equals(this.reviewer.publicKey)) {
+      throw Object.assign(new Error("reviewer wallet does not match the on-chain authority"), { status: 503 });
+    }
+  }
+
+  private async send(
+    walletId: string,
+    seller: PublicKey,
+    instruction: Parameters<Transaction["add"]>[0],
+    needsReviewer: boolean,
+    authorizationPrivateKey: string,
+  ): Promise<string> {
+    const transaction = new Transaction().add(instruction);
+    const latest = await this.connection.getLatestBlockhash("confirmed");
+    transaction.feePayer = seller;
+    transaction.recentBlockhash = latest.blockhash;
+    if (needsReviewer) transaction.partialSign(this.reviewer);
+    const result = await privy!.wallets().solana().signAndSendTransaction(walletId, {
+      transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }),
+      caip2: caip2[this.cluster],
+      sponsor: true,
+      authorization_context: { authorization_private_keys: [authorizationPrivateKey] },
+    });
+    await this.connection.confirmTransaction({ signature: result.hash, ...latest }, "confirmed");
+    return result.hash;
+  }
+}
