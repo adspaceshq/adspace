@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useDelegatedActions, usePrivy } from '@privy-io/react-auth';
+import { usePrivy, useSessionSigners, useUser } from '@privy-io/react-auth';
 import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
 import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
@@ -82,7 +82,9 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const exchangedFor = useRef<string | null>(null);
   const walletProvisionedFor = useRef<string | null>(null);
   const { createWallet: createSolanaWallet } = useCreateSolanaWallet();
-  const { delegateWallet } = useDelegatedActions();
+  const { addSessionSigners } = useSessionSigners();
+  const { refreshUser } = useUser();
+  const signerId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID;
   const embeddedWallet = user?.linkedAccounts.flatMap((account) => {
     if (account.type !== 'wallet'
       || !('address' in account)
@@ -177,10 +179,13 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     linkEmail,
     linkX: linkTwitter,
     delegateWallet: async () => {
-      if (!embeddedWallet?.address) throw new Error('Privy wallet is not ready');
       setError(undefined);
       try {
-        await delegateWallet({ address: embeddedWallet.address, chainType: 'solana' });
+        if (!embeddedWallet?.address) throw new Error('Privy wallet is not ready');
+        if (!signerId) throw new Error('NEXT_PUBLIC_PRIVY_SIGNER_ID is not configured');
+        await addSessionSigners({ address: embeddedWallet.address, signers: [{ signerId }] });
+        await refreshUser();
+        await exchange();
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not enable gasless transactions.');
       }
