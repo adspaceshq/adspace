@@ -8,6 +8,7 @@ import type { MarketplaceRepository } from "./market.js";
 import { TERMS_TEXT, TERMS_VERSION } from "./types.js";
 import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
+import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdrawals.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -22,6 +23,7 @@ export interface AppDependencies {
   frontendUrl?: string;
   trustProxy?: number;
   chain?: { cluster: SolanaCluster; programId: string };
+  withdrawals?: WithdrawalRepository;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -48,6 +50,7 @@ export function createApp({
   frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000",
   trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
   chain = { cluster: "devnet", programId: adspacesProgramId },
+  withdrawals = new MemoryWithdrawalRepository(),
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -167,6 +170,28 @@ export function createApp({
       ...(typeof body.payoutWallet === "string" ? { payoutWallet: body.payoutWallet } : {}),
     };
     try { res.json(await profiles.updateProfile(req.user!.id, patch)); } catch (e) { sendErr(res, e); }
+  });
+  app.get("/api/wallet/withdrawals", attachUser, requireUser, async (req, res) => {
+    try { res.json(await withdrawals.list(req.user!.id)); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/wallet/withdrawals", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const body = (req.body ?? {}) as { destination?: unknown; amount?: unknown };
+    if (!req.user!.walletAddress) return void res.status(409).json({ error: "embedded wallet is not ready" });
+    try {
+      res.status(201).json(await withdrawals.create(
+        req.user!.id,
+        req.user!.walletAddress,
+        typeof body.destination === "string" ? body.destination.trim() : "",
+        Number(body.amount),
+      ));
+    } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/wallet/withdrawals/:id/confirm", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const signature = (req.body as { signature?: unknown } | null)?.signature;
+    try { res.json(await withdrawals.confirm(req.params.id, req.user!.id, typeof signature === "string" ? signature : "")); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/wallet/withdrawals/:id/fail", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    try { res.json(await withdrawals.fail(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); }
   });
   app.get("/api/review/queue", attachUser, requireUser, requireReviewer, async (_req, res) => {
     try { res.json(await repo.reviewQueue()); } catch (e) { sendErr(res, e); }
