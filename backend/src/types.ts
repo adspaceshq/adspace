@@ -124,7 +124,20 @@ export interface Listing {
   /** Terms version accepted for this listing, and when (set on accept-terms). */
   termsVersion?: string;
   termsAcceptedAt?: string;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  reviewWindowSeconds?: number;
+  deliveryDeadline?: string;
   spots: Spot[];
+}
+
+export interface ListingFeePolicy {
+  feeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  reviewWindowSeconds: number;
+  deliveryDeadline: string;
 }
 
 export interface ListingSummary {
@@ -218,6 +231,11 @@ export interface SellerDashboardListing {
   open: number;
   total: number;
   revenue: number;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  reviewWindowSeconds?: number;
+  deliveryDeadline?: string;
 }
 
 export interface SellerAttentionItem {

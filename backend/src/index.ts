@@ -69,7 +69,7 @@ export function createApp({
     close: async (slug,user) => store.close(slug,user), reopen: async (slug,user) => store.reopen(slug,user), remove: async (slug,user) => store.remove(slug,user),
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
-    reviewQueue: async () => store.reviewQueue(), approveReview: async slug => store.approveReview(slug),
+    reviewQueue: async () => store.reviewQueue(), approveReview: async (slug, policy) => store.approveReview(slug, policy),
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
     acceptTerms: async (slug,user,version) => store.acceptTerms(slug,user,version),
     submitArtwork: async (id,user,assets) => store.submitArtwork(id,user,assets),
@@ -220,24 +220,24 @@ export function createApp({
       const listing = await repo.get(req.params.slug);
       if (!listing) return void res.status(404).json({ error: "listing not found" });
       if (listing.status !== "submitted") return void res.status(409).json({ error: "listing is not awaiting review" });
+      const body = (req.body ?? {}) as Partial<ReviewPolicy>;
+      const artworkClose = new Date(listing.artworkClose || listing.deadline).getTime();
+      const policy: ReviewPolicy = {
+        feeBps: Number(body.feeBps ?? 250),
+        upliftFeeBps: Number(body.upliftFeeBps ?? (listing.mode === "auction" ? 250 : 0)),
+        maxFeeBps: Number(body.maxFeeBps ?? 250),
+        reviewWindowSeconds: Number(body.reviewWindowSeconds ?? 172800),
+        deliveryDeadline: typeof body.deliveryDeadline === "string" && body.deliveryDeadline
+          ? body.deliveryDeadline
+          : new Date(artworkClose + 7 * 86_400_000).toISOString(),
+      };
       if (listingPublisher) {
         if (!sellerIdentities || !listing.sellerUserId) return void res.status(503).json({ error: "seller identity lookup is unavailable" });
         const seller = await sellerIdentities.get(listing.sellerUserId);
         if (!seller) return void res.status(409).json({ error: "seller account was not found" });
-        const body = (req.body ?? {}) as Partial<ReviewPolicy>;
-        const artworkClose = new Date(listing.artworkClose || listing.deadline).getTime();
-        const policy: ReviewPolicy = {
-          feeBps: Number(body.feeBps ?? 250),
-          upliftFeeBps: Number(body.upliftFeeBps ?? (listing.mode === "auction" ? 250 : 0)),
-          maxFeeBps: Number(body.maxFeeBps ?? 250),
-          reviewWindowSeconds: Number(body.reviewWindowSeconds ?? 172800),
-          deliveryDeadline: typeof body.deliveryDeadline === "string" && body.deliveryDeadline
-            ? body.deliveryDeadline
-            : new Date(artworkClose + 7 * 86_400_000).toISOString(),
-        };
         await listingPublisher.publish(listing, seller, policy);
       }
-      res.json(await repo.approveReview(req.params.slug));
+      res.json(await repo.approveReview(req.params.slug, policy));
     } catch (e) { sendErr(res, e); }
   });
   app.post("/api/listings/:slug/reject", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {

@@ -1,6 +1,6 @@
 import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
@@ -399,12 +399,17 @@ export class Store {
     return this.order.map((slug) => this.listings.get(slug)!).filter((l) => l.status === "submitted");
   }
 
-  approveReview(slug: string): Listing {
+  approveReview(slug: string, policy?: ListingFeePolicy): Listing {
     const listing = this.listings.get(slug);
     if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
     if (listing.status !== "submitted") throw Object.assign(new Error("listing is not awaiting review"), { status: 409 });
     listing.status = "approved";
     listing.reviewNote = undefined;
+    listing.feeBps = policy?.feeBps ?? 250;
+    listing.upliftFeeBps = policy?.upliftFeeBps ?? 0;
+    listing.maxFeeBps = policy?.maxFeeBps ?? listing.feeBps;
+    listing.reviewWindowSeconds = policy?.reviewWindowSeconds ?? 172800;
+    listing.deliveryDeadline = policy?.deliveryDeadline;
     return listing;
   }
 

@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { REVIEW_WINDOW_MS, TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 export interface MarketplaceRepository {
   migrate(): Promise<void>;
@@ -16,7 +16,7 @@ export interface MarketplaceRepository {
   reopen(slug: string, actorUserId: string): Promise<Listing>;
   remove(slug: string, actorUserId: string): Promise<{ ok: true }>;
   reviewQueue(): Promise<Listing[]>;
-  approveReview(slug: string): Promise<Listing>;
+  approveReview(slug: string, policy?: ListingFeePolicy): Promise<Listing>;
   rejectReview(slug: string, reason: string): Promise<Listing>;
   acceptTerms(slug: string, actorUserId: string, version: string): Promise<Listing>;
   submitArtwork(spotId: string, actor: SessionUser, assets?: PurchaseAssets): Promise<Spot>;
@@ -37,6 +37,8 @@ type ListingRow = {
   surface: string; story: string; image_url: string; fabric: string; mode: "fixed" | "auction"; currency: string;
   deadline: Date; artwork_close: string; min_increment: string | null; double_up: boolean; status: "active" | "approved" | "submitted" | "closed";
   review_note: string | null; terms_version: string | null; terms_accepted_at: Date | null;
+  fee_bps: number | null; uplift_fee_bps: number | null; max_fee_bps: number | null;
+  review_window_seconds: string | null; delivery_deadline: Date | null;
 };
 type SpotRow = {
   id: string; listing_id: string; label: string; location: string; size: string; price: string;
@@ -190,6 +192,11 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS y numeric(6,2);
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS w numeric(6,2);
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS fabric text NOT NULL DEFAULT '#f6f6f7';
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS fee_bps integer;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS uplift_fee_bps integer;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS max_fee_bps integer;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_window_seconds bigint;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS delivery_deadline timestamptz;
       ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
       ALTER TABLE spots ENABLE ROW LEVEL SECURITY;
       ALTER TABLE bids ENABLE ROW LEVEL SECURITY;
@@ -312,11 +319,13 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return Promise.all(result.rows.map((row) => this.hydrate(row)));
   }
 
-  async approveReview(slug: string): Promise<Listing> {
+  async approveReview(slug: string, policy?: ListingFeePolicy): Promise<Listing> {
     const result = await this.pool.query(
-      `UPDATE listings SET status='approved', review_note='', updated_at=now()
+      `UPDATE listings SET status='approved', review_note='', fee_bps=$2, uplift_fee_bps=$3,
+       max_fee_bps=$4, review_window_seconds=$5, delivery_deadline=$6, updated_at=now()
        WHERE slug=$1 AND status='submitted' RETURNING slug`,
-      [slug],
+      [slug, policy?.feeBps ?? 250, policy?.upliftFeeBps ?? 0, policy?.maxFeeBps ?? 250,
+        policy?.reviewWindowSeconds ?? 172800, policy?.deliveryDeadline ?? null],
     );
     if (!result.rows[0]) await this.throwReviewAccess(slug);
     return (await this.get(slug))!;
@@ -544,6 +553,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
 
   async dashboard(actorUserId:string):Promise<SellerDashboard>{
     const listings=await this.pool.query(`SELECT l.id,l.slug,l.title,l.image_url,l.status,l.review_note,l.deadline,l.mode,l.currency,
+      l.fee_bps,l.uplift_fee_bps,l.max_fee_bps,l.review_window_seconds,l.delivery_deadline,
       COUNT(s.id)::int total,COUNT(*) FILTER(WHERE s.status='open' AND s.buyer_user_id IS NULL)::int open,COUNT(*) FILTER(WHERE s.status='sold')::int sold,
       COUNT(*) FILTER(WHERE s.paid_at IS NOT NULL)::int paid,
       COALESCE(SUM(CASE WHEN s.status='sold' THEN COALESCE(s.current_bid,s.price) ELSE 0 END),0) revenue,
@@ -557,7 +567,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       AND ((s.status IN('open','claimed') AND s.claimed_at IS NOT NULL)
         OR (s.status='sold' AND (s.fulfilled_at IS NULL OR CARDINALITY(s.proof_photos) = 0))
         OR (s.disputed_at IS NOT NULL)) ORDER BY s.claimed_at DESC`,[actorUserId]);
-    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,deadline:new Date(r.deadline).toISOString(),reviewNote:r.review_note || undefined,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,paid:r.paid,revenue:Number(r.revenue)}));
+    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,deadline:new Date(r.deadline).toISOString(),reviewNote:r.review_note || undefined,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,paid:r.paid,revenue:Number(r.revenue),feeBps:n(r.fee_bps),upliftFeeBps:n(r.uplift_fee_bps),maxFeeBps:n(r.max_fee_bps),reviewWindowSeconds:n(r.review_window_seconds),deliveryDeadline:r.delivery_deadline?new Date(r.delivery_deadline).toISOString():undefined}));
     const pending=attention.rows.filter(r=>r.status==="pending").length;
     const live = (r: { status: string; deadline: string }) => r.status === "active" && new Date(r.deadline).getTime() > Date.now();
     return {summary:{activeListings:rows.filter(live).length,openSpots:rows.reduce((a,r)=>a+r.open,0),pendingApproval:pending,revenue:rows.reduce((a,r)=>a+r.revenue,0),paidOut:listings.rows.reduce((a,r)=>a+Number(r.paid_out),0),currency:rows[0]?.currency ?? "USD"},listings:rows,attention:attention.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,submittedAt:new Date(r.submitted_at).toISOString(),status:r.status,artworkReceived:Boolean(r.artwork_received),disputeReason:r.dispute_reason || undefined}))};
@@ -567,7 +577,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const spotsResult=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE listing_id=$1 ORDER BY created_at,id",[row.id]);
     const ids=spotsResult.rows.map(s=>s.id); const bids=new Map<string,Bid[]>();
     if(ids.length){const br=await this.pool.query("SELECT spot_id,bidder_handle,amount,created_at FROM bids WHERE spot_id=ANY($1) ORDER BY created_at",[ids]);for(const b of br.rows)bids.set(b.spot_id,[...(bids.get(b.spot_id)??[]),{bidder:b.bidder_handle,amount:Number(b.amount),at:new Date(b.created_at).toISOString()}]);}
-    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,reviewNote:row.review_note || undefined,termsVersion:row.terms_version || undefined,termsAcceptedAt:row.terms_accepted_at?.toISOString(),spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
+    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,reviewNote:row.review_note || undefined,termsVersion:row.terms_version || undefined,termsAcceptedAt:row.terms_accepted_at?.toISOString(),feeBps:n(row.fee_bps),upliftFeeBps:n(row.uplift_fee_bps),maxFeeBps:n(row.max_fee_bps),reviewWindowSeconds:n(row.review_window_seconds),deliveryDeadline:row.delivery_deadline?.toISOString(),spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
   }
   private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString(),artworkSubmittedAt:s.artwork_submitted_at?.toISOString(),proofPhotos:(s.proof_photos?.length ? [...s.proof_photos] : undefined),proofPost:s.proof_post || undefined,confirmedAt:s.confirmed_at?.toISOString(),disputedAt:s.disputed_at?.toISOString(),disputeReason:s.dispute_reason || undefined,paidAt:s.paid_at?.toISOString(),payoutAmount:n(s.payout_amount),payoutFee:n(s.payout_fee) ?? 0,payoutReference:s.payout_reference || undefined,payoutDestination:s.payout_destination || undefined};}
   private async getSpot(id:string):Promise<Spot|undefined>{const r=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE id=$1",[id]);if(!r.rows[0])return undefined;const b=await this.pool.query("SELECT bidder_handle,amount,created_at FROM bids WHERE spot_id=$1 ORDER BY created_at",[id]);return this.mapSpot(r.rows[0],b.rows.map(x=>({bidder:x.bidder_handle,amount:Number(x.amount),at:new Date(x.created_at).toISOString()})));}

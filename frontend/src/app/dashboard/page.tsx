@@ -238,6 +238,15 @@ export default function DashboardPage() {
                 <div className="max-h-[85vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]" onClick={(e) => e.stopPropagation()}>
                   <h2 id="terms-title" className="mb-1 text-[22px]">Seller terms{terms && ` (${terms.version})`}</h2>
                   <p className="mb-4 text-[14px] text-[#64748b]">Your space was approved. Accept the terms to put it live.</p>
+                  {(() => {
+                    const approved = data.listings.find((listing) => listing.slug === termsFor)
+                    if (!approved?.feeBps) return null
+                    return <div className="mb-4 rounded-xl border border-[#dbe3ff] bg-[#f5f7ff] p-4 text-[13px] text-[#020817]">
+                      <p className="font-semibold">Approved platform fee: {(approved.feeBps / 100).toFixed(2)}%</p>
+                      {approved.mode === 'auction' && <p className="mt-1 text-[#64748b]">Auction fee range: {(approved.feeBps / 100).toFixed(2)}% to {((approved.maxFeeBps ?? approved.feeBps) / 100).toFixed(2)}%. Uplift cap: {((approved.upliftFeeBps ?? approved.feeBps) / 100).toFixed(2)}%.</p>}
+                      <p className="mt-1 text-[#64748b]">Settlement review window: {Math.round((approved.reviewWindowSeconds ?? 172800) / 3600)} hours.</p>
+                    </div>
+                  })()}
                   <pre className="mb-6 whitespace-pre-wrap rounded-xl bg-[#f6f6f4] p-4 font-sans text-[13px] leading-relaxed text-[#020817]/80">{terms ? terms.text : 'Loading terms…'}</pre>
                   {termsError && <p role="alert" className="mb-4 text-sm text-[#dc2626]">{termsError}</p>}
                   <div className="flex items-center justify-between gap-3">

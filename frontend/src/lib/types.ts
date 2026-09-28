@@ -66,6 +66,11 @@ export interface ApiListing {
   reviewNote?: string;
   termsVersion?: string;
   termsAcceptedAt?: string;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  reviewWindowSeconds?: number;
+  deliveryDeadline?: string;
   spots: ApiSpot[];
 }
 
@@ -157,6 +162,11 @@ export interface SellerDashboardListing {
   total: number;
   paid: number;
   revenue: number;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  reviewWindowSeconds?: number;
+  deliveryDeadline?: string;
 }
 
 export interface SellerAttentionItem {
