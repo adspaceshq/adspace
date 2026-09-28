@@ -83,6 +83,18 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const walletProvisionedFor = useRef<string | null>(null);
   const { createWallet: createSolanaWallet } = useCreateSolanaWallet();
   const { delegateWallet } = useDelegatedActions();
+  const embeddedWallet = user?.linkedAccounts.flatMap((account) => {
+    if (account.type !== 'wallet'
+      || !('address' in account)
+      || !('chainType' in account)
+      || !('walletClientType' in account)
+      || account.chainType !== 'solana'
+      || account.walletClientType !== 'privy') return [];
+    return [{
+      address: account.address,
+      delegated: 'delegated' in account && Boolean(account.delegated),
+    }];
+  })[0];
 
   const exchange = useCallback(async () => {
     setExchanging(true);
@@ -113,7 +125,9 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
       const did = user?.id ?? 'authed';
       try {
         const existing = exchangedFor.current === did ? null : await fetchApiMe().catch(() => null);
-        const stale = existing?.handle?.startsWith('user-') && !!user?.twitter?.username;
+        const staleHandle = existing?.handle?.startsWith('user-') && !!user?.twitter?.username;
+        const staleWallet = Boolean(existing?.walletAddress && embeddedWallet?.address && existing.walletAddress !== embeddedWallet.address);
+        const stale = staleHandle || staleWallet;
         if (existing && !stale) {
           exchangedFor.current = did;
           setMe(existing);
@@ -127,23 +141,19 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
         await exchange();
       }
     })();
-  }, [ready, authenticated, user, exchange]);
+  }, [ready, authenticated, user, embeddedWallet?.address, exchange]);
 
   useEffect(() => {
-    if (!authenticated || !me || me.walletAddress || walletProvisionedFor.current === me.did) return;
+    if (!authenticated || !me || embeddedWallet?.address || walletProvisionedFor.current === me.did) return;
     walletProvisionedFor.current = me.did;
     void createSolanaWallet()
       .catch(() => undefined)
       .then(exchange);
-  }, [authenticated, me, createSolanaWallet, exchange]);
+  }, [authenticated, me, embeddedWallet?.address, createSolanaWallet, exchange]);
 
-  const walletDelegated = Boolean(user?.linkedAccounts.some((account) =>
-    account.type === 'wallet'
-    && account.chainType === 'solana'
-    && account.address === me?.walletAddress
-    && account.delegated,
-  ));
-  const onboardingComplete = Boolean(me?.hasX && me.email && me.walletAddress && walletDelegated);
+  const walletDelegated = Boolean(embeddedWallet?.delegated);
+  const walletAddress = embeddedWallet?.address ?? me?.walletAddress;
+  const onboardingComplete = Boolean(me?.hasX && me.email && walletAddress && walletDelegated);
 
   const value: AuthSession = {
     ready: ready && !exchanging,
@@ -154,7 +164,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     name: me?.name ?? user?.twitter?.name ?? undefined,
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,
     email: me?.email,
-    walletAddress: me?.walletAddress,
+    walletAddress,
     walletDelegated,
     hasX: me?.hasX ?? false,
     onboardingComplete,
@@ -167,10 +177,10 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     linkEmail,
     linkX: linkTwitter,
     delegateWallet: async () => {
-      if (!me?.walletAddress) throw new Error('Privy wallet is not ready');
+      if (!embeddedWallet?.address) throw new Error('Privy wallet is not ready');
       setError(undefined);
       try {
-        await delegateWallet({ address: me.walletAddress, chainType: 'solana' });
+        await delegateWallet({ address: embeddedWallet.address, chainType: 'solana' });
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Could not enable gasless transactions.');
       }
