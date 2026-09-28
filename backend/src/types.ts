@@ -32,6 +32,7 @@ export interface Spot {
   chainVaultAddress?: string;
   chainSignature?: string;
   chainClaimSignature?: string;
+  chainBidSignature?: string;
   label: string;
   location: string;
   size: string;

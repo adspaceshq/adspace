@@ -13,6 +13,7 @@ import type { WalletWithdrawal } from "./withdrawals.js";
 import type { ListingPublisher } from "./listing-chain.js";
 import type { ReviewPolicy } from "./adspaces-program.js";
 import type { FixedClaimExecutor } from "./fixed-claim-chain.js";
+import type { AuctionBidExecutor } from "./auction-bid-chain.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -32,6 +33,7 @@ export interface AppDependencies {
   sellerIdentities?: { get(userId: string): Promise<SessionUser | undefined> };
   listingPublisher?: ListingPublisher;
   fixedClaimExecutor?: FixedClaimExecutor;
+  auctionBidExecutor?: AuctionBidExecutor;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -64,6 +66,7 @@ export function createApp({
   sellerIdentities,
   listingPublisher,
   fixedClaimExecutor,
+  auctionBidExecutor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -286,7 +289,16 @@ export function createApp({
   app.post("/api/spots/:id/bid", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const amount = Number((req.body as { amount?: number } | null)?.amount);
     if (!(amount > 0)) return void res.status(400).json({ error: "positive amount is required" });
-    try { res.json(await repo.placeBid(req.params.id, req.user!, amount, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); }
+    const assets = purchaseAssets(req.body);
+    try {
+      if (auctionBidExecutor) {
+        if (!assets.logoUrl?.startsWith("data:image/") || assets.logoUrl.length > 3_000_000) {
+          return void res.status(400).json({ error: "a valid logo is required" });
+        }
+        await auctionBidExecutor.bid(req.params.id, req.user!, amount);
+      }
+      res.json(await repo.placeBid(req.params.id, req.user!, amount, assets));
+    } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/artwork", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     try { res.json(await repo.submitArtwork(req.params.id, req.user!, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); }
