@@ -8,7 +8,7 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
-import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, executeWalletWithdrawal, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
+import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, executeWalletWithdrawal, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, refundApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto, isEnded } from '@/lib/listings'
 import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
 import { embeddedUsdcBalance } from '@/lib/adspaces-program'
@@ -68,12 +68,13 @@ export default function DashboardPage() {
     void fetchWalletWithdrawals().then(setWithdrawals).catch(() => setWithdrawals([]))
   }, [auth.authenticated])
 
-  const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill') => {
+  const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill' | 'refund') => {
     setBusy(spotId); setError(undefined)
     try {
       if (action === 'approve') await approveApiSpot(spotId)
       else if (action === 'reject') await rejectApiSpot(spotId)
-      else await fulfillApiSpot(spotId)
+      else if (action === 'fulfill') await fulfillApiSpot(spotId)
+      else { if (!window.confirm('Refund this buyer from on-chain escrow?')) return; await refundApiSpot(spotId) }
       await load()
     } catch (e) { setError(e instanceof Error ? e.message : 'Action failed.') }
     finally { setBusy(undefined) }
@@ -228,7 +229,7 @@ export default function DashboardPage() {
                   <tbody>{data.attention.map(item=><tr key={item.spotId} className="border-b border-[#e7e5e0] last:border-0">
                     <td className="px-4 py-4 font-mono text-xs">{item.buyer}</td><td className="px-4 py-4 font-medium">{item.listingTitle}</td><td className="px-4 py-4 text-[#64748b]">{item.spotLabel}</td><td className="px-4 py-4 font-mono text-xs">{money(item.amount,item.currency)}</td><td className="px-4 py-4 text-[#64748b]">{relative(item.submittedAt)}</td>
                     <td className="px-4 py-4"><span className={item.status==='pending'?'text-amber-700':item.status==='disputed'?'text-[#dc2626]':'text-emerald-700'}>{item.status==='pending'?'Pending':item.status==='disputed'?'Disputed':item.status==='delivered'?'Delivered':'Approved'}</span>{item.status==='approved'&&item.artworkReceived&&<span className="mt-1 block text-[11px] font-normal text-[#16a34a]">Artwork in ✓</span>}{item.status==='delivered'&&<span className="mt-1 block text-[11px] font-normal text-[#64748b]">Needs proof</span>}{item.status==='disputed'&&<span className="mt-1 block max-w-[240px] text-[11px] font-normal text-[#64748b]">{item.disputeReason || 'No reason given'} — resolve with the buyer, they can withdraw</span>}</td>
-                    <td className="px-4 py-4"><div className="flex gap-2">{item.status==='pending'?<><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'approve')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'reject')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Reject</button></>:item.status==='delivered'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white">Upload proof</Link>:item.status==='disputed'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link>:<button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'fulfill')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Mark fulfilled</button>}</div></td>
+                    <td className="px-4 py-4"><div className="flex gap-2">{item.status==='pending'?<><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'approve')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'reject')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Reject</button></>:item.status==='delivered'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white">Upload proof</Link>:item.status==='disputed'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link>:<button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'fulfill')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Mark fulfilled</button>}{item.status!=='pending'&&<button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'refund')} className="rounded-md border border-red-200 px-4 py-2 text-xs font-semibold text-red-700 disabled:opacity-50">Refund</button>}</div></td>
                   </tr>)}</tbody></table>
                 {data.attention.length===0 && <Empty text="Nothing needs your attention."/>}
               </div>

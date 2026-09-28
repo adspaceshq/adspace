@@ -27,6 +27,7 @@ export interface MarketplaceRepository {
   disputeSpot(spotId: string, actor: SessionUser, reason: string): Promise<Spot>;
   withdrawDispute(spotId: string, actor: SessionUser): Promise<Spot>;
   resolveDispute(spotId:string,reference:string):Promise<Spot>;
+  recordRefund(spotId:string,reference:string):Promise<Spot>;
   payableQueue(): Promise<PayoutItem[]>;
   disputeQueue():Promise<DisputeItem[]>;
   paySpot(spotId: string, reference: string): Promise<Spot>;
@@ -524,6 +525,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async resolveDispute(spotId:string,reference:string):Promise<Spot>{const result=await this.pool.query(`UPDATE spots SET disputed_at=NULL,dispute_reason='',paid_at=now(),payout_reference=$2,updated_at=now() WHERE id=$1 AND disputed_at IS NOT NULL RETURNING id`,[spotId,reference]);if(!result.rows[0])throw httpError("spot has no open dispute",409);return(await this.getSpot(spotId))!;}
+  async recordRefund(spotId:string,reference:string):Promise<Spot>{const result=await this.pool.query(`UPDATE spots SET paid_at=now(),payout_amount=0,payout_fee=0,payout_reference=$2,updated_at=now() WHERE id=$1 AND paid_at IS NULL RETURNING id`,[spotId,reference]);if(!result.rows[0])throw httpError("spot is already settled",409);return(await this.getSpot(spotId))!;}
 
   async payableQueue(): Promise<PayoutItem[]> {
     const result = await this.pool.query(

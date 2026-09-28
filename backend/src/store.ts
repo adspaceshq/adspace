@@ -417,6 +417,7 @@ export class Store {
   disputeQueue():DisputeItem[]{const items:DisputeItem[]=[];for(const listing of this.listings.values())for(const spot of listing.spots)if(spot.disputedAt&&!spot.paidAt)items.push({spotId:spot.id,listingId:listing.id,listingSlug:listing.slug,listingTitle:listing.title,spotLabel:spot.label,seller:listing.sellerHandle,buyer:spot.buyer??"",amount:spot.currentBid??spot.price,currency:spot.currency,reason:spot.disputeReason});return items;}
 
   resolveDispute(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});if(!found.spot.disputedAt)throw Object.assign(new Error("spot has no open dispute"),{status:409});found.spot.disputedAt=undefined;found.spot.disputeReason=undefined;found.spot.paidAt=new Date().toISOString();found.spot.payoutReference=reference;return found.spot;}
+  recordRefund(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});found.spot.paidAt=new Date().toISOString();found.spot.payoutAmount=0;found.spot.payoutReference=reference;return found.spot;}
 
   recordChainPublication(slug: string, publication: ChainPublication): void {
     const listing = this.listings.get(slug);

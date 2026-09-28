@@ -229,6 +229,7 @@ export function fulfillApiSpot(spotId: string): Promise<ApiSpot> {
 export function fetchPayableQueue(): Promise<PayoutItem[]> {
   return apiGet<PayoutItem[]>("/api/review/payable");
 }
+export function refundApiSpot(spotId:string):Promise<ApiSpot>{return apiPostEmpty<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/refund`)}
 
 export function fetchDisputeQueue(): Promise<DisputeItem[]> {
   return apiGet<DisputeItem[]>("/api/review/disputes");
