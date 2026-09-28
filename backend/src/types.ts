@@ -141,6 +141,8 @@ export interface Listing {
   spots: Spot[];
 }
 
+export interface DisputeItem extends Omit<PayoutItem,"releasedAt"> { reason?: string }
+
 export interface ListingFeePolicy {
   feeBps: number;
   upliftFeeBps: number;

@@ -98,6 +98,7 @@ export function createApp({
     withdrawDispute: async (id,user) => store.withdrawDispute(id,user),
     resolveDispute: async (id,reference) => store.resolveDispute(id,reference),
     payableQueue: async () => store.payableQueue(),
+    disputeQueue: async () => store.disputeQueue(),
     paySpot: async (id,reference) => store.paySpot(id,reference),
   };
   const app = express();
@@ -348,6 +349,7 @@ export function createApp({
       res.json(await repo.paySpot(req.params.id, signature));
     } catch (e) { sendErr(res, e); }
   });
+  app.get("/api/review/disputes",attachUser,requireUser,requireReviewer,async(_req,res)=>{try{res.json(await repo.disputeQueue());}catch(e){sendErr(res,e);}});
   app.post("/api/spots/:id/resolve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async(req,res)=>{try{if(!disputeResolutionExecutor)return void res.status(503).json({error:"dispute resolution is unavailable"});const body=(req.body??{}) as {sellerShareBps?:unknown;decision?:unknown};const signature=await disputeResolutionExecutor.resolve(req.params.id,Number(body.sellerShareBps),typeof body.decision==="string"?body.decision:"");res.json(await repo.resolveDispute(req.params.id,signature));}catch(e){sendErr(res,e);}});
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });

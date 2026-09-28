@@ -5,6 +5,7 @@ import type {
   ApiListing,
   ApiListingSummary,
   ApiSpot,
+  DisputeItem,
   PayoutItem,
   PublicProfile,
   SessionUser,
@@ -227,6 +228,14 @@ export function fulfillApiSpot(spotId: string): Promise<ApiSpot> {
 
 export function fetchPayableQueue(): Promise<PayoutItem[]> {
   return apiGet<PayoutItem[]>("/api/review/payable");
+}
+
+export function fetchDisputeQueue(): Promise<DisputeItem[]> {
+  return apiGet<DisputeItem[]>("/api/review/disputes");
+}
+
+export function resolveSpotDispute(spotId: string, sellerShareBps: number, decision: string): Promise<ApiSpot> {
+  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/resolve`, { sellerShareBps, decision });
 }
 
 export function payApiSpot(spotId: string, reference: string): Promise<ApiSpot> {

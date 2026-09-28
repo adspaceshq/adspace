@@ -1,6 +1,6 @@
 import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 import type { ChainPublication } from "./listing-chain.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
@@ -413,6 +413,8 @@ export class Store {
     listing.deliveryDeadline = policy?.deliveryDeadline;
     return listing;
   }
+
+  disputeQueue():DisputeItem[]{const items:DisputeItem[]=[];for(const listing of this.listings.values())for(const spot of listing.spots)if(spot.disputedAt&&!spot.paidAt)items.push({spotId:spot.id,listingId:listing.id,listingSlug:listing.slug,listingTitle:listing.title,spotLabel:spot.label,seller:listing.sellerHandle,buyer:spot.buyer??"",amount:spot.currentBid??spot.price,currency:spot.currency,reason:spot.disputeReason});return items;}
 
   resolveDispute(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});if(!found.spot.disputedAt)throw Object.assign(new Error("spot has no open dispute"),{status:409});found.spot.disputedAt=undefined;found.spot.disputeReason=undefined;found.spot.paidAt=new Date().toISOString();found.spot.payoutReference=reference;return found.spot;}
 

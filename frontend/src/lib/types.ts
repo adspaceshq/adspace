@@ -212,6 +212,8 @@ export interface PayoutItem {
   releasedAt: string;
 }
 
+export interface DisputeItem extends Omit<PayoutItem, 'releasedAt'> { reason?: string }
+
 export interface ReviewPolicyRequest {
   feeBps: number;
   upliftFeeBps: number;

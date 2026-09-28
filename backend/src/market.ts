@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type { ChainPublication } from "./listing-chain.js";
 import { REVIEW_WINDOW_MS, TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 export interface MarketplaceRepository {
   migrate(): Promise<void>;
@@ -28,6 +28,7 @@ export interface MarketplaceRepository {
   withdrawDispute(spotId: string, actor: SessionUser): Promise<Spot>;
   resolveDispute(spotId:string,reference:string):Promise<Spot>;
   payableQueue(): Promise<PayoutItem[]>;
+  disputeQueue():Promise<DisputeItem[]>;
   paySpot(spotId: string, reference: string): Promise<Spot>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
@@ -544,6 +545,8 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       };
     });
   }
+
+  async disputeQueue():Promise<DisputeItem[]>{const result=await this.pool.query(`SELECT s.id spot_id,l.id listing_id,l.slug listing_slug,l.title listing_title,s.label spot_label,l.seller_handle seller,s.buyer_handle buyer,COALESCE(s.current_bid,s.price) amount,s.currency,s.dispute_reason reason FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.disputed_at IS NOT NULL AND s.paid_at IS NULL ORDER BY s.disputed_at`);return result.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,seller:r.seller,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,reason:r.reason||undefined}));}
 
   async paySpot(spotId: string, reference: string): Promise<Spot> {
     if (typeof reference === "string" && reference.trim().length > 200) {

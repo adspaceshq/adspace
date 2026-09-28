@@ -5,9 +5,9 @@ import Link from 'next/link'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
-import { approveReviewListing, fetchPayableQueue, fetchReviewQueue, payApiSpot, rejectReviewListing } from '@/lib/auth-api'
+import { approveReviewListing, fetchDisputeQueue, fetchPayableQueue, fetchReviewQueue, payApiSpot, rejectReviewListing, resolveSpotDispute } from '@/lib/auth-api'
 import { cardPhoto, explorerTxUrl, sellerDisplay } from '@/lib/listings'
-import type { ApiListing, PayoutItem, ReviewPolicyRequest } from '@/lib/types'
+import type { ApiListing, DisputeItem, PayoutItem, ReviewPolicyRequest } from '@/lib/types'
 
 const defaultPolicy = (listing: ApiListing): ReviewPolicyRequest => ({
   feeBps: 250,
@@ -27,6 +27,11 @@ export default function ReviewPage() {
   const [payouts, setPayouts] = useState<PayoutItem[] | null>(null)
   const [payBusy, setPayBusy] = useState<string>()
   const [payError, setPayError] = useState<string>()
+  const [disputes, setDisputes] = useState<DisputeItem[] | null>(null)
+  const [resolutionShares, setResolutionShares] = useState<Record<string, number>>({})
+  const [decisions, setDecisions] = useState<Record<string, string>>({})
+  const [resolutionBusy, setResolutionBusy] = useState<string>()
+  const [resolutionError, setResolutionError] = useState<string>()
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -44,6 +49,13 @@ export default function ReviewPage() {
       setPayouts(null)
       setPayError(e instanceof Error ? e.message : 'Could not load the payout queue.')
     }
+    try {
+      setDisputes(await fetchDisputeQueue())
+      setResolutionError(undefined)
+    } catch (e) {
+      setDisputes(null)
+      setResolutionError(e instanceof Error ? e.message : 'Could not load disputes.')
+    }
   }, [auth.authenticated])
 
   useEffect(() => {
@@ -56,6 +68,10 @@ export default function ReviewPage() {
     fetchPayableQueue().then(
       (p) => { if (!cancelled) { setPayouts(p); setPayError(undefined) } },
       (e) => { if (!cancelled) { setPayouts(null); setPayError(e instanceof Error ? e.message : 'Could not load the payout queue.') } },
+    )
+    fetchDisputeQueue().then(
+      (items) => { if (!cancelled) { setDisputes(items); setResolutionError(undefined) } },
+      (e) => { if (!cancelled) { setDisputes(null); setResolutionError(e instanceof Error ? e.message : 'Could not load disputes.') } },
     )
     return () => { cancelled = true }
   }, [auth.authenticated])
@@ -131,6 +147,38 @@ export default function ReviewPage() {
                         <button disabled={busy === l.slug} onClick={() => void act(l.slug, 'approve')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button>
                         <button disabled={busy === l.slug} onClick={() => void act(l.slug, 'reject')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold text-[#dc2626] disabled:opacity-50">Reject</button>
                       </div></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+            <div className="mb-7 mt-12">
+              <h2 className="text-[28px]">Disputes</h2>
+              <p className="mt-1 text-[14px] text-[#64748b]">Resolve disputed escrow by assigning the seller share. The buyer receives the remainder.</p>
+            </div>
+            {resolutionError && <div role="alert" className="mb-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{resolutionError}</div>}
+            {disputes === null ? (
+              !resolutionError && <p className="py-12 text-center text-[#64748b]">Loading disputes...</p>
+            ) : disputes.length === 0 ? (
+              <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center"><h3 className="text-xl">No open disputes.</h3></div>
+            ) : (
+              <div className="overflow-x-auto border border-[#e7e5e0] bg-white">
+                <table className="w-full min-w-[980px] border-collapse text-left text-sm">
+                  <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Spot', 'Seller', 'Buyer', 'Reason', 'Seller share (bps)', 'Decision', 'Action'].map(x => <th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
+                  <tbody>{disputes.map(d => (
+                    <tr key={d.spotId} className="border-b border-[#e7e5e0] last:border-0">
+                      <td className="px-4 py-4"><Link href={`/listings/${d.listingSlug}`} className="font-medium text-[#4166fb]">{d.listingTitle} · {d.spotLabel}</Link></td>
+                      <td className="px-4 py-4 font-mono text-xs">{d.seller}</td>
+                      <td className="px-4 py-4 font-mono text-xs">{d.buyer}</td>
+                      <td className="max-w-[220px] px-4 py-4 text-xs">{d.reason || 'No reason provided'}</td>
+                      <td className="px-4 py-4"><input type="number" min={0} max={10000} value={resolutionShares[d.spotId] ?? 5000} onChange={(e) => setResolutionShares(prev => ({ ...prev, [d.spotId]: Number(e.target.value) }))} className="w-28 rounded border border-[#e7e5e0] px-2 py-2 text-xs" /></td>
+                      <td className="px-4 py-4"><input value={decisions[d.spotId] ?? ''} onChange={(e) => setDecisions(prev => ({ ...prev, [d.spotId]: e.target.value }))} placeholder="Resolution decision" maxLength={500} className="min-w-[200px] rounded border border-[#e7e5e0] px-3 py-2 text-xs" /></td>
+                      <td className="px-4 py-4"><button disabled={resolutionBusy === d.spotId || !(decisions[d.spotId] ?? '').trim()} onClick={() => void (async () => {
+                        setResolutionBusy(d.spotId); setResolutionError(undefined)
+                        try { await resolveSpotDispute(d.spotId, resolutionShares[d.spotId] ?? 5000, decisions[d.spotId].trim()); await load() }
+                        catch (e) { setResolutionError(e instanceof Error ? e.message : 'Resolution failed.') }
+                        finally { setResolutionBusy(undefined) }
+                      })()} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Resolve on-chain</button></td>
                     </tr>
                   ))}</tbody>
                 </table>
