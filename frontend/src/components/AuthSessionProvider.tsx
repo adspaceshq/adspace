@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
 import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
 import type { SessionUser } from '@/lib/types';
@@ -75,6 +76,8 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | undefined>();
   const [exchanging, setExchanging] = useState(false);
   const exchangedFor = useRef<string | null>(null);
+  const walletProvisionedFor = useRef<string | null>(null);
+  const { createWallet: createSolanaWallet } = useCreateSolanaWallet();
 
   const exchange = useCallback(async () => {
     setExchanging(true);
@@ -121,6 +124,14 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [ready, authenticated, user, exchange]);
 
+  useEffect(() => {
+    if (!authenticated || !me || me.walletAddress || walletProvisionedFor.current === me.did) return;
+    walletProvisionedFor.current = me.did;
+    void createSolanaWallet()
+      .catch(() => undefined)
+      .then(exchange);
+  }, [authenticated, me, createSolanaWallet, exchange]);
+
   const onboardingComplete = Boolean(me?.hasX && me.email && me.walletAddress);
 
   const value: AuthSession = {
@@ -145,6 +156,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     linkX: linkTwitter,
     logout: async () => {
       exchangedFor.current = null;
+      walletProvisionedFor.current = null;
       setMe(null);
       try {
         await logoutApiSession();

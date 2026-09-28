@@ -16,7 +16,7 @@ const RESERVED = new Set(['browse', 'list', 'listings', 'dashboard', 'review', '
 export default function SellerPage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle: raw } = use(params)
   const { listings, hydrated } = useStore()
-  const { userId, logout } = useAuthSession()
+  const { userId, walletAddress, logout } = useAuthSession()
 
   const clean = decodeURIComponent(raw ?? '').trim().replace(/^@+/, '').toLowerCase()
   const reserved = RESERVED.has(clean)
@@ -34,7 +34,6 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
     setEditing(false)
   }
   const [bioDraft, setBioDraft] = useState('')
-  const [walletDraft, setWalletDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
@@ -83,12 +82,11 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
   const displayName = profile?.displayName ?? mine[0]?.seller.name ?? ''
   const initial = (displayName || display || clean || 'S').replace(/^@+/, '').charAt(0).toUpperCase()
   const color = mine[0]?.seller.color ?? '#4166fb'
-  const incomplete = isOwner && (!profile.bio || !profile.payoutWallet)
+  const incomplete = isOwner && (!profile.bio || !walletAddress)
 
   const startEditing = () => {
     if (!profile) return
     setBioDraft(profile.bio)
-    setWalletDraft(profile.payoutWallet ?? '')
     setSaveError(null)
     setEditing(true)
   }
@@ -97,7 +95,10 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
     setSaving(true)
     setSaveError(null)
     try {
-      const updated = await updateMyProfile({ bio: bioDraft, payoutWallet: walletDraft.trim() })
+      const updated = await updateMyProfile({
+        bio: bioDraft,
+        ...(walletAddress ? { payoutWallet: walletAddress } : {}),
+      })
       setProfile(updated)
       setEditing(false)
     } catch (e) {
@@ -184,11 +185,11 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
           <div className="mb-8 rounded-2xl border border-[#f5d98b] bg-[#fffaeb] p-5">
             <h3 className="text-[15px] font-semibold text-[#020817]">Complete your profile to start selling.</h3>
             <p className="mt-1 text-sm text-[#64748b]">
-              {!profile.bio && !profile.payoutWallet
-                ? 'Add a short bio and the Solana wallet where you want to get paid.'
+              {!profile.bio && !walletAddress
+                ? 'Add a short bio and finish creating your Privy wallet.'
                 : !profile.bio
                   ? 'Add a short bio so buyers know you.'
-                  : 'Add the Solana wallet where you want to get paid.'}
+                  : 'Finish creating your Privy wallet.'}
             </p>
             <button
               type="button"
@@ -214,16 +215,13 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
               />
             </label>
             <p className="mt-1 text-right text-xs text-[#64748b]">{bioDraft.length}/280</p>
-            <label className="mt-3 block text-sm font-medium text-[#020817]">
-              Payout wallet <span className="font-normal text-[#64748b]">(Solana — only you see this)</span>
-              <input
-                value={walletDraft}
-                onChange={(e) => setWalletDraft(e.target.value)}
-                placeholder="7xKX…P6jD"
-                spellCheck={false}
-                className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none transition focus:border-[#4166fb]"
-              />
-            </label>
+            <div className="mt-3 rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3">
+              <p className="text-sm font-medium text-[#020817]">Privy Solana wallet</p>
+              <p className="mt-1 break-all font-mono text-sm text-[#526079]">
+                {walletAddress ?? 'Wallet is being created by Privy'}
+              </p>
+              <p className="mt-1 text-xs text-[#64748b]">Transactions and withdrawals use this embedded wallet.</p>
+            </div>
             {saveError && <p className="mt-3 text-sm text-[#dc2626]">{saveError}</p>}
             <div className="mt-4 flex gap-3">
               <button
@@ -246,10 +244,12 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
           </div>
         )}
 
-        {isOwner && profile?.payoutWallet && !editing && (
-          <p className="mb-8 font-mono text-xs text-[#64748b]">
-            Payouts → {profile.payoutWallet} <span className="font-sans">(only you see this)</span>
-          </p>
+        {isOwner && walletAddress && !editing && (
+          <div className="mb-8 rounded-xl border border-[#e7e5e0] bg-white px-4 py-3">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">Privy Solana wallet</p>
+            <p className="mt-1 break-all font-mono text-sm text-[#020817]">{walletAddress}</p>
+            <p className="mt-1 text-xs text-[#64748b]">Used for Adspaces transactions and withdrawals.</p>
+          </div>
         )}
 
         {!hydrated ? (
