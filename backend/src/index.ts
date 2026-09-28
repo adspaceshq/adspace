@@ -90,12 +90,21 @@ export function createApp({
       const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
       if (token) {
         const identity = await verifyToken(token);
-        req.user = { id: identity.did, did: identity.did, handle: identity.handle, name: identity.name, avatar: identity.avatar };
+        req.user = {
+          id: identity.did,
+          did: identity.did,
+          handle: identity.handle,
+          name: identity.name,
+          avatar: identity.avatar,
+          email: identity.email,
+          walletAddress: identity.walletAddress,
+          hasX: identity.hasX,
+        };
       }
       next();
     } catch { next(); }
   };
-  const requireUser = (req: Request, res: Response, next: NextFunction) => req.user ? next() : void res.status(401).json({ error: "log in with X" });
+  const requireUser = (req: Request, res: Response, next: NextFunction) => req.user ? next() : void res.status(401).json({ error: "log in required" });
   const requireCsrf = (req: Request, res: Response, next: NextFunction) => {
     // No session cookie (e.g. expired) but a valid Privy Bearer: the client
     // must exchange for a fresh session — a CSRF retry can never succeed.

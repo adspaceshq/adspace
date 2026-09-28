@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useLoginWithOAuth, usePrivy } from '@privy-io/react-auth';
+import { usePrivy } from '@privy-io/react-auth';
 import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
 import type { SessionUser } from '@/lib/types';
@@ -50,7 +50,7 @@ export default function AuthSessionProvider({ children }: { children: React.Reac
 }
 
 function PrivySessionProvider({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, user, logout: privyLogout } = usePrivy();
+  const { ready, authenticated, user, login: privyLogin, logout: privyLogout } = usePrivy();
   const [me, setMe] = useState<SessionUser | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [exchanging, setExchanging] = useState(false);
@@ -67,21 +67,12 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
       setError(
         e instanceof Error
           ? e.message
-          : 'X login reached Privy but the API rejected the session. Set PRIVY_APP_SECRET on the backend.',
+          : 'Privy login succeeded but the API rejected the session. Check the backend Privy configuration.',
       );
     } finally {
       setExchanging(false);
     }
   }, []);
-
-  const { initOAuth, loading } = useLoginWithOAuth({
-    onComplete: () => {
-      void exchange();
-    },
-    onError: (err) => {
-      setError(err ? String(err) : 'X login failed. Enable Twitter in the Privy dashboard.');
-    },
-  });
 
   useEffect(() => {
     if (!ready) return;
@@ -118,11 +109,11 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     handle: me?.handle,
     name: me?.name ?? user?.twitter?.name ?? undefined,
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,
-    loggingIn: loading || exchanging,
+    loggingIn: exchanging,
     error,
     login: () => {
       setError(undefined);
-      void initOAuth({ provider: 'twitter' });
+      privyLogin();
     },
     logout: async () => {
       exchangedFor.current = null;

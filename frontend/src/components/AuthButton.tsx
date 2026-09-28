@@ -8,7 +8,7 @@ import { sellerUrl } from '@/lib/listings';
 
 export type XIdentity = AuthSession;
 
-/** Backend-verified X identity (Privy OAuth + API session). */
+/** Backend-verified Privy identity and API session. */
 export function useXIdentity(): XIdentity {
   return useAuthSession();
 }
@@ -35,10 +35,10 @@ function PrivyAuthButton() {
       <button
         type="button"
         disabled
-        aria-label="Log in with X"
+        aria-label="Log in"
         className="rounded-lg border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium text-[#020817]/40"
       >
-        Log in with X
+        Log in
       </button>
     );
   }
@@ -50,10 +50,10 @@ function PrivyAuthButton() {
           type="button"
           onClick={login}
           disabled={loggingIn}
-          aria-label="Log in with X"
+          aria-label="Log in"
           className="rounded-lg border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium text-[#020817] shadow-sm transition hover:-translate-y-px hover:border-[#c3cdfd] hover:bg-[#f8f8ff] disabled:cursor-wait disabled:opacity-60"
         >
-          {loggingIn ? 'Connecting…' : 'Log in with X'}
+          {loggingIn ? 'Connecting…' : 'Log in'}
         </button>
         {error && <span className="max-w-[240px] text-right text-[11px] text-[#dc2626]">{error}</span>}
       </span>

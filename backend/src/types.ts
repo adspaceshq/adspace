@@ -179,9 +179,12 @@ export interface SessionUser {
   handle: string;
   name?: string;
   avatar?: string;
+  email?: string;
+  walletAddress?: string;
+  hasX: boolean;
 }
 
-export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId: string }
+export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId?: string }
 export interface SessionResponse extends SessionUser { csrfToken: string; expiresAt: string; isReviewer: boolean }
 
 /** Public seller profile at 3000/{username}. payoutWallet is only ever returned to the owner. */

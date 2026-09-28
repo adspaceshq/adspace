@@ -118,6 +118,9 @@ export interface SessionUser {
   handle: string;
   name?: string;
   avatar?: string;
+  email?: string;
+  walletAddress?: string;
+  hasX: boolean;
   csrfToken: string;
   expiresAt: string;
   isReviewer: boolean;

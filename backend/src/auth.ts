@@ -40,6 +40,10 @@ type Linked = {
   profilePictureUrl?: string | null;
   pfp?: string | null;
   subject?: string | null;
+  address?: string | null;
+  email?: string | null;
+  chain_type?: string | null;
+  chainType?: string | null;
 };
 
 function isXAccount(type: string | undefined): boolean {
@@ -80,7 +84,22 @@ function xFromPrivyUser(u: {
   return xFromAccounts(u.linked_accounts ?? u.linkedAccounts);
 }
 
-/** Verify a Privy access token and load the X profile from a verified Privy user. */
+function accountDetails(accounts: Linked[] | undefined): { email?: string; walletAddress?: string } {
+  const emailAccount = (accounts ?? []).find((account) =>
+    (account.type ?? "").toLowerCase().includes("email"),
+  );
+  const solanaWallet = (accounts ?? []).find((account) => {
+    const type = (account.type ?? "").toLowerCase();
+    const chain = (account.chain_type ?? account.chainType ?? "").toLowerCase();
+    return type.includes("wallet") && chain === "solana" && account.address;
+  });
+  return {
+    email: emailAccount?.address ?? emailAccount?.email ?? undefined,
+    walletAddress: solanaWallet?.address ?? undefined,
+  };
+}
+
+/** Verify a Privy access token and load its linked identity and Solana wallet. */
 export async function userFromAccessToken(
   token: string,
   identityToken?: string,
@@ -92,6 +111,7 @@ export async function userFromAccessToken(
   if (!did) throw Object.assign(new Error("invalid token claims"), { status: 401 });
 
   let profile: { username?: string; name?: string; avatar?: string; subject?: string } = {};
+  let details: { email?: string; walletAddress?: string } = {};
 
   if (identityToken) {
     try {
@@ -102,6 +122,7 @@ export async function userFromAccessToken(
         });
       }
       profile = xFromPrivyUser(fromId);
+      details = accountDetails(fromId.linked_accounts);
     } catch (e) {
       if ((e as { status?: number }).status === 401) throw e;
       console.warn("privy identity token:", e instanceof Error ? e.message : e);
@@ -112,18 +133,10 @@ export async function userFromAccessToken(
     try {
       const user = await privy.users()._get(did);
       profile = xFromPrivyUser(user);
+      details = accountDetails(user.linked_accounts);
     } catch (e) {
       console.warn("privy users._get:", e instanceof Error ? e.message : e);
     }
-  }
-
-  if (!profile.username || !profile.subject) {
-    throw Object.assign(
-      new Error(
-        "Privy verified the session, but no stable X account identity was present. Log out, then log in with X again.",
-      ),
-      { status: 422 },
-    );
   }
 
   return {
@@ -132,5 +145,8 @@ export async function userFromAccessToken(
     handle: displayHandle(profile.username, did),
     name: profile.name,
     avatar: profile.avatar,
+    email: details.email,
+    walletAddress: details.walletAddress,
+    hasX: Boolean(profile.username && profile.subject),
   };
 }
