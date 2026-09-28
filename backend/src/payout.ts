@@ -10,8 +10,7 @@ export function isSignatureLike(value: string): boolean {
 /** Circle USDC mints. Override with USDC_MINT in env when needed. */
 export function usdcMintFor(cluster: SolanaCluster, override?: string): string {
   if (override?.trim()) return override.trim();
-  if (cluster === "mainnet-beta") return "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-  return "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
+  throw new Error(`USDC_MINT is required for ${cluster}`);
 }
 
 export function explorerTxUrl(signature: string, cluster: SolanaCluster): string {
@@ -116,12 +115,12 @@ export async function resolvePayoutReference(input: PayoutReferenceInput): Promi
   const cluster: SolanaCluster =
     env.SOLANA_NETWORK === "mainnet-beta" || env.SOLANA_NETWORK === "testnet" ? env.SOLANA_NETWORK : "devnet";
   const rpcUrl = input.rpcUrl ?? env.SOLANA_RPC_URL ?? "";
-  const mint = usdcMintFor(input.cluster ?? cluster, input.mint ?? env.USDC_MINT);
 
   if (strict && !isSignatureLike(note)) {
     throw httpError("reference must be the Solana payout transaction signature", 400);
   }
   if (isSignatureLike(note) && rpcUrl) {
+    const mint = usdcMintFor(input.cluster ?? cluster, input.mint ?? env.USDC_MINT);
     await verifyPayoutTx({
       signature: note,
       destination: input.destination,

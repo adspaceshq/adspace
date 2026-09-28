@@ -8,13 +8,14 @@ import {
 import type { ConnectedStandardSolanaWallet } from '@privy-io/react-auth/solana';
 
 const DEFAULT_PROGRAM_ID = '6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW';
-const DEFAULT_USDC_MINT = '4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU';
+const paymentMint = process.env.NEXT_PUBLIC_ADSPACES_PAYMENT_MINT;
+if (!paymentMint) throw new Error('NEXT_PUBLIC_ADSPACES_PAYMENT_MINT is required');
 
 export const ADSPACES_PROGRAM_ID = new PublicKey(
   process.env.NEXT_PUBLIC_ADSPACES_PROGRAM_ID ?? DEFAULT_PROGRAM_ID,
 );
 export const ADSPACES_USDC_MINT = new PublicKey(
-  process.env.NEXT_PUBLIC_ADSPACES_USDC_MINT ?? DEFAULT_USDC_MINT,
+  paymentMint,
 );
 export const ADSPACES_RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';

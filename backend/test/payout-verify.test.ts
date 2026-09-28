@@ -10,7 +10,7 @@ import {
 
 const SIG = "5".repeat(88);
 const DEST = "7xKXtg2CW87d97TXJSDV7iSNL4w8Bvqf9f4kR3mP6jD";
-const MINT = usdcMintFor("devnet");
+const MINT = "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 
 function rpcStub(opts: { credited: number; err?: unknown; found?: boolean }) {
   return (async () =>
@@ -40,8 +40,8 @@ test("signature shape + mint + explorer helpers", () => {
   assert.equal(isSignatureLike(SIG), true);
   assert.equal(isSignatureLike("sent via Phantom"), false);
   assert.equal(isSignatureLike(""), false);
-  assert.equal(usdcMintFor("mainnet-beta"), "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-  assert.equal(usdcMintFor("devnet"), "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
+  assert.equal(usdcMintFor("devnet", MINT), MINT);
+  assert.throws(() => usdcMintFor("devnet"), /USDC_MINT is required/);
   assert.equal(explorerTxUrl(SIG, "devnet"), `https://explorer.solana.com/tx/${SIG}?cluster=devnet`);
   assert.equal(explorerTxUrl(SIG, "mainnet-beta"), `https://explorer.solana.com/tx/${SIG}`);
 });
@@ -82,6 +82,7 @@ test("sig-like refs verify on-chain when an RPC is configured", async () => {
     destination: DEST,
     expectedNet: 10,
     rpcUrl,
+    mint: MINT,
     fetchFn: rpcStub({ credited: 10 }),
     env: {} as NodeJS.ProcessEnv,
   });
@@ -91,6 +92,7 @@ test("sig-like refs verify on-chain when an RPC is configured", async () => {
       destination: DEST,
       expectedNet: 10,
       rpcUrl,
+      mint: MINT,
       fetchFn: rpcStub({ credited: 4.2 }),
       env: {} as NodeJS.ProcessEnv,
     }),

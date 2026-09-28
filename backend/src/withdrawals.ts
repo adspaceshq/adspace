@@ -69,7 +69,7 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
     private pool: Pool,
     private rpcUrl: string,
     private cluster: SolanaCluster,
-    private mint = usdcMintFor(cluster),
+    private mint = usdcMintFor(cluster, process.env.USDC_MINT),
     private dailyLimit = Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000),
   ) {}
 
