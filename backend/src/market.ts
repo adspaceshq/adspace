@@ -56,6 +56,7 @@ type SpotRow = {
   chain_address: string | null; chain_vault_address: string | null; chain_signature: string | null;
   chain_claim_signature: string | null;
   chain_bid_signature: string | null;
+  chain_proof_signature: string | null;
 };
 
 const n = (value: string | number | null | undefined) => value == null ? undefined : Number(value);
@@ -210,6 +211,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_signature text;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_claim_signature text;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_bid_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_proof_signature text;
       ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
       ALTER TABLE spots ENABLE ROW LEVEL SECURITY;
       ALTER TABLE bids ENABLE ROW LEVEL SECURITY;

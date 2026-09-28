@@ -14,6 +14,7 @@ import type { ListingPublisher } from "./listing-chain.js";
 import type { ReviewPolicy } from "./adspaces-program.js";
 import type { FixedClaimExecutor } from "./fixed-claim-chain.js";
 import type { AuctionBidExecutor } from "./auction-bid-chain.js";
+import type { ProofChainExecutor } from "./proof-chain.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -34,6 +35,7 @@ export interface AppDependencies {
   listingPublisher?: ListingPublisher;
   fixedClaimExecutor?: FixedClaimExecutor;
   auctionBidExecutor?: AuctionBidExecutor;
+  proofChainExecutor?: ProofChainExecutor;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -67,6 +69,7 @@ export function createApp({
   listingPublisher,
   fixedClaimExecutor,
   auctionBidExecutor,
+  proofChainExecutor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -305,7 +308,10 @@ export function createApp({
   });
   app.post("/api/spots/:id/proof", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const body = (req.body ?? {}) as { photos?: unknown; postUrl?: unknown };
-    try { res.json(await repo.submitProof(req.params.id, req.user!.id, { photos: body.photos, postUrl: body.postUrl })); } catch (e) { sendErr(res, e); }
+    try {
+      if (proofChainExecutor) await proofChainExecutor.submit(req.params.id, req.user!, { photos: body.photos, postUrl: body.postUrl });
+      res.json(await repo.submitProof(req.params.id, req.user!.id, { photos: body.photos, postUrl: body.postUrl }));
+    } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/confirm", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     try { res.json(await repo.confirmSpot(req.params.id, req.user!)); } catch (e) { sendErr(res, e); }
