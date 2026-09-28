@@ -136,7 +136,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
 
   const value: AuthSession = {
     ready: ready && !exchanging,
-    authenticated: Boolean(authenticated && me?.handle),
+    authenticated: Boolean(authenticated && me?.hasX),
     userId: me?.id,
     isReviewer: me?.isReviewer ?? false,
     handle: me?.handle,

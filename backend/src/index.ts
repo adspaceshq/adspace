@@ -104,7 +104,11 @@ export function createApp({
       next();
     } catch { next(); }
   };
-  const requireUser = (req: Request, res: Response, next: NextFunction) => req.user ? next() : void res.status(401).json({ error: "log in required" });
+  const requireUser = (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) return void res.status(401).json({ error: "log in required" });
+    if (req.user.hasX === false) return void res.status(403).json({ error: "connect X to complete your Adspaces account" });
+    next();
+  };
   const requireCsrf = (req: Request, res: Response, next: NextFunction) => {
     // No session cookie (e.g. expired) but a valid Privy Bearer: the client
     // must exchange for a fresh session — a CSRF retry can never succeed.
