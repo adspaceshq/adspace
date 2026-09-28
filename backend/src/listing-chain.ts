@@ -8,7 +8,13 @@ import { usdcMintFor } from "./payout.js";
 import type { Listing, SessionUser } from "./types.js";
 
 export interface ListingPublisher {
-  publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<string[]>;
+  publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<ChainPublication>;
+}
+
+export interface ChainPublication {
+  listingAddress: string;
+  signatures: string[];
+  spots: Array<{ id: string; address: string; vaultAddress: string; signature?: string }>;
 }
 
 export class PostgresSellerIdentityRepository {
@@ -54,7 +60,7 @@ export class PrivyListingPublisher implements ListingPublisher {
     this.reviewer = Keypair.fromSecretKey(Uint8Array.from(secret));
   }
 
-  async publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<string[]> {
+  async publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<ChainPublication> {
     if (!privy) throw Object.assign(new Error("Privy is not configured"), { status: 503 });
     if (!seller.walletAddress) throw Object.assign(new Error("seller embedded wallet is not ready"), { status: 409 });
     const authorizationPrivateKey = process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY;
@@ -74,15 +80,27 @@ export class PrivyListingPublisher implements ListingPublisher {
     await this.assertReviewerAuthority();
     await this.ensureSellerFunding(sellerKey);
     const signatures: string[] = [];
+    const spotSignatures = new Map<number, string>();
     if (!(await this.connection.getAccountInfo(built.addresses.listing, "confirmed"))) {
       signatures.push(await this.send(wallet.id, built.instructions[0], authorizationPrivateKey));
     }
     for (let index = 0; index < built.addresses.spots.length; index += 1) {
       if (!(await this.connection.getAccountInfo(built.addresses.spots[index].spot, "confirmed"))) {
-        signatures.push(await this.send(wallet.id, built.instructions[index + 1], authorizationPrivateKey));
+        const signature = await this.send(wallet.id, built.instructions[index + 1], authorizationPrivateKey);
+        signatures.push(signature);
+        spotSignatures.set(index, signature);
       }
     }
-    return signatures;
+    return {
+      listingAddress: built.addresses.listing.toBase58(),
+      signatures,
+      spots: built.addresses.spots.map((address, index) => ({
+        id: listing.spots[index].id,
+        address: address.spot.toBase58(),
+        vaultAddress: address.vault.toBase58(),
+        signature: spotSignatures.get(index),
+      })),
+    };
   }
 
   private async delegatedWallet(user: SessionUser, address: PublicKey): Promise<{ id: string }> {

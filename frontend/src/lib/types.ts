@@ -12,6 +12,9 @@ export interface ApiBid {
 export interface ApiSpot {
   id: string;
   listingId: string;
+  chainAddress?: string;
+  chainVaultAddress?: string;
+  chainSignature?: string;
   label: string;
   location: string;
   size: string;
@@ -71,6 +74,8 @@ export interface ApiListing {
   maxFeeBps?: number;
   reviewWindowSeconds?: number;
   deliveryDeadline?: string;
+  chainAddress?: string;
+  chainSignatures?: string[];
   spots: ApiSpot[];
 }
 

@@ -1,6 +1,7 @@
 import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
 import type { Bid, CreateListingRequest, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { ChainPublication } from "./listing-chain.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
@@ -411,6 +412,20 @@ export class Store {
     listing.reviewWindowSeconds = policy?.reviewWindowSeconds ?? 172800;
     listing.deliveryDeadline = policy?.deliveryDeadline;
     return listing;
+  }
+
+  recordChainPublication(slug: string, publication: ChainPublication): void {
+    const listing = this.listings.get(slug);
+    if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
+    listing.chainAddress = publication.listingAddress;
+    listing.chainSignatures = [...publication.signatures];
+    for (const item of publication.spots) {
+      const spot = listing.spots.find((candidate) => candidate.id === item.id);
+      if (!spot) throw Object.assign(new Error("listing spot changed during approval"), { status: 409 });
+      spot.chainAddress = item.address;
+      spot.chainVaultAddress = item.vaultAddress;
+      spot.chainSignature = item.signature;
+    }
   }
 
   acceptTerms(slug: string, actorUserId: string, version: string): Listing {

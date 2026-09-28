@@ -28,6 +28,9 @@ export interface Bid {
 export interface Spot {
   id: string;
   listingId: string;
+  chainAddress?: string;
+  chainVaultAddress?: string;
+  chainSignature?: string;
   label: string;
   location: string;
   size: string;
@@ -129,6 +132,8 @@ export interface Listing {
   maxFeeBps?: number;
   reviewWindowSeconds?: number;
   deliveryDeadline?: string;
+  chainAddress?: string;
+  chainSignatures?: string[];
   spots: Spot[];
 }
 

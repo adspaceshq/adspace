@@ -70,6 +70,7 @@ export function createApp({
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
     reviewQueue: async () => store.reviewQueue(), approveReview: async (slug, policy) => store.approveReview(slug, policy),
+    recordChainPublication: async (slug, publication) => { store.recordChainPublication(slug, publication); },
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
     acceptTerms: async (slug,user,version) => store.acceptTerms(slug,user,version),
     submitArtwork: async (id,user,assets) => store.submitArtwork(id,user,assets),
@@ -235,7 +236,8 @@ export function createApp({
         if (!sellerIdentities || !listing.sellerUserId) return void res.status(503).json({ error: "seller identity lookup is unavailable" });
         const seller = await sellerIdentities.get(listing.sellerUserId);
         if (!seller) return void res.status(409).json({ error: "seller account was not found" });
-        await listingPublisher.publish(listing, seller, policy);
+        const publication = await listingPublisher.publish(listing, seller, policy);
+        await repo.recordChainPublication(req.params.slug, publication);
       }
       res.json(await repo.approveReview(req.params.slug, policy));
     } catch (e) { sendErr(res, e); }
