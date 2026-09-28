@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useSignAndSendTransaction, useWallets } from '@privy-io/react-auth/solana'
 import Link from 'next/link'
 import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
@@ -10,6 +11,7 @@ import { useStore } from '@/components/StoreProvider'
 import { acceptListingTerms, approveApiSpot, closeApiListing, deleteApiListing, fetchSellerDashboard, fetchTerms, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto, isEnded } from '@/lib/listings'
 import type { SellerDashboard, TermsDoc } from '@/lib/types'
+import { embeddedUsdcBalance, withdrawEmbeddedUsdc } from '@/lib/adspaces-program'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
 const relative = (iso: string) => {
@@ -28,6 +30,15 @@ export default function DashboardPage() {
   const [terms, setTerms] = useState<TermsDoc | null>(null)
   const [termsFor, setTermsFor] = useState<string | null>(null)
   const [termsError, setTermsError] = useState<string>()
+  const { wallets } = useWallets()
+  const { signAndSendTransaction } = useSignAndSendTransaction()
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [withdrawAddress, setWithdrawAddress] = useState('')
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawError, setWithdrawError] = useState<string>()
+  const [withdrawSignature, setWithdrawSignature] = useState<string>()
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [walletUsdc, setWalletUsdc] = useState<number>()
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -43,6 +54,14 @@ export default function DashboardPage() {
     )
     return () => { cancelled = true }
   }, [auth.authenticated])
+  useEffect(() => {
+    if (!auth.walletAddress) return
+    let cancelled = false
+    void embeddedUsdcBalance(auth.walletAddress).then((balance) => {
+      if (!cancelled) setWalletUsdc(balance)
+    })
+    return () => { cancelled = true }
+  }, [auth.walletAddress])
 
   const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill') => {
     setBusy(spotId); setError(undefined)
@@ -88,6 +107,30 @@ export default function DashboardPage() {
     finally { setBusy(undefined) }
   }
 
+  const withdraw = async () => {
+    const wallet = wallets.find((candidate) => candidate.address === auth.walletAddress)
+    if (!wallet) {
+      setWithdrawError('Privy wallet is not ready. Refresh and try again.')
+      return
+    }
+    setWithdrawing(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
+    try {
+      const signature = await withdrawEmbeddedUsdc(
+        wallet,
+        withdrawAddress.trim(),
+        Number(withdrawAmount),
+        signAndSendTransaction,
+      )
+      setWithdrawSignature(signature)
+      setWithdrawAmount('')
+      if (auth.walletAddress) setWalletUsdc(await embeddedUsdcBalance(auth.walletAddress))
+    } catch (e) {
+      setWithdrawError(e instanceof Error ? e.message : 'Withdrawal failed.')
+    } finally {
+      setWithdrawing(false)
+    }
+  }
+
   return <>
     <Header />
     <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
@@ -123,12 +166,16 @@ export default function DashboardPage() {
                     <p className="mt-3 break-all font-mono text-xs text-[#020817]">{auth.walletAddress}</p>
                   </div>
                 </div>
-                <div className="grid shrink-0 grid-cols-2 gap-8 md:text-right">
+                <div className="grid shrink-0 grid-cols-3 gap-8 md:text-right">
+                  <div><p className="text-xs text-[#64748b]">Wallet USDC</p><p className="mt-1 font-mono text-lg">{walletUsdc === undefined ? 'Loading' : `$${walletUsdc.toFixed(2)}`}</p></div>
                   <div><p className="text-xs text-[#64748b]">Pending settlement</p><p className="mt-1 font-mono text-lg">{money(Math.max(0, data.summary.revenue - (data.summary.paidOut ?? 0)), data.summary.currency)}</p></div>
                   <div><p className="text-xs text-[#64748b]">Withdrawn</p><p className="mt-1 font-mono text-lg">{money(data.summary.paidOut ?? 0, data.summary.currency)}</p></div>
                 </div>
               </div>
-              <p className="mt-5 border-t border-[#e7e5e0] pt-4 text-xs text-[#64748b]">Eligible settlements use the program&apos;s withdrawal instruction. No payout address or manual transfer is required.</p>
+              <div className="mt-5 flex flex-col justify-between gap-3 border-t border-[#e7e5e0] pt-4 sm:flex-row sm:items-center">
+                <p className="text-xs text-[#64748b]">Seller settlements arrive here automatically. You can transfer wallet USDC to another Solana address.</p>
+                <button type="button" onClick={() => { setWithdrawOpen(true); setWithdrawError(undefined); setWithdrawSignature(undefined) }} className="shrink-0 rounded-md bg-[#020817] px-5 py-2.5 text-sm font-semibold text-white">Withdraw USDC</button>
+              </div>
             </section>
 
             <section className="mb-10">
@@ -171,6 +218,22 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between gap-3">
                     <button type="button" onClick={() => setTermsFor(null)} disabled={busy === termsFor} className="text-[14px] font-medium text-[#020817] transition hover:text-[#64748b] disabled:opacity-60">Not yet</button>
                     <button type="button" onClick={() => void accept()} disabled={!terms || busy === termsFor} className="inline-flex items-center whitespace-nowrap rounded-full bg-[#4166fb] px-6 py-[10px] text-[14px] font-medium text-white shadow-sm transition hover:bg-[#3558e8] disabled:opacity-60">{busy === termsFor ? 'Accepting…' : 'Accept & go live'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {withdrawOpen && (
+              <div role="dialog" aria-modal="true" aria-labelledby="withdraw-title" className="fixed inset-0 z-50 flex items-center justify-center bg-[#020817]/50 p-6">
+                <div className="w-full max-w-[480px] rounded-2xl bg-white p-7 shadow-[0_24px_64px_rgba(2,8,23,0.28)]">
+                  <h2 id="withdraw-title" className="text-[24px]">Withdraw USDC</h2>
+                  <p className="mt-1 text-sm text-[#64748b]">Transfer devnet USDC from your Privy embedded wallet.</p>
+                  <label className="mt-5 block text-sm font-medium">Destination Solana address<input value={withdrawAddress} onChange={(event) => setWithdrawAddress(event.target.value)} spellCheck={false} className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
+                  <label className="mt-4 block text-sm font-medium">Amount <span className="font-normal text-[#64748b]">{walletUsdc !== undefined && `(available $${walletUsdc.toFixed(2)})`}</span><input value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} inputMode="decimal" placeholder="0.00" className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
+                  {withdrawError && <p role="alert" className="mt-4 text-sm text-[#dc2626]">{withdrawError}</p>}
+                  {withdrawSignature && <a href={`https://explorer.solana.com/tx/${withdrawSignature}?cluster=${encodeURIComponent(process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet')}`} target="_blank" rel="noopener" className="mt-4 block break-all text-sm font-medium text-[#4166fb] underline">Withdrawal confirmed: {withdrawSignature}</a>}
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button type="button" onClick={() => setWithdrawOpen(false)} disabled={withdrawing} className="rounded-md border border-[#d8d6d0] px-5 py-2.5 text-sm font-semibold disabled:opacity-50">Close</button>
+                    <button type="button" onClick={() => void withdraw()} disabled={withdrawing || !withdrawAddress.trim() || !withdrawAmount.trim()} className="rounded-md bg-[#4166fb] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{withdrawing ? 'Withdrawing…' : 'Withdraw'}</button>
                   </div>
                 </div>
               </div>
