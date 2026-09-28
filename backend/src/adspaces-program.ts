@@ -91,7 +91,8 @@ export function createListingInstructions(input: {
     programId,
   )[0];
   const artworkClose = listing.artworkClose || listing.deadline;
-  const minIncrement = BigInt(Math.round((listing.minIncrement ?? 0) * 1_000_000));
+  const minIncrementValue = listing.minIncrement ?? (listing.mode === "auction" && !listing.doubleUp ? 1 : 0);
+  const minIncrement = BigInt(Math.round(minIncrementValue * 1_000_000));
   const data = Buffer.concat([
     CREATE_LISTING_DISCRIMINATOR,
     slugHash(listing.slug),
