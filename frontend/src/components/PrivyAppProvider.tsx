@@ -28,7 +28,7 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
         },
         embeddedWallets: {
           ethereum: { createOnLogin: 'off' },
-          solana: { createOnLogin: 'users-without-wallets' },
+          solana: { createOnLogin: 'all-users' },
         },
       }}
     >

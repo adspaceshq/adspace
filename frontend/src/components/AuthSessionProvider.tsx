@@ -16,9 +16,15 @@ export interface AuthSession {
   handle: string | undefined;
   name: string | undefined;
   avatar: string | undefined;
+  email: string | undefined;
+  walletAddress: string | undefined;
+  hasX: boolean;
+  onboardingComplete: boolean;
   loggingIn: boolean;
   error: string | undefined;
   login: () => void;
+  linkEmail: () => void;
+  linkX: () => void;
   logout: () => Promise<void>;
 }
 
@@ -30,9 +36,15 @@ const guest: AuthSession = {
   handle: undefined,
   name: undefined,
   avatar: undefined,
+  email: undefined,
+  walletAddress: undefined,
+  hasX: false,
+  onboardingComplete: false,
   loggingIn: false,
   error: undefined,
   login: () => {},
+  linkEmail: () => {},
+  linkX: () => {},
   logout: async () => {},
 };
 
@@ -50,7 +62,15 @@ export default function AuthSessionProvider({ children }: { children: React.Reac
 }
 
 function PrivySessionProvider({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, user, login: privyLogin, logout: privyLogout } = usePrivy();
+  const {
+    ready,
+    authenticated,
+    user,
+    login: privyLogin,
+    linkEmail,
+    linkTwitter,
+    logout: privyLogout,
+  } = usePrivy();
   const [me, setMe] = useState<SessionUser | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [exchanging, setExchanging] = useState(false);
@@ -99,7 +119,9 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
         await exchange();
       }
     })();
-  }, [ready, authenticated, user?.id, user?.twitter?.username, exchange]);
+  }, [ready, authenticated, user, exchange]);
+
+  const onboardingComplete = Boolean(me?.hasX && me.email && me.walletAddress);
 
   const value: AuthSession = {
     ready: ready && !exchanging,
@@ -109,12 +131,18 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     handle: me?.handle,
     name: me?.name ?? user?.twitter?.name ?? undefined,
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,
+    email: me?.email,
+    walletAddress: me?.walletAddress,
+    hasX: me?.hasX ?? false,
+    onboardingComplete,
     loggingIn: exchanging,
     error,
     login: () => {
       setError(undefined);
       privyLogin();
     },
+    linkEmail,
+    linkX: linkTwitter,
     logout: async () => {
       exchangedFor.current = null;
       setMe(null);
@@ -127,5 +155,56 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     },
   };
 
-  return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;
+  return (
+    <AuthSessionContext.Provider value={value}>
+      {children}
+      {authenticated && me && !onboardingComplete && <ProfileCompletionModal auth={value} />}
+    </AuthSessionContext.Provider>
+  );
+}
+
+function ProfileCompletionModal({ auth }: { auth: AuthSession }) {
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="complete-profile-title">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#4166fb]">One last step</p>
+        <h2 id="complete-profile-title" className="mt-2 text-2xl font-semibold text-[#020817]">Complete your profile</h2>
+        <p className="mt-2 text-sm leading-6 text-[#526079]">Verify your contact details and prepare your embedded Solana wallet for Adspaces transactions.</p>
+        <div className="mt-6 space-y-3">
+          <ProfileRequirement complete={auth.hasX} label="X account" actionLabel="Connect X" onAction={auth.linkX} />
+          <ProfileRequirement complete={Boolean(auth.email)} label="Verified email" actionLabel="Add email" onAction={auth.linkEmail} />
+          <ProfileRequirement complete={Boolean(auth.walletAddress)} label="Privy Solana wallet" pendingLabel="Creating wallet…" />
+        </div>
+        {auth.error && <p className="mt-4 text-sm text-red-600">{auth.error}</p>}
+        <button type="button" onClick={() => void auth.logout()} className="mt-5 text-sm text-[#526079] underline underline-offset-4">Log out</button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileRequirement({
+  complete,
+  label,
+  actionLabel,
+  pendingLabel,
+  onAction,
+}: {
+  complete: boolean;
+  label: string;
+  actionLabel?: string;
+  pendingLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-[#e7e5e0] p-4">
+      <span className="text-sm font-medium text-[#020817]">{label}</span>
+      {complete ? (
+        <span className="text-sm font-semibold text-emerald-700">Ready</span>
+      ) : onAction && actionLabel ? (
+        <button type="button" onClick={onAction} className="rounded-lg bg-[#020817] px-3 py-2 text-sm font-medium text-white">{actionLabel}</button>
+      ) : (
+        <span className="text-sm text-[#526079]">{pendingLabel}</span>
+      )}
+    </div>
+  );
 }
