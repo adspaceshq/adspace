@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { usePrivy, useSessionSigners, useUser } from '@privy-io/react-auth';
+import { usePrivy, useSigners, useUser } from '@privy-io/react-auth';
 import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
 import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
@@ -82,7 +82,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const exchangedFor = useRef<string | null>(null);
   const walletProvisionedFor = useRef<string | null>(null);
   const { createWallet: createSolanaWallet } = useCreateSolanaWallet();
-  const { addSessionSigners } = useSessionSigners();
+  const { addSigners } = useSigners();
   const { refreshUser } = useUser();
   const signerId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID;
   const embeddedWallet = user?.linkedAccounts.flatMap((account) => {
@@ -183,7 +183,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
       try {
         if (!embeddedWallet?.address) throw new Error('Privy wallet is not ready');
         if (!signerId) throw new Error('NEXT_PUBLIC_PRIVY_SIGNER_ID is not configured');
-        await addSessionSigners({ address: embeddedWallet.address, signers: [{ signerId }] });
+        await addSigners({ address: embeddedWallet.address, signers: [{ signerId }] });
         await refreshUser();
         await exchange();
       } catch (e) {
