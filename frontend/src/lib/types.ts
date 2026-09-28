@@ -18,6 +18,7 @@ export interface ApiSpot {
   chainClaimSignature?: string;
   chainBidSignature?: string;
   chainProofSignature?: string;
+  chainDisputeSignature?: string;
   label: string;
   location: string;
   size: string;

@@ -701,7 +701,7 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
     payoutFee: s.payoutFee,
     payoutReference: s.payoutReference || undefined,
     payoutDestination: s.payoutDestination || undefined,
-    chainTransaction: s.chainProofSignature || s.chainBidSignature || s.chainClaimSignature || s.chainSignature,
+    chainTransaction: s.chainDisputeSignature || s.chainProofSignature || s.chainBidSignature || s.chainClaimSignature || s.chainSignature,
   };
 }
 

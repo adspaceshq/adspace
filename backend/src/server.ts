@@ -10,6 +10,7 @@ import { PrivyFixedClaimExecutor } from "./fixed-claim-chain.js";
 import { PrivyAuctionBidExecutor } from "./auction-bid-chain.js";
 import { PrivyProofChainExecutor } from "./proof-chain.js";
 import { ProgramSettlementExecutor } from "./settlement-chain.js";
+import { PrivyDisputeChainExecutor } from "./dispute-chain.js";
 
 async function start() {
   const config = loadConfig();
@@ -41,6 +42,9 @@ async function start() {
   const settlementExecutor = config.solana.reviewerWalletPath
     ? new ProgramSettlementExecutor(pool, config.solana.rpcUrl, config.solana.cluster, config.solana.programId, config.solana.reviewerWalletPath)
     : undefined;
+  const disputeChainExecutor = config.solana.reviewerWalletPath
+    ? new PrivyDisputeChainExecutor(pool, config.solana.rpcUrl, config.solana.programId, config.solana.reviewerWalletPath, config.frontendUrl)
+    : undefined;
   await auth.migrate();
   await market.migrate();
   await withdrawals.migrate();
@@ -60,6 +64,7 @@ async function start() {
     auctionBidExecutor,
     proofChainExecutor,
     settlementExecutor,
+    disputeChainExecutor,
   }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on)`));
 }
 

@@ -16,6 +16,7 @@ import type { FixedClaimExecutor } from "./fixed-claim-chain.js";
 import type { AuctionBidExecutor } from "./auction-bid-chain.js";
 import type { ProofChainExecutor } from "./proof-chain.js";
 import type { SettlementExecutor } from "./settlement-chain.js";
+import type { DisputeChainExecutor } from "./dispute-chain.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -38,6 +39,7 @@ export interface AppDependencies {
   auctionBidExecutor?: AuctionBidExecutor;
   proofChainExecutor?: ProofChainExecutor;
   settlementExecutor?: SettlementExecutor;
+  disputeChainExecutor?: DisputeChainExecutor;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -73,6 +75,7 @@ export function createApp({
   auctionBidExecutor,
   proofChainExecutor,
   settlementExecutor,
+  disputeChainExecutor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -321,7 +324,12 @@ export function createApp({
   });
   app.post("/api/spots/:id/dispute", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const reason = (req.body as { reason?: unknown } | null)?.reason;
-    try { res.json(await repo.disputeSpot(req.params.id, req.user!, typeof reason === "string" ? reason : "")); } catch (e) { sendErr(res, e); }
+    try {
+      const cleanReason=typeof reason === "string" ? reason.trim() : "";
+      if(!cleanReason) return void res.status(400).json({error:"dispute reason is required"});
+      if(disputeChainExecutor) await disputeChainExecutor.raise(req.params.id,req.user!,cleanReason);
+      res.json(await repo.disputeSpot(req.params.id, req.user!, cleanReason));
+    } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/withdraw", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     try { res.json(await repo.withdrawDispute(req.params.id, req.user!)); } catch (e) { sendErr(res, e); }
