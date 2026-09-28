@@ -48,6 +48,7 @@ export interface Spot {
   payoutFee?: number;
   payoutReference?: string;
   payoutDestination?: string;
+  chainTransaction?: string;
 }
 
 /** Solana tx signatures are 64 raw bytes → 87–88 base58 chars. */
@@ -700,6 +701,7 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
     payoutFee: s.payoutFee,
     payoutReference: s.payoutReference || undefined,
     payoutDestination: s.payoutDestination || undefined,
+    chainTransaction: s.chainProofSignature || s.chainBidSignature || s.chainClaimSignature || s.chainSignature,
   };
 }
 

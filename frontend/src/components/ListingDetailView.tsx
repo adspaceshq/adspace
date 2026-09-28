@@ -474,6 +474,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {isAuction ? 'Bid' : 'Claim'}
                     </button>
                   )}
+                  {sp.chainTransaction && <a href={explorerTxUrl(sp.chainTransaction)} target="_blank" rel="noopener" onClick={(event) => event.stopPropagation()} className="shrink-0 font-mono text-[11px] font-semibold text-[#4166fb] underline">ON-CHAIN ↗</a>}
                   {sp.fulfilledAt && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
                     <span className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                       <span className="font-mono text-[11px] font-semibold text-[#16a34a]">DELIVERED ✓</span>
