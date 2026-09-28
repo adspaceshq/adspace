@@ -7,7 +7,15 @@ import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { approveReviewListing, fetchPayableQueue, fetchReviewQueue, payApiSpot, rejectReviewListing } from '@/lib/auth-api'
 import { cardPhoto, explorerTxUrl, isSignatureLike, sellerDisplay } from '@/lib/listings'
-import type { ApiListing, PayoutItem } from '@/lib/types'
+import type { ApiListing, PayoutItem, ReviewPolicyRequest } from '@/lib/types'
+
+const defaultPolicy = (listing: ApiListing): ReviewPolicyRequest => ({
+  feeBps: 250,
+  upliftFeeBps: listing.mode === 'auction' ? 250 : 0,
+  maxFeeBps: 250,
+  reviewWindowSeconds: 172800,
+  deliveryDeadline: new Date(new Date(listing.artworkClose || listing.deadline).getTime() + 7 * 86_400_000).toISOString(),
+})
 
 export default function ReviewPage() {
   const auth = useAuthSession()
@@ -15,6 +23,7 @@ export default function ReviewPage() {
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState<string>()
   const [reasons, setReasons] = useState<Record<string, string>>({})
+  const [policies, setPolicies] = useState<Record<string, ReviewPolicyRequest>>({})
   const [payouts, setPayouts] = useState<PayoutItem[] | null>(null)
   const [payRefs, setPayRefs] = useState<Record<string, string>>({})
   const [payBusy, setPayBusy] = useState<string>()
@@ -56,7 +65,11 @@ export default function ReviewPage() {
     setBusy(slug)
     setError(undefined)
     try {
-      if (action === 'approve') await approveReviewListing(slug)
+      if (action === 'approve') {
+        const listing = queue?.find((item) => item.slug === slug)
+        if (!listing) throw new Error('Listing is no longer in the review queue.')
+        await approveReviewListing(slug, policies[slug] ?? defaultPolicy(listing))
+      }
       else await rejectReviewListing(slug, reasons[slug] ?? '')
       setReasons((prev) => {
         const next = { ...prev }
@@ -100,12 +113,20 @@ export default function ReviewPage() {
             ) : (
               <div className="overflow-x-auto border border-[#e7e5e0] bg-white">
                 <table className="w-full min-w-[820px] border-collapse text-left text-sm">
-                  <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Listing', 'Seller', 'Spots', 'Reason (reject)', 'Action'].map(x => <th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
+                  <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Listing', 'Seller', 'Spots', 'On-chain policy', 'Reason (reject)', 'Action'].map(x => <th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
                   <tbody>{queue.map(l => (
                     <tr key={l.id} className="border-b border-[#e7e5e0] last:border-0">
                       <td className="px-4 py-4"><div className="flex items-center gap-3"><div className="h-11 w-16 overflow-hidden bg-[#f1f0ec]">{(l.image || cardPhoto(l)) && <img src={l.image || cardPhoto(l)} alt="" className="h-full w-full object-cover" />}</div><span className="font-medium">{l.title}</span></div></td>
                       <td className="px-4 py-4">{sellerDisplay({ name: l.seller, handle: l.sellerHandle })}</td>
                       <td className="px-4 py-4 font-mono text-xs">{l.spots.length}</td>
+                      <td className="px-4 py-4"><div className="grid min-w-[250px] grid-cols-3 gap-2">
+                        {(['feeBps', 'maxFeeBps', 'upliftFeeBps'] as const).map((field) => {
+                          const policy = policies[l.slug] ?? defaultPolicy(l)
+                          return <label key={field} className="text-[10px] text-[#64748b]">{field.replace('Bps', '')}<input type="number" min={0} max={10000} value={policy[field]} onChange={(e) => setPolicies((prev) => ({ ...prev, [l.slug]: { ...policy, [field]: Number(e.target.value) } }))} className="mt-1 w-full rounded border border-[#e7e5e0] px-2 py-1 text-xs text-black" /></label>
+                        })}
+                        <label className="col-span-3 text-[10px] text-[#64748b]">Settlement window (hours)<input type="number" min={1} value={(policies[l.slug] ?? defaultPolicy(l)).reviewWindowSeconds / 3600} onChange={(e) => { const policy = policies[l.slug] ?? defaultPolicy(l); setPolicies((prev) => ({ ...prev, [l.slug]: { ...policy, reviewWindowSeconds: Number(e.target.value) * 3600 } })) }} className="mt-1 w-full rounded border border-[#e7e5e0] px-2 py-1 text-xs text-black" /></label>
+                        <label className="col-span-3 text-[10px] text-[#64748b]">Delivery deadline<input type="datetime-local" value={(policies[l.slug] ?? defaultPolicy(l)).deliveryDeadline.slice(0, 16)} onChange={(e) => { const policy = policies[l.slug] ?? defaultPolicy(l); setPolicies((prev) => ({ ...prev, [l.slug]: { ...policy, deliveryDeadline: new Date(e.target.value).toISOString() } })) }} className="mt-1 w-full rounded border border-[#e7e5e0] px-2 py-1 text-xs text-black" /></label>
+                      </div></td>
                       <td className="px-4 py-4"><input value={reasons[l.slug] ?? ''} onChange={(e) => setReasons((prev) => ({ ...prev, [l.slug]: e.target.value }))} placeholder="Why is it rejected?" maxLength={500} className="w-full min-w-[200px] rounded-lg border border-[#e7e5e0] px-3 py-2 text-[13px] outline-none transition focus:border-[#4166fb]" /></td>
                       <td className="px-4 py-4"><div className="flex gap-2">
                         <button disabled={busy === l.slug} onClick={() => void act(l.slug, 'approve')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button>

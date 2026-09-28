@@ -193,6 +193,14 @@ export interface PayoutItem {
   releasedAt: string;
 }
 
+export interface ReviewPolicyRequest {
+  feeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  reviewWindowSeconds: number;
+  deliveryDeadline: string;
+}
+
 export interface WalletWithdrawal {
   id: string;
   source: string;

@@ -1,6 +1,7 @@
 import { getAccessToken, getIdentityToken } from "@privy-io/react-auth";
 import type {
   ApiCreateListingRequest,
+  ReviewPolicyRequest,
   ApiListing,
   ApiListingSummary,
   ApiSpot,
@@ -196,8 +197,8 @@ export function fetchReviewQueue(): Promise<ApiListing[]> {
   return apiGet<ApiListing[]>("/api/review/queue");
 }
 
-export function approveReviewListing(slug: string): Promise<ApiListing> {
-  return apiPostEmpty<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`);
+export function approveReviewListing(slug: string, policy: ReviewPolicyRequest): Promise<ApiListing> {
+  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`, policy);
 }
 
 export function rejectReviewListing(slug: string, reason: string): Promise<ApiListing> {
