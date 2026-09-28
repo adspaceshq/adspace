@@ -11,7 +11,7 @@ export function isSignatureLike(value: string): boolean {
 export function usdcMintFor(cluster: SolanaCluster, override?: string): string {
   if (override?.trim()) return override.trim();
   if (cluster === "mainnet-beta") return "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
-  return "4zMMC9srt5Ri5X14GAgXhaHii3r2aUvqxaBZhZ1cf";
+  return "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU";
 }
 
 export function explorerTxUrl(signature: string, cluster: SolanaCluster): string {

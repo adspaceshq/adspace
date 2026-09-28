@@ -41,7 +41,7 @@ test("signature shape + mint + explorer helpers", () => {
   assert.equal(isSignatureLike("sent via Phantom"), false);
   assert.equal(isSignatureLike(""), false);
   assert.equal(usdcMintFor("mainnet-beta"), "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
-  assert.equal(usdcMintFor("devnet"), "4zMMC9srt5Ri5X14GAgXhaHii3r2aUvqxaBZhZ1cf");
+  assert.equal(usdcMintFor("devnet"), "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU");
   assert.equal(explorerTxUrl(SIG, "devnet"), `https://explorer.solana.com/tx/${SIG}?cluster=devnet`);
   assert.equal(explorerTxUrl(SIG, "mainnet-beta"), `https://explorer.solana.com/tx/${SIG}`);
 });
