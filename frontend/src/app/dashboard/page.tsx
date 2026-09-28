@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useMfa, useMfaEnrollment } from '@privy-io/react-auth'
 import { useSignAndSendTransaction, useWallets } from '@privy-io/react-auth/solana'
 import Link from 'next/link'
 import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
@@ -32,6 +33,8 @@ export default function DashboardPage() {
   const [termsError, setTermsError] = useState<string>()
   const { wallets } = useWallets()
   const { signAndSendTransaction } = useSignAndSendTransaction()
+  const { clear: clearMfa, promptMfa, mfaMethods } = useMfa()
+  const { showMfaEnrollmentModal } = useMfaEnrollment()
   const [withdrawOpen, setWithdrawOpen] = useState(false)
   const [withdrawAddress, setWithdrawAddress] = useState('')
   const [withdrawAmount, setWithdrawAmount] = useState('')
@@ -115,6 +118,12 @@ export default function DashboardPage() {
     }
     setWithdrawing(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
     try {
+      if (mfaMethods.length === 0) {
+        showMfaEnrollmentModal()
+        throw new Error('Set up two-factor authentication before withdrawing')
+      }
+      await clearMfa()
+      await promptMfa()
       const signature = await withdrawEmbeddedUsdc(
         wallet,
         withdrawAddress.trim(),
@@ -227,6 +236,10 @@ export default function DashboardPage() {
                 <div className="w-full max-w-[480px] rounded-2xl bg-white p-7 shadow-[0_24px_64px_rgba(2,8,23,0.28)]">
                   <h2 id="withdraw-title" className="text-[24px]">Withdraw USDC</h2>
                   <p className="mt-1 text-sm text-[#64748b]">Transfer devnet USDC from your Privy embedded wallet.</p>
+                  <div className="mt-4 flex items-center justify-between rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3">
+                    <div><p className="text-sm font-medium">Two-factor authentication</p><p className="mt-0.5 text-xs text-[#64748b]">Required for every withdrawal</p></div>
+                    {mfaMethods.length > 0 ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={showMfaEnrollmentModal} className="rounded-md bg-[#020817] px-3 py-2 text-xs font-semibold text-white">Set up</button>}
+                  </div>
                   <label className="mt-5 block text-sm font-medium">Destination Solana address<input value={withdrawAddress} onChange={(event) => setWithdrawAddress(event.target.value)} spellCheck={false} className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
                   <label className="mt-4 block text-sm font-medium">Amount <span className="font-normal text-[#64748b]">{walletUsdc !== undefined && `(available $${walletUsdc.toFixed(2)})`}</span><input value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} inputMode="decimal" placeholder="0.00" className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
                   {withdrawError && <p role="alert" className="mt-4 text-sm text-[#dc2626]">{withdrawError}</p>}
