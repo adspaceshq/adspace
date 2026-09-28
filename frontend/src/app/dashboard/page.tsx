@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3 } from 'lucide-react'
+import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
@@ -111,6 +111,24 @@ export default function DashboardPage() {
               <Metric icon={<Clock3/>} label="Pending approval" value={String(data.summary.pendingApproval)}/>
               <Metric icon={<CircleDollarSign/>} label="Revenue" value={money(data.summary.revenue, data.summary.currency)}/>
               <Metric icon={<CircleDollarSign/>} label="Paid out" value={money(data.summary.paidOut ?? 0, data.summary.currency)}/>
+            </section>
+
+            <section aria-labelledby="withdrawals-title" className="mb-10 border border-[#e7e5e0] bg-white p-6">
+              <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
+                <div className="flex min-w-0 items-start gap-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#eef2ff] text-[#4166fb]"><Wallet size={20}/></span>
+                  <div className="min-w-0">
+                    <h2 id="withdrawals-title" className="text-[24px]">Withdrawals</h2>
+                    <p className="mt-1 text-sm text-[#64748b]">Released USDC is settled directly to your Privy embedded wallet.</p>
+                    <p className="mt-3 break-all font-mono text-xs text-[#020817]">{auth.walletAddress}</p>
+                  </div>
+                </div>
+                <div className="grid shrink-0 grid-cols-2 gap-8 md:text-right">
+                  <div><p className="text-xs text-[#64748b]">Pending settlement</p><p className="mt-1 font-mono text-lg">{money(Math.max(0, data.summary.revenue - (data.summary.paidOut ?? 0)), data.summary.currency)}</p></div>
+                  <div><p className="text-xs text-[#64748b]">Withdrawn</p><p className="mt-1 font-mono text-lg">{money(data.summary.paidOut ?? 0, data.summary.currency)}</p></div>
+                </div>
+              </div>
+              <p className="mt-5 border-t border-[#e7e5e0] pt-4 text-xs text-[#64748b]">Eligible settlements use the program&apos;s withdrawal instruction. No payout address or manual transfer is required.</p>
             </section>
 
             <section className="mb-10">
