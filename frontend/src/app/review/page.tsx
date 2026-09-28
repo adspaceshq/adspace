@@ -6,7 +6,7 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { approveReviewListing, fetchPayableQueue, fetchReviewQueue, payApiSpot, rejectReviewListing } from '@/lib/auth-api'
-import { cardPhoto, explorerTxUrl, isSignatureLike, sellerDisplay } from '@/lib/listings'
+import { cardPhoto, explorerTxUrl, sellerDisplay } from '@/lib/listings'
 import type { ApiListing, PayoutItem, ReviewPolicyRequest } from '@/lib/types'
 
 const defaultPolicy = (listing: ApiListing): ReviewPolicyRequest => ({
@@ -25,7 +25,6 @@ export default function ReviewPage() {
   const [reasons, setReasons] = useState<Record<string, string>>({})
   const [policies, setPolicies] = useState<Record<string, ReviewPolicyRequest>>({})
   const [payouts, setPayouts] = useState<PayoutItem[] | null>(null)
-  const [payRefs, setPayRefs] = useState<Record<string, string>>({})
   const [payBusy, setPayBusy] = useState<string>()
   const [payError, setPayError] = useState<string>()
 
@@ -139,7 +138,7 @@ export default function ReviewPage() {
             )}
             <div className="mb-7 mt-12">
               <h2 className="text-[28px]">Payouts</h2>
-              <p className="mt-1 text-[14px] text-[#64748b]">Released spots awaiting manual USDC. Send the transfer from your wallet, then paste the transaction signature to record it.</p>
+              <p className="mt-1 text-[14px] text-[#64748b]">Released spots awaiting on-chain settlement. The program splits the seller payout and platform fee from escrow.</p>
             </div>
             {payError && <div role="alert" className="mb-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{payError}</div>}
             {payouts === null ? (
@@ -152,24 +151,22 @@ export default function ReviewPage() {
             ) : (
               <div className="overflow-x-auto border border-[#e7e5e0] bg-white">
                 <table className="w-full min-w-[820px] border-collapse text-left text-sm">
-                  <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Spot', 'Seller', 'Buyer', 'Amount', 'Tx signature', 'Action'].map(x => <th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
+                  <thead className="text-[12px] font-medium text-[#64748b]"><tr>{['Spot', 'Seller', 'Buyer', 'Amount', 'Action'].map(x => <th key={x} className="border-b border-[#e7e5e0] px-4 py-3 font-medium">{x}</th>)}</tr></thead>
                   <tbody>{payouts.map(p => (
                     <tr key={p.spotId} className="border-b border-[#e7e5e0] last:border-0">
                       <td className="px-4 py-4"><Link href={`/listings/${p.listingSlug}`} className="font-medium text-[#4166fb]">{p.listingTitle} · {p.spotLabel}</Link></td>
                       <td className="px-4 py-4 font-mono text-xs">{p.seller}</td>
                       <td className="px-4 py-4 font-mono text-xs">{p.buyer}</td>
                       <td className="px-4 py-4 font-mono text-xs">{p.amount} {p.currency}</td>
-                      <td className="px-4 py-4"><input value={payRefs[p.spotId] ?? ''} onChange={(e) => setPayRefs((prev) => ({ ...prev, [p.spotId]: e.target.value }))} placeholder="Solana tx signature" spellCheck={false} className="w-full min-w-[220px] rounded-lg border border-[#e7e5e0] px-3 py-2 font-mono text-[12px] outline-none transition focus:border-[#4166fb]" /></td>
-                      <td className="px-4 py-4"><button disabled={payBusy === p.spotId || !isSignatureLike((payRefs[p.spotId] ?? '').trim())} onClick={() => void (async () => {
+                      <td className="px-4 py-4"><button disabled={payBusy === p.spotId} onClick={() => void (async () => {
                         setPayBusy(p.spotId); setPayError(undefined)
                         try {
-                          const paid = await payApiSpot(p.spotId, (payRefs[p.spotId] ?? '').trim())
-                          setPayRefs((prev) => { const next = { ...prev }; delete next[p.spotId]; return next })
+                          const paid = await payApiSpot(p.spotId, '')
                           await load()
                           if (paid.payoutReference) window.open(explorerTxUrl(paid.payoutReference), '_blank', 'noopener')
                         } catch (e) { setPayError(e instanceof Error ? e.message : 'Payout failed.') }
                         finally { setPayBusy(undefined) }
-                      })()} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Record payout</button></td>
+                      })()} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Settle on-chain</button></td>
                     </tr>
                   ))}</tbody>
                 </table>
