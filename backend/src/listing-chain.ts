@@ -1,17 +1,11 @@
 import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
-import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { privy } from "./auth.js";
 import { createListingInstructions, type ReviewPolicy } from "./adspaces-program.js";
 import type { SolanaCluster } from "./config.js";
 import { usdcMintFor } from "./payout.js";
 import type { Listing, SessionUser } from "./types.js";
-
-const caip2: Record<SolanaCluster, `solana:${string}`> = {
-  devnet: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-  testnet: "solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z",
-  "mainnet-beta": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-};
 
 export interface ListingPublisher {
   publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<string[]>;
@@ -78,13 +72,14 @@ export class PrivyListingPublisher implements ListingPublisher {
       policy,
     });
     await this.assertReviewerAuthority();
+    await this.ensureSellerFunding(sellerKey);
     const signatures: string[] = [];
     if (!(await this.connection.getAccountInfo(built.addresses.listing, "confirmed"))) {
-      signatures.push(await this.send(wallet.id, sellerKey, built.instructions[0], true, authorizationPrivateKey));
+      signatures.push(await this.send(wallet.id, built.instructions[0], authorizationPrivateKey));
     }
     for (let index = 0; index < built.addresses.spots.length; index += 1) {
       if (!(await this.connection.getAccountInfo(built.addresses.spots[index].spot, "confirmed"))) {
-        signatures.push(await this.send(wallet.id, sellerKey, built.instructions[index + 1], false, authorizationPrivateKey));
+        signatures.push(await this.send(wallet.id, built.instructions[index + 1], authorizationPrivateKey));
       }
     }
     return signatures;
@@ -123,23 +118,34 @@ export class PrivyListingPublisher implements ListingPublisher {
 
   private async send(
     walletId: string,
-    seller: PublicKey,
     instruction: Parameters<Transaction["add"]>[0],
-    needsReviewer: boolean,
     authorizationPrivateKey: string,
   ): Promise<string> {
     const transaction = new Transaction().add(instruction);
     const latest = await this.connection.getLatestBlockhash("confirmed");
-    transaction.feePayer = seller;
+    transaction.feePayer = this.reviewer.publicKey;
     transaction.recentBlockhash = latest.blockhash;
-    if (needsReviewer) transaction.partialSign(this.reviewer);
-    const result = await privy!.wallets().solana().signAndSendTransaction(walletId, {
+    const result = await privy!.wallets().solana().signTransaction(walletId, {
       transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }),
-      caip2: caip2[this.cluster],
-      sponsor: true,
       authorization_context: { authorization_private_keys: [authorizationPrivateKey] },
     });
-    await this.connection.confirmTransaction({ signature: result.hash, ...latest }, "confirmed");
-    return result.hash;
+    const signed = Transaction.from(Buffer.from(result.signed_transaction, "base64"));
+    signed.partialSign(this.reviewer);
+    const signature = await this.connection.sendRawTransaction(signed.serialize());
+    await this.connection.confirmTransaction({ signature, ...latest }, "confirmed");
+    return signature;
+  }
+
+  private async ensureSellerFunding(seller: PublicKey): Promise<void> {
+    const minimum = this.cluster === "devnet" ? 50_000_000 : 10_000_000;
+    const balance = await this.connection.getBalance(seller, "confirmed");
+    if (balance >= minimum) return;
+    const transaction = new Transaction().add(SystemProgram.transfer({
+      fromPubkey: this.reviewer.publicKey,
+      toPubkey: seller,
+      lamports: minimum - balance,
+    }));
+    const signature = await this.connection.sendTransaction(transaction, [this.reviewer]);
+    await this.connection.confirmTransaction(signature, "confirmed");
   }
 }
