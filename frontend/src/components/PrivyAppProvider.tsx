@@ -18,12 +18,12 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
     <PrivyProvider
       appId={PRIVY_APP_ID}
       config={{
-        loginMethods: ['google', 'twitter', 'email', 'wallet'],
+        loginMethods: ['google', 'twitter', 'email'],
         appearance: {
           theme: 'light',
           accentColor: '#4166fb',
           landingHeader: 'Log in to Adspaces',
-          loginMessage: 'Continue with Google, X, email, or your wallet.',
+          loginMessage: 'Continue with Google, X, or email.',
           showWalletLoginFirst: false,
         },
         embeddedWallets: {
