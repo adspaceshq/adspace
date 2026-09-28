@@ -6,6 +6,7 @@ import { PostgresMarketplaceRepository } from "./market.js";
 import { PostgresWithdrawalRepository } from "./withdrawals.js";
 import { PrivyWithdrawalSponsor } from "./privy-withdrawal.js";
 import { PostgresSellerIdentityRepository, PrivyListingPublisher } from "./listing-chain.js";
+import { PrivyFixedClaimExecutor } from "./fixed-claim-chain.js";
 
 async function start() {
   const config = loadConfig();
@@ -25,6 +26,9 @@ async function start() {
         config.frontendUrl,
       )
     : undefined;
+  const fixedClaimExecutor = config.solana.reviewerWalletPath
+    ? new PrivyFixedClaimExecutor(pool, config.solana.rpcUrl, config.solana.cluster, config.solana.programId, config.solana.reviewerWalletPath)
+    : undefined;
   await auth.migrate();
   await market.migrate();
   await withdrawals.migrate();
@@ -40,6 +44,7 @@ async function start() {
     withdrawalSponsor,
     sellerIdentities,
     listingPublisher,
+    fixedClaimExecutor,
   }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on)`));
 }
 

@@ -12,6 +12,7 @@ import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdra
 import type { WalletWithdrawal } from "./withdrawals.js";
 import type { ListingPublisher } from "./listing-chain.js";
 import type { ReviewPolicy } from "./adspaces-program.js";
+import type { FixedClaimExecutor } from "./fixed-claim-chain.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -30,6 +31,7 @@ export interface AppDependencies {
   withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> };
   sellerIdentities?: { get(userId: string): Promise<SessionUser | undefined> };
   listingPublisher?: ListingPublisher;
+  fixedClaimExecutor?: FixedClaimExecutor;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -61,6 +63,7 @@ export function createApp({
   withdrawalSponsor,
   sellerIdentities,
   listingPublisher,
+  fixedClaimExecutor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -265,7 +268,21 @@ export function createApp({
   app.post("/api/listings/:slug/close", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.close(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/listings/:slug/reopen", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reopen(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.delete("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.remove(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
-  app.post("/api/spots/:id/claim", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.claim(req.params.id, req.user!, purchaseAssets(req.body))); } catch (e) { sendErr(res, e); } });
+  app.post("/api/spots/:id/claim", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const assets = purchaseAssets(req.body);
+    try {
+      if (fixedClaimExecutor) {
+        if (!assets.logoUrl?.startsWith("data:image/") || assets.logoUrl.length > 3_000_000) {
+          return void res.status(400).json({ error: "a valid logo is required" });
+        }
+        if (assets.website && !/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(assets.website)) {
+          return void res.status(400).json({ error: "website must be an http(s) URL" });
+        }
+        await fixedClaimExecutor.claim(req.params.id, req.user!);
+      }
+      res.json(await repo.claim(req.params.id, req.user!, assets));
+    } catch (e) { sendErr(res, e); }
+  });
   app.post("/api/spots/:id/bid", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const amount = Number((req.body as { amount?: number } | null)?.amount);
     if (!(amount > 0)) return void res.status(400).json({ error: "positive amount is required" });
