@@ -234,6 +234,7 @@ export function refundApiSpot(spotId:string):Promise<ApiSpot>{return apiPostEmpt
 export function fetchDisputeQueue(): Promise<DisputeItem[]> {
   return apiGet<DisputeItem[]>("/api/review/disputes");
 }
+export function reconcileChain():Promise<{checked:number;updated:number;missing:number}>{return apiPostEmpty('/api/review/reconcile')}
 
 export function resolveSpotDispute(spotId: string, sellerShareBps: number, decision: string): Promise<ApiSpot> {
   return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/resolve`, { sellerShareBps, decision });

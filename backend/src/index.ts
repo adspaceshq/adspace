@@ -20,6 +20,7 @@ import type { DisputeChainExecutor } from "./dispute-chain.js";
 import type { DisputeResolutionExecutor } from "./dispute-resolution-chain.js";
 import type { RefundChainExecutor } from "./refund-chain.js";
 import type { CloseSpotsChainExecutor } from "./close-spots-chain.js";
+import type { ChainReconciler } from "./chain-reconciliation.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -46,6 +47,7 @@ export interface AppDependencies {
   disputeResolutionExecutor?: DisputeResolutionExecutor;
   refundChainExecutor?: RefundChainExecutor;
   closeSpotsChainExecutor?: CloseSpotsChainExecutor;
+  chainReconciler?: ChainReconciler;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -85,6 +87,7 @@ export function createApp({
   disputeResolutionExecutor,
   refundChainExecutor,
   closeSpotsChainExecutor,
+  chainReconciler,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -358,6 +361,7 @@ export function createApp({
   });
   app.post("/api/spots/:id/refund",mutationLimiter,attachUser,requireUser,requireCsrf,async(req,res)=>{try{if(!refundChainExecutor)return void res.status(503).json({error:"on-chain refunds are unavailable"});const signature=await refundChainExecutor.refund(req.params.id,req.user!);res.json(await repo.recordRefund(req.params.id,signature));}catch(e){sendErr(res,e);}});
   app.get("/api/review/disputes",attachUser,requireUser,requireReviewer,async(_req,res)=>{try{res.json(await repo.disputeQueue());}catch(e){sendErr(res,e);}});
+  app.post("/api/review/reconcile",mutationLimiter,attachUser,requireUser,requireCsrf,requireReviewer,async(_req,res)=>{try{if(!chainReconciler)return void res.status(503).json({error:"chain reconciliation is unavailable"});res.json(await chainReconciler.reconcile())}catch(e){sendErr(res,e)}});
   app.post("/api/spots/:id/resolve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async(req,res)=>{try{if(!disputeResolutionExecutor)return void res.status(503).json({error:"dispute resolution is unavailable"});const body=(req.body??{}) as {sellerShareBps?:unknown;decision?:unknown};const signature=await disputeResolutionExecutor.resolve(req.params.id,Number(body.sellerShareBps),typeof body.decision==="string"?body.decision:"");res.json(await repo.resolveDispute(req.params.id,signature));}catch(e){sendErr(res,e);}});
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });

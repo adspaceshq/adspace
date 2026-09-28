@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
-import { approveReviewListing, fetchDisputeQueue, fetchPayableQueue, fetchReviewQueue, payApiSpot, rejectReviewListing, resolveSpotDispute } from '@/lib/auth-api'
+import { approveReviewListing, fetchDisputeQueue, fetchPayableQueue, fetchReviewQueue, payApiSpot, reconcileChain, rejectReviewListing, resolveSpotDispute } from '@/lib/auth-api'
 import { cardPhoto, explorerTxUrl, sellerDisplay } from '@/lib/listings'
 import type { ApiListing, DisputeItem, PayoutItem, ReviewPolicyRequest } from '@/lib/types'
 
@@ -32,6 +32,8 @@ export default function ReviewPage() {
   const [decisions, setDecisions] = useState<Record<string, string>>({})
   const [resolutionBusy, setResolutionBusy] = useState<string>()
   const [resolutionError, setResolutionError] = useState<string>()
+  const [reconciling,setReconciling]=useState(false)
+  const [reconcileNote,setReconcileNote]=useState<string>()
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -113,9 +115,13 @@ export default function ReviewPage() {
           </section>
         ) : (
           <>
-            <div className="mb-7">
+            <div className="mb-7 flex items-end justify-between gap-4">
+              <div>
               <h1 className="text-[clamp(38px,5vw,58px)]">Platform review</h1>
               <p className="mt-1 text-[16px] text-[#64748b]">Approve submissions to go live, or reject them with a reason.</p>
+              {reconcileNote&&<p className="mt-2 text-xs text-[#64748b]">{reconcileNote}</p>}
+              </div>
+              <button disabled={reconciling} onClick={()=>void(async()=>{setReconciling(true);setReconcileNote(undefined);try{const r=await reconcileChain();setReconcileNote(`Checked ${r.checked}, updated ${r.updated}, missing ${r.missing}.`);await load()}catch(e){setReconcileNote(e instanceof Error?e.message:'Reconciliation failed.')}finally{setReconciling(false)}})()} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">{reconciling?'Syncing...':'Sync devnet'}</button>
             </div>
             {error && <div role="alert" className="mb-5 border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
             {queue === null ? (
