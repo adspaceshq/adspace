@@ -31,7 +31,7 @@ export default function DashboardPage() {
   const [terms, setTerms] = useState<TermsDoc | null>(null)
   const [termsFor, setTermsFor] = useState<string | null>(null)
   const [termsError, setTermsError] = useState<string>()
-  const { wallets } = useWallets()
+  const { ready: walletsReady, wallets } = useWallets()
   const { signAndSendTransaction } = useSignAndSendTransaction()
   const { clear: clearMfa, promptMfa, mfaMethods } = useMfa()
   const { showMfaEnrollmentModal } = useMfaEnrollment()
@@ -116,9 +116,14 @@ export default function DashboardPage() {
   }
 
   const withdraw = async () => {
+    if (!walletsReady) {
+      setWithdrawError('Privy wallet is still loading. Try again in a moment.')
+      return
+    }
     const wallet = wallets.find((candidate) => candidate.address === auth.walletAddress)
+      ?? (wallets.length === 1 ? wallets[0] : undefined)
     if (!wallet) {
-      setWithdrawError('Privy wallet is not ready. Refresh and try again.')
+      setWithdrawError('Privy embedded wallet is unavailable. Log out, then log in again.')
       return
     }
     setWithdrawing(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
