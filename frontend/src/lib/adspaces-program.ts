@@ -47,7 +47,10 @@ export function configPda(): PublicKey {
 }
 
 export function reviewAuthorityPda(): PublicKey {
-  return PublicKey.findProgramAddressSync([seed('review_authority')], ADSPACES_PROGRAM_ID)[0];
+  return PublicKey.findProgramAddressSync(
+    [seed('review_authority'), configPda().toBuffer()],
+    ADSPACES_PROGRAM_ID,
+  )[0];
 }
 
 export function authorityTransferPda(): PublicKey {
