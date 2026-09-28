@@ -2,17 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useMfa, useMfaEnrollment } from '@privy-io/react-auth'
-import { useSignAndSendTransaction, useWallets } from '@privy-io/react-auth/solana'
 import Link from 'next/link'
 import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
-import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
+import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, executeWalletWithdrawal, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto, isEnded } from '@/lib/listings'
 import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
-import { embeddedUsdcBalance, withdrawEmbeddedUsdc } from '@/lib/adspaces-program'
+import { embeddedUsdcBalance } from '@/lib/adspaces-program'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
 const relative = (iso: string) => {
@@ -31,8 +30,6 @@ export default function DashboardPage() {
   const [terms, setTerms] = useState<TermsDoc | null>(null)
   const [termsFor, setTermsFor] = useState<string | null>(null)
   const [termsError, setTermsError] = useState<string>()
-  const { ready: walletsReady, wallets } = useWallets()
-  const { signAndSendTransaction } = useSignAndSendTransaction()
   const { clear: clearMfa, promptMfa, mfaMethods } = useMfa()
   const { showMfaEnrollmentModal } = useMfaEnrollment()
   const [withdrawOpen, setWithdrawOpen] = useState(false)
@@ -116,14 +113,8 @@ export default function DashboardPage() {
   }
 
   const withdraw = async () => {
-    if (!walletsReady) {
-      setWithdrawError('Privy wallet is still loading. Try again in a moment.')
-      return
-    }
-    const wallet = wallets.find((candidate) => candidate.address === auth.walletAddress)
-      ?? (wallets.length === 1 ? wallets[0] : undefined)
-    if (!wallet) {
-      setWithdrawError('Privy embedded wallet is unavailable. Log out, then log in again.')
+    if (!auth.walletDelegated) {
+      setWithdrawError('Enable gasless transactions from your profile before withdrawing.')
       return
     }
     setWithdrawing(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
@@ -138,14 +129,8 @@ export default function DashboardPage() {
       await promptMfa()
       intent = await createWalletWithdrawal(withdrawAddress.trim(), Number(withdrawAmount))
       setWithdrawals((current) => [intent!, ...current])
-      const signature = await withdrawEmbeddedUsdc(
-        wallet,
-        withdrawAddress.trim(),
-        Number(withdrawAmount),
-        signAndSendTransaction,
-      )
-      submittedSignature = signature
-      const confirmed = await confirmWalletWithdrawal(intent.id, signature)
+      const confirmed = await executeWalletWithdrawal(intent.id)
+      submittedSignature = confirmed.signature
       setWithdrawals((current) => current.map((item) => item.id === confirmed.id ? confirmed : item))
       setWithdrawSignature(confirmed.signature)
       setWithdrawAmount('')

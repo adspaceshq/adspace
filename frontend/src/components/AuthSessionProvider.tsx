@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { usePrivy } from '@privy-io/react-auth';
+import { useDelegatedActions, usePrivy } from '@privy-io/react-auth';
 import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
 import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
@@ -19,6 +19,7 @@ export interface AuthSession {
   avatar: string | undefined;
   email: string | undefined;
   walletAddress: string | undefined;
+  walletDelegated: boolean;
   hasX: boolean;
   onboardingComplete: boolean;
   loggingIn: boolean;
@@ -26,6 +27,7 @@ export interface AuthSession {
   login: () => void;
   linkEmail: () => void;
   linkX: () => void;
+  delegateWallet: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -39,6 +41,7 @@ const guest: AuthSession = {
   avatar: undefined,
   email: undefined,
   walletAddress: undefined,
+  walletDelegated: false,
   hasX: false,
   onboardingComplete: false,
   loggingIn: false,
@@ -46,6 +49,7 @@ const guest: AuthSession = {
   login: () => {},
   linkEmail: () => {},
   linkX: () => {},
+  delegateWallet: async () => {},
   logout: async () => {},
 };
 
@@ -78,6 +82,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const exchangedFor = useRef<string | null>(null);
   const walletProvisionedFor = useRef<string | null>(null);
   const { createWallet: createSolanaWallet } = useCreateSolanaWallet();
+  const { delegateWallet } = useDelegatedActions();
 
   const exchange = useCallback(async () => {
     setExchanging(true);
@@ -132,7 +137,13 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
       .then(exchange);
   }, [authenticated, me, createSolanaWallet, exchange]);
 
-  const onboardingComplete = Boolean(me?.hasX && me.email && me.walletAddress);
+  const walletDelegated = Boolean(user?.linkedAccounts.some((account) =>
+    account.type === 'wallet'
+    && account.chainType === 'solana'
+    && account.address === me?.walletAddress
+    && account.delegated,
+  ));
+  const onboardingComplete = Boolean(me?.hasX && me.email && me.walletAddress && walletDelegated);
 
   const value: AuthSession = {
     ready: ready && !exchanging,
@@ -144,6 +155,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,
     email: me?.email,
     walletAddress: me?.walletAddress,
+    walletDelegated,
     hasX: me?.hasX ?? false,
     onboardingComplete,
     loggingIn: exchanging,
@@ -154,6 +166,15 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     },
     linkEmail,
     linkX: linkTwitter,
+    delegateWallet: async () => {
+      if (!me?.walletAddress) throw new Error('Privy wallet is not ready');
+      setError(undefined);
+      try {
+        await delegateWallet({ address: me.walletAddress, chainType: 'solana' });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not enable gasless transactions.');
+      }
+    },
     logout: async () => {
       exchangedFor.current = null;
       walletProvisionedFor.current = null;
@@ -186,6 +207,7 @@ function ProfileCompletionModal({ auth }: { auth: AuthSession }) {
           <ProfileRequirement complete={auth.hasX} label="X account" actionLabel="Connect X" onAction={auth.linkX} />
           <ProfileRequirement complete={Boolean(auth.email)} label="Verified email" actionLabel="Add email" onAction={auth.linkEmail} />
           <ProfileRequirement complete={Boolean(auth.walletAddress)} label="Privy Solana wallet" pendingLabel="Creating wallet…" />
+          <ProfileRequirement complete={auth.walletDelegated} label="Gasless transactions" actionLabel="Enable" onAction={() => void auth.delegateWallet()} />
         </div>
         {auth.error && <p className="mt-4 text-sm text-red-600">{auth.error}</p>}
         <button type="button" onClick={() => void auth.logout()} className="mt-5 text-sm text-[#526079] underline underline-offset-4">Log out</button>

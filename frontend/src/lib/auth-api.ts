@@ -124,6 +124,10 @@ export function createWalletWithdrawal(destination: string, amount: number): Pro
   return apiPost<WalletWithdrawal>("/api/wallet/withdrawals", { destination, amount });
 }
 
+export function executeWalletWithdrawal(id: string): Promise<WalletWithdrawal> {
+  return apiPostEmpty<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/execute`);
+}
+
 export function confirmWalletWithdrawal(id: string, signature: string): Promise<WalletWithdrawal> {
   return apiPost<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/confirm`, { signature });
 }
