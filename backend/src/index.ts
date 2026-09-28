@@ -15,6 +15,7 @@ import type { ReviewPolicy } from "./adspaces-program.js";
 import type { FixedClaimExecutor } from "./fixed-claim-chain.js";
 import type { AuctionBidExecutor } from "./auction-bid-chain.js";
 import type { ProofChainExecutor } from "./proof-chain.js";
+import type { SettlementExecutor } from "./settlement-chain.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -36,6 +37,7 @@ export interface AppDependencies {
   fixedClaimExecutor?: FixedClaimExecutor;
   auctionBidExecutor?: AuctionBidExecutor;
   proofChainExecutor?: ProofChainExecutor;
+  settlementExecutor?: SettlementExecutor;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -70,6 +72,7 @@ export function createApp({
   fixedClaimExecutor,
   auctionBidExecutor,
   proofChainExecutor,
+  settlementExecutor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -328,7 +331,10 @@ export function createApp({
   });
   app.post("/api/spots/:id/pay", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
     const reference = (req.body as { reference?: unknown } | null)?.reference;
-    try { res.json(await repo.paySpot(req.params.id, typeof reference === "string" ? reference : "")); } catch (e) { sendErr(res, e); }
+    try {
+      const signature = settlementExecutor ? await settlementExecutor.settle(req.params.id) : typeof reference === "string" ? reference : "";
+      res.json(await repo.paySpot(req.params.id, signature));
+    } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
