@@ -36,9 +36,6 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
           ethereum: { createOnLogin: 'off' },
           solana: { createOnLogin: 'all-users' },
         },
-        externalWallets: {
-          disableAllExternalWallets: true,
-        },
         solana: {
           rpcs: {
             'solana:devnet': {
