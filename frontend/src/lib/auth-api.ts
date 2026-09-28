@@ -10,6 +10,7 @@ import type {
   SellerDashboard,
   TermsDoc,
   UpdateProfileRequest,
+  WalletWithdrawal,
 } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
@@ -113,6 +114,22 @@ export function fetchProfile(handle: string): Promise<PublicProfile> {
 
 export function updateMyProfile(patch: UpdateProfileRequest): Promise<PublicProfile> {
   return apiPatch<PublicProfile>("/api/users/me", patch);
+}
+
+export function fetchWalletWithdrawals(): Promise<WalletWithdrawal[]> {
+  return apiGet<WalletWithdrawal[]>("/api/wallet/withdrawals");
+}
+
+export function createWalletWithdrawal(destination: string, amount: number): Promise<WalletWithdrawal> {
+  return apiPost<WalletWithdrawal>("/api/wallet/withdrawals", { destination, amount });
+}
+
+export function confirmWalletWithdrawal(id: string, signature: string): Promise<WalletWithdrawal> {
+  return apiPost<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/confirm`, { signature });
+}
+
+export function failWalletWithdrawal(id: string): Promise<WalletWithdrawal> {
+  return apiPostEmpty<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/fail`);
 }
 
 export function fetchListingSummaries(): Promise<ApiListingSummary[]> {

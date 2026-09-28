@@ -192,3 +192,14 @@ export interface PayoutItem {
   currency: string;
   releasedAt: string;
 }
+
+export interface WalletWithdrawal {
+  id: string;
+  source: string;
+  destination: string;
+  amount: number;
+  status: 'pending' | 'confirmed' | 'failed';
+  signature?: string;
+  createdAt: string;
+  confirmedAt?: string;
+}

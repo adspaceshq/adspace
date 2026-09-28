@@ -108,6 +108,10 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
     const record = found.rows[0];
     if (!record) throw httpError("withdrawal not found", 404);
     if (record.status === "confirmed") return this.map(record);
+    await this.pool.query(
+      "UPDATE wallet_withdrawals SET signature=COALESCE(signature,$3) WHERE id=$1 AND user_id=$2",
+      [id, userId, signature],
+    );
     await this.verify(record, signature);
     const updated = await this.pool.query<WithdrawalRow>(
       `UPDATE wallet_withdrawals SET status='confirmed',signature=$3,confirmed_at=now()

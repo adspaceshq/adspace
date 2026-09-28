@@ -9,9 +9,9 @@ import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
-import { acceptListingTerms, approveApiSpot, closeApiListing, deleteApiListing, fetchSellerDashboard, fetchTerms, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
+import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto, isEnded } from '@/lib/listings'
-import type { SellerDashboard, TermsDoc } from '@/lib/types'
+import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
 import { embeddedUsdcBalance, withdrawEmbeddedUsdc } from '@/lib/adspaces-program'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
@@ -42,6 +42,7 @@ export default function DashboardPage() {
   const [withdrawSignature, setWithdrawSignature] = useState<string>()
   const [withdrawing, setWithdrawing] = useState(false)
   const [walletUsdc, setWalletUsdc] = useState<number>()
+  const [withdrawals, setWithdrawals] = useState<WalletWithdrawal[]>([])
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -65,6 +66,10 @@ export default function DashboardPage() {
     })
     return () => { cancelled = true }
   }, [auth.walletAddress])
+  useEffect(() => {
+    if (!auth.authenticated) return
+    void fetchWalletWithdrawals().then(setWithdrawals).catch(() => setWithdrawals([]))
+  }, [auth.authenticated])
 
   const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill') => {
     setBusy(spotId); setError(undefined)
@@ -117,6 +122,8 @@ export default function DashboardPage() {
       return
     }
     setWithdrawing(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
+    let intent: WalletWithdrawal | undefined
+    let submittedSignature: string | undefined
     try {
       if (mfaMethods.length === 0) {
         showMfaEnrollmentModal()
@@ -124,17 +131,33 @@ export default function DashboardPage() {
       }
       await clearMfa()
       await promptMfa()
+      intent = await createWalletWithdrawal(withdrawAddress.trim(), Number(withdrawAmount))
+      setWithdrawals((current) => [intent!, ...current])
       const signature = await withdrawEmbeddedUsdc(
         wallet,
         withdrawAddress.trim(),
         Number(withdrawAmount),
         signAndSendTransaction,
       )
-      setWithdrawSignature(signature)
+      submittedSignature = signature
+      const confirmed = await confirmWalletWithdrawal(intent.id, signature)
+      setWithdrawals((current) => current.map((item) => item.id === confirmed.id ? confirmed : item))
+      setWithdrawSignature(confirmed.signature)
       setWithdrawAmount('')
       if (auth.walletAddress) setWalletUsdc(await embeddedUsdcBalance(auth.walletAddress))
     } catch (e) {
-      setWithdrawError(e instanceof Error ? e.message : 'Withdrawal failed.')
+      if (intent && !submittedSignature) {
+        void failWalletWithdrawal(intent.id).then((failed) => {
+          setWithdrawals((current) => current.map((item) => item.id === failed.id ? failed : item))
+        }).catch(() => undefined)
+      }
+      if (submittedSignature) {
+        setWithdrawSignature(submittedSignature)
+        void fetchWalletWithdrawals().then(setWithdrawals).catch(() => undefined)
+        setWithdrawError('Transfer submitted. Confirmation is still pending and can be retried below.')
+      } else {
+        setWithdrawError(e instanceof Error ? e.message : 'Withdrawal failed.')
+      }
     } finally {
       setWithdrawing(false)
     }
@@ -244,6 +267,7 @@ export default function DashboardPage() {
                   <label className="mt-4 block text-sm font-medium">Amount <span className="font-normal text-[#64748b]">{walletUsdc !== undefined && `(available $${walletUsdc.toFixed(2)})`}</span><input value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} inputMode="decimal" placeholder="0.00" className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
                   {withdrawError && <p role="alert" className="mt-4 text-sm text-[#dc2626]">{withdrawError}</p>}
                   {withdrawSignature && <a href={`https://explorer.solana.com/tx/${withdrawSignature}?cluster=${encodeURIComponent(process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet')}`} target="_blank" rel="noopener" className="mt-4 block break-all text-sm font-medium text-[#4166fb] underline">Withdrawal confirmed: {withdrawSignature}</a>}
+                  {withdrawals.length > 0 && <div className="mt-5 border-t border-[#e7e5e0] pt-4"><p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">Recent withdrawals</p><div className="max-h-36 space-y-2 overflow-y-auto">{withdrawals.slice(0, 5).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 text-xs"><span className="truncate font-mono">{item.destination}</span><span className="shrink-0 font-mono">${item.amount.toFixed(2)}</span>{item.status === 'pending' && item.signature ? <button type="button" onClick={() => void confirmWalletWithdrawal(item.id, item.signature!).then((confirmed) => setWithdrawals((current) => current.map((entry) => entry.id === confirmed.id ? confirmed : entry))).catch((error) => setWithdrawError(error instanceof Error ? error.message : 'Still pending'))} className="shrink-0 font-semibold text-[#4166fb]">Retry</button> : <span className={item.status === 'confirmed' ? 'shrink-0 text-emerald-700' : item.status === 'failed' ? 'shrink-0 text-[#dc2626]' : 'shrink-0 text-amber-700'}>{item.status}</span>}</div>)}</div></div>}
                   <div className="mt-6 flex justify-end gap-3">
                     <button type="button" onClick={() => setWithdrawOpen(false)} disabled={withdrawing} className="rounded-md border border-[#d8d6d0] px-5 py-2.5 text-sm font-semibold disabled:opacity-50">Close</button>
                     <button type="button" onClick={() => void withdraw()} disabled={withdrawing || !withdrawAddress.trim() || !withdrawAmount.trim()} className="rounded-md bg-[#4166fb] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{withdrawing ? 'Withdrawing…' : 'Withdraw'}</button>
