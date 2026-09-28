@@ -23,6 +23,7 @@ export interface WithdrawalRepository {
   confirm(id: string, userId: string, signature: string): Promise<WalletWithdrawal>;
   fail(id: string, userId: string): Promise<WalletWithdrawal>;
   list(userId: string): Promise<WalletWithdrawal[]>;
+  get(id: string, userId: string): Promise<WalletWithdrawal>;
 }
 
 function validate(source: string, destination: string, amount: number): void {
@@ -56,6 +57,11 @@ export class MemoryWithdrawalRepository implements WithdrawalRepository {
   }
   async list(userId: string): Promise<WalletWithdrawal[]> {
     return this.records.filter((item) => item.userId === userId).slice().reverse();
+  }
+  async get(id: string, userId: string): Promise<WalletWithdrawal> {
+    const record = this.records.find((item) => item.id === id && item.userId === userId);
+    if (!record) throw httpError("withdrawal not found", 404);
+    return record;
   }
 }
 
@@ -133,6 +139,14 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
       "SELECT * FROM wallet_withdrawals WHERE user_id=$1 ORDER BY created_at DESC LIMIT 50", [userId],
     );
     return result.rows.map((row) => this.map(row));
+  }
+
+  async get(id: string, userId: string): Promise<WalletWithdrawal> {
+    const result = await this.pool.query<WithdrawalRow>(
+      "SELECT * FROM wallet_withdrawals WHERE id=$1 AND user_id=$2", [id, userId],
+    );
+    if (!result.rows[0]) throw httpError("withdrawal not found", 404);
+    return this.map(result.rows[0]);
   }
 
   private async verify(record: WithdrawalRow, signature: string): Promise<void> {

@@ -9,6 +9,7 @@ import { TERMS_TEXT, TERMS_VERSION } from "./types.js";
 import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
 import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdrawals.js";
+import type { WalletWithdrawal } from "./withdrawals.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -24,6 +25,7 @@ export interface AppDependencies {
   trustProxy?: number;
   chain?: { cluster: SolanaCluster; programId: string };
   withdrawals?: WithdrawalRepository;
+  withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> };
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -51,6 +53,7 @@ export function createApp({
   trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
   chain = { cluster: "devnet", programId: adspacesProgramId },
   withdrawals = new MemoryWithdrawalRepository(),
+  withdrawalSponsor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -189,6 +192,15 @@ export function createApp({
   app.post("/api/wallet/withdrawals/:id/confirm", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const signature = (req.body as { signature?: unknown } | null)?.signature;
     try { res.json(await withdrawals.confirm(req.params.id, req.user!.id, typeof signature === "string" ? signature : "")); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/wallet/withdrawals/:id/execute", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    if (!withdrawalSponsor) return void res.status(503).json({ error: "withdrawal sponsorship is unavailable" });
+    try {
+      const withdrawal = await withdrawals.get(req.params.id, req.user!.id);
+      if (withdrawal.status !== "pending") return void res.status(409).json({ error: "withdrawal is not pending" });
+      const signature = await withdrawalSponsor.send(req.user!, withdrawal);
+      res.json(await withdrawals.confirm(withdrawal.id, req.user!.id, signature));
+    } catch (e) { sendErr(res, e); }
   });
   app.post("/api/wallet/withdrawals/:id/fail", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     try { res.json(await withdrawals.fail(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); }

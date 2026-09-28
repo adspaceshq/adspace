@@ -4,6 +4,7 @@ import { loadConfig } from "./config.js";
 import { createDatabasePool, PostgresAuthRepository } from "./db.js";
 import { PostgresMarketplaceRepository } from "./market.js";
 import { PostgresWithdrawalRepository } from "./withdrawals.js";
+import { PrivyWithdrawalSponsor } from "./privy-withdrawal.js";
 
 async function start() {
   const config = loadConfig();
@@ -12,6 +13,7 @@ async function start() {
   const market = new PostgresMarketplaceRepository(pool);
   if (!config.solana.rpcUrl) throw new Error("SOLANA_RPC_URL is required for withdrawal verification");
   const withdrawals = new PostgresWithdrawalRepository(pool, config.solana.rpcUrl, config.solana.cluster);
+  const withdrawalSponsor = new PrivyWithdrawalSponsor(config.solana.rpcUrl, config.solana.cluster);
   await auth.migrate();
   await market.migrate();
   await withdrawals.migrate();
@@ -24,6 +26,7 @@ async function start() {
     trustProxy: config.trustProxy,
     chain: { cluster: config.solana.cluster, programId: config.solana.programId },
     withdrawals,
+    withdrawalSponsor,
   }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on)`));
 }
 
