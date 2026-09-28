@@ -13,6 +13,7 @@ import { ProgramSettlementExecutor } from "./settlement-chain.js";
 import { PrivyDisputeChainExecutor } from "./dispute-chain.js";
 import { ProgramDisputeResolutionExecutor } from "./dispute-resolution-chain.js";
 import { PrivyRefundChainExecutor } from "./refund-chain.js";
+import { PrivyCloseSpotsChainExecutor } from "./close-spots-chain.js";
 
 async function start() {
   const config = loadConfig();
@@ -51,6 +52,7 @@ async function start() {
     ? new ProgramDisputeResolutionExecutor(pool,config.solana.rpcUrl,config.solana.cluster,config.solana.programId,config.solana.reviewerWalletPath,config.frontendUrl)
     : undefined;
   const refundChainExecutor=config.solana.reviewerWalletPath?new PrivyRefundChainExecutor(pool,config.solana.rpcUrl,config.solana.programId,config.solana.reviewerWalletPath):undefined;
+  const closeSpotsChainExecutor=config.solana.reviewerWalletPath?new PrivyCloseSpotsChainExecutor(pool,config.solana.rpcUrl,config.solana.programId,config.solana.reviewerWalletPath):undefined;
   await auth.migrate();
   await market.migrate();
   await withdrawals.migrate();
@@ -73,6 +75,7 @@ async function start() {
     disputeChainExecutor,
     disputeResolutionExecutor,
     refundChainExecutor,
+    closeSpotsChainExecutor,
   }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on)`));
 }
 

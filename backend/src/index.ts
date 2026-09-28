@@ -19,6 +19,7 @@ import type { SettlementExecutor } from "./settlement-chain.js";
 import type { DisputeChainExecutor } from "./dispute-chain.js";
 import type { DisputeResolutionExecutor } from "./dispute-resolution-chain.js";
 import type { RefundChainExecutor } from "./refund-chain.js";
+import type { CloseSpotsChainExecutor } from "./close-spots-chain.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -44,6 +45,7 @@ export interface AppDependencies {
   disputeChainExecutor?: DisputeChainExecutor;
   disputeResolutionExecutor?: DisputeResolutionExecutor;
   refundChainExecutor?: RefundChainExecutor;
+  closeSpotsChainExecutor?: CloseSpotsChainExecutor;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -82,6 +84,7 @@ export function createApp({
   disputeChainExecutor,
   disputeResolutionExecutor,
   refundChainExecutor,
+  closeSpotsChainExecutor,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -286,9 +289,9 @@ export function createApp({
     try { res.status(201).json(await repo.create({ ...body, title: body.title }, req.user!)); } catch (e) { sendErr(res, e); }
   });
   app.patch("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.update(req.params.slug, req.user!.id, req.body as { title?: string; story?: string })); } catch (e) { sendErr(res, e); } });
-  app.post("/api/listings/:slug/close", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.close(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
+  app.post("/api/listings/:slug/close", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { if(closeSpotsChainExecutor)await closeSpotsChainExecutor.close(req.params.slug,req.user!);res.json(await repo.close(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/listings/:slug/reopen", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reopen(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
-  app.delete("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.remove(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
+  app.delete("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { if(closeSpotsChainExecutor)await closeSpotsChainExecutor.close(req.params.slug,req.user!);res.json(await repo.remove(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/claim", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const assets = purchaseAssets(req.body);
     try {
