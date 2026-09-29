@@ -73,7 +73,7 @@ export class PrivyListingPublisher {
       const metadataBytes = Buffer.from(metadata);
       const data = Buffer.concat([CREATE_LISTING, slugHash, u32(metadataBytes.length), metadataBytes,
         Buffer.from([listing.mode === "fixed" ? 0 : 1]), i64(BigInt(deadline)), i64(BigInt(artwork)), i64(BigInt(delivery)), i64(BigInt(reviewWindow)),
-        u64(usdc(listing.minIncrement ?? 0)), Buffer.from([listing.doubleUp ? 1 : 0]), u16(fee), u16(uplift), u16(maxFee)]);
+        u64(usdc(listing.mode === "auction" ? (listing.minIncrement ?? 1) : 0)), Buffer.from([listing.doubleUp ? 1 : 0]), u16(fee), u16(uplift), u16(maxFee)]);
       const ix = new TransactionInstruction({ programId: this.programId, data, keys: [
         {pubkey:seller,isSigner:true,isWritable:true},{pubkey:reviewer.publicKey,isSigner:true,isWritable:false},{pubkey:listingPda,isSigner:false,isWritable:true},
         {pubkey:config,isSigner:false,isWritable:false},{pubkey:reviewAuthority,isSigner:false,isWritable:false},{pubkey:this.mint,isSigner:false,isWritable:false},

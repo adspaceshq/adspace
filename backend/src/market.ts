@@ -391,7 +391,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       if (!spot) throw httpError("spot not found",404);
       if (new Date(spot.deadline).getTime() <= Date.now()) throw httpError("listing has ended",409);
       if (spot.mode!=="auction" || spot.status!=="open" || spot.seller_user_id===bidder.id) throw httpError("spot is unavailable or belongs to you",409);
-      const current=n(spot.current_bid); const required=current == null ? Number(spot.price) : spot.double_up ? current*2 : current+Number(spot.min_increment ?? 0);
+      const current=n(spot.current_bid); const required=current == null ? Number(spot.price) : spot.double_up ? current*2 : current+Number(spot.min_increment ?? 1);
       if (amount<required) throw httpError(`bid must be at least ${required} ${spot.currency}`,409);
       await client.query("INSERT INTO bids(id,spot_id,bidder_user_id,bidder_handle,amount) VALUES($1,$2,$3,$4,$5)",[randomUUID(),spotId,bidder.id,bidder.handle,amount]);
       await client.query("UPDATE spots SET current_bid=$2,buyer_user_id=$3,buyer_handle=$4,claimed_at=now(),updated_at=now(),website_url=$5,logo_url=$6 WHERE id=$1",[spotId,amount,bidder.id,bidder.handle,brand.website ?? "",brand.logoUrl ?? ""]);

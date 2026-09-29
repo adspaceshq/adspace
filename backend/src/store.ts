@@ -497,7 +497,7 @@ export class Store {
       ? spot.price
       : listing.doubleUp
         ? (spot.currentBid ?? 0) * 2
-        : (spot.currentBid ?? 0) + (listing.minIncrement ?? 0);
+        : (spot.currentBid ?? 0) + (listing.minIncrement ?? 1);
     if (amount < required) {
       throw Object.assign(new Error(`bid must be at least ${required} ${listing.currency}`), { status: 409 });
     }
