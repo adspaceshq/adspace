@@ -1,6 +1,6 @@
 import { getAccessToken, getIdentityToken } from "@privy-io/react-auth";
 import type {
-  ApiCreateListingRequest,
+  ApiCreateListingRequest, ReviewPolicy,
   ApiListing,
   ApiListingSummary,
   ApiSpot,
@@ -10,10 +10,18 @@ import type {
   SellerDashboard,
   TermsDoc,
   UpdateProfileRequest,
+  WalletWithdrawal,
 } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 let csrfToken: string | null = null;
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 async function parseError(res: Response): Promise<string> {
   const err = await res.json().catch(() => ({ error: res.statusText }));
@@ -29,7 +37,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.headers ?? {}),
     },
   });
-  if (!res.ok) throw new Error(await parseError(res));
+  if (!res.ok) throw new ApiError(await parseError(res), res.status);
   return res.json() as Promise<T>;
 }
 
@@ -115,6 +123,26 @@ export function updateMyProfile(patch: UpdateProfileRequest): Promise<PublicProf
   return apiPatch<PublicProfile>("/api/users/me", patch);
 }
 
+export function fetchWalletWithdrawals(): Promise<WalletWithdrawal[]> {
+  return apiGet<WalletWithdrawal[]>("/api/wallet/withdrawals");
+}
+
+export function createWalletWithdrawal(destination: string, amount: number): Promise<WalletWithdrawal> {
+  return apiPost<WalletWithdrawal>("/api/wallet/withdrawals", { destination, amount });
+}
+
+export function executeWalletWithdrawal(id: string): Promise<WalletWithdrawal> {
+  return apiPostEmpty<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/execute`);
+}
+
+export function confirmWalletWithdrawal(id: string, signature: string): Promise<WalletWithdrawal> {
+  return apiPost<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/confirm`, { signature });
+}
+
+export function failWalletWithdrawal(id: string): Promise<WalletWithdrawal> {
+  return apiPostEmpty<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/fail`);
+}
+
 export function fetchListingSummaries(): Promise<ApiListingSummary[]> {
   return apiGet<ApiListingSummary[]>("/api/listings");
 }
@@ -175,8 +203,8 @@ export function fetchReviewQueue(): Promise<ApiListing[]> {
   return apiGet<ApiListing[]>("/api/review/queue");
 }
 
-export function approveReviewListing(slug: string): Promise<ApiListing> {
-  return apiPostEmpty<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`);
+export function approveReviewListing(slug: string, policy: ReviewPolicy): Promise<ApiListing> {
+  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`, policy);
 }
 
 export function rejectReviewListing(slug: string, reason: string): Promise<ApiListing> {

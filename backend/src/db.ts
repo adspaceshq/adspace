@@ -158,6 +158,9 @@ export class PostgresAuthRepository implements AuthRepository, ProfileRepository
       ALTER TABLE users ADD COLUMN IF NOT EXISTS bio text NOT NULL DEFAULT '';
       ALTER TABLE users ADD COLUMN IF NOT EXISTS payout_wallet text NOT NULL DEFAULT '';
       ALTER TABLE users ADD COLUMN IF NOT EXISTS verified boolean NOT NULL DEFAULT true;
+      ALTER TABLE users ALTER COLUMN x_user_id DROP NOT NULL;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS email text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address text;
       ALTER TABLE users ENABLE ROW LEVEL SECURITY;
       ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
       DO $$ BEGIN
@@ -174,34 +177,40 @@ export class PostgresAuthRepository implements AuthRepository, ProfileRepository
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const existing = await client.query<{ id: string; x_user_id: string }>("SELECT id, x_user_id FROM users WHERE privy_did = $1 FOR UPDATE", [identity.did]);
-      if (existing.rows[0] && existing.rows[0].x_user_id !== identity.xUserId) throw Object.assign(new Error("X account identity does not match this user"), { status: 409 });
+      const existing = await client.query<{ id: string; x_user_id: string | null }>("SELECT id, x_user_id FROM users WHERE privy_did = $1 FOR UPDATE", [identity.did]);
+      if (existing.rows[0]?.x_user_id && identity.xUserId && existing.rows[0].x_user_id !== identity.xUserId) {
+        throw Object.assign(new Error("X account identity does not match this user"), { status: 409 });
+      }
       const userId = existing.rows[0]?.id ?? randomUUID();
-      await client.query(`INSERT INTO users (id, privy_did, x_user_id, x_handle, display_name, avatar_url)
-        VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (privy_did) DO UPDATE SET
-        x_handle=EXCLUDED.x_handle, display_name=EXCLUDED.display_name, avatar_url=EXCLUDED.avatar_url, updated_at=now()`,
-      [userId, identity.did, identity.xUserId, identity.handle, identity.name ?? null, identity.avatar ?? null]);
+      await client.query(`INSERT INTO users (id, privy_did, x_user_id, x_handle, display_name, avatar_url, email, wallet_address)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (privy_did) DO UPDATE SET
+        x_user_id=COALESCE(EXCLUDED.x_user_id, users.x_user_id),
+        x_handle=EXCLUDED.x_handle, display_name=COALESCE(EXCLUDED.display_name, users.display_name),
+        avatar_url=COALESCE(EXCLUDED.avatar_url, users.avatar_url),
+        email=COALESCE(EXCLUDED.email, users.email),
+        wallet_address=COALESCE(EXCLUDED.wallet_address, users.wallet_address), updated_at=now()`,
+      [userId, identity.did, identity.xUserId ?? null, identity.handle, identity.name ?? null, identity.avatar ?? null, identity.email ?? null, identity.walletAddress ?? null]);
       const token = randomBytes(32).toString("base64url");
       const csrfToken = randomBytes(32).toString("base64url");
       const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
       await client.query("INSERT INTO sessions (token_hash,user_id,csrf_token,expires_at) VALUES ($1,$2,$3,$4)", [digest(token), userId, csrfToken, expiresAt]);
       await client.query("DELETE FROM sessions WHERE expires_at <= now()");
       await client.query("COMMIT");
-      return { token, session: { user: { id: userId, did: identity.did, handle: identity.handle, name: identity.name, avatar: identity.avatar }, csrfToken, expiresAt } };
+      return { token, session: { user: { id: userId, did: identity.did, handle: identity.handle, name: identity.name, avatar: identity.avatar, email: identity.email, walletAddress: identity.walletAddress, hasX: identity.hasX }, csrfToken, expiresAt } };
     } catch (error) {
       await client.query("ROLLBACK");
-      if ((error as { code?: string }).code === "23505") throw Object.assign(new Error("X account is already linked to another user"), { status: 409 });
+      if ((error as { code?: string }).code === "23505") throw Object.assign(new Error("This identity is already linked to another user"), { status: 409 });
       throw error;
     } finally { client.release(); }
   }
   async readSession(token: string | undefined): Promise<StoredSession | undefined> {
     if (!token) return undefined;
-    const result = await this.pool.query<{ id:string; privy_did:string; x_handle:string; display_name:string|null; avatar_url:string|null; csrf_token:string; expires_at:Date }>(
-      `SELECT u.id,u.privy_did,u.x_handle,u.display_name,u.avatar_url,s.csrf_token,s.expires_at
+    const result = await this.pool.query<{ id:string; privy_did:string; x_handle:string; x_user_id:string|null; display_name:string|null; avatar_url:string|null; email:string|null; wallet_address:string|null; csrf_token:string; expires_at:Date }>(
+      `SELECT u.id,u.privy_did,u.x_handle,u.x_user_id,u.display_name,u.avatar_url,u.email,u.wallet_address,s.csrf_token,s.expires_at
        FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at>now()`, [digest(token)]);
     const row = result.rows[0];
     if (!row) return undefined;
-    return { user: { id: row.id, did: row.privy_did, handle: row.x_handle, name: row.display_name ?? undefined, avatar: row.avatar_url ?? undefined }, csrfToken: row.csrf_token, expiresAt: row.expires_at };
+    return { user: { id: row.id, did: row.privy_did, handle: row.x_handle, name: row.display_name ?? undefined, avatar: row.avatar_url ?? undefined, email: row.email ?? undefined, walletAddress: row.wallet_address ?? undefined, hasX: Boolean(row.x_user_id) }, csrfToken: row.csrf_token, expiresAt: row.expires_at };
   }
   async destroySession(token: string | undefined): Promise<void> { if (token) await this.pool.query("DELETE FROM sessions WHERE token_hash=$1", [digest(token)]); }
   async close(): Promise<void> { await this.pool.end(); }

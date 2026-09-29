@@ -62,6 +62,11 @@ export interface ApiListing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   status: "active" | "approved" | "submitted" | "closed";
   reviewNote?: string;
   termsVersion?: string;
@@ -98,6 +103,13 @@ export interface ApiCreateListingRequest {
   currency?: string;
   deadline?: string;
   artworkClose?: string;
+  minIncrement?: number;
+  doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   spots?: ApiCreateSpotRequest[];
 }
 
@@ -118,6 +130,9 @@ export interface SessionUser {
   handle: string;
   name?: string;
   avatar?: string;
+  email?: string;
+  walletAddress?: string;
+  hasX: boolean;
   csrfToken: string;
   expiresAt: string;
   isReviewer: boolean;
@@ -154,6 +169,19 @@ export interface SellerDashboardListing {
   total: number;
   paid: number;
   revenue: number;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
+}
+
+export interface ReviewPolicy {
+  platformFeeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  settlementWindowHours: number;
+  deliveryDeadline: string;
 }
 
 export interface SellerAttentionItem {
@@ -188,4 +216,15 @@ export interface PayoutItem {
   amount: number;
   currency: string;
   releasedAt: string;
+}
+
+export interface WalletWithdrawal {
+  id: string;
+  source: string;
+  destination: string;
+  amount: number;
+  status: 'pending' | 'processing' | 'confirmed' | 'failed';
+  signature?: string;
+  createdAt: string;
+  confirmedAt?: string;
 }

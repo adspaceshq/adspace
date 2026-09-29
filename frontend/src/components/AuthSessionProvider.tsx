@@ -1,13 +1,16 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useLoginWithOAuth, usePrivy } from '@privy-io/react-auth';
-import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
+import { useMfaEnrollment, usePrivy, useSigners, useUser } from '@privy-io/react-auth';
+import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
+import { ApiError, createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
 import type { SessionUser } from '@/lib/types';
 
 export interface AuthSession {
   ready: boolean;
+  /** Privy may be authenticated while the backend session is recovering. */
+  privyAuthenticated: boolean;
   authenticated: boolean;
   /** Stable Adspaces user ID — compare this, never handles, for owner UI. */
   userId: string | undefined;
@@ -16,23 +19,44 @@ export interface AuthSession {
   handle: string | undefined;
   name: string | undefined;
   avatar: string | undefined;
+  email: string | undefined;
+  walletAddress: string | undefined;
+  walletDelegated: boolean;
+  mfaEnabled: boolean;
+  hasX: boolean;
+  onboardingComplete: boolean;
   loggingIn: boolean;
   error: string | undefined;
   login: () => void;
+  linkEmail: () => void;
+  linkX: () => void;
+  delegateWallet: () => Promise<void>;
+  setupMfa: () => void;
   logout: () => Promise<void>;
 }
 
 const guest: AuthSession = {
   ready: true,
+  privyAuthenticated: false,
   authenticated: false,
   userId: undefined,
   isReviewer: false,
   handle: undefined,
   name: undefined,
   avatar: undefined,
+  email: undefined,
+  walletAddress: undefined,
+  walletDelegated: false,
+  mfaEnabled: false,
+  hasX: false,
+  onboardingComplete: false,
   loggingIn: false,
   error: undefined,
   login: () => {},
+  linkEmail: () => {},
+  linkX: () => {},
+  delegateWallet: async () => {},
+  setupMfa: () => {},
   logout: async () => {},
 };
 
@@ -50,11 +74,37 @@ export default function AuthSessionProvider({ children }: { children: React.Reac
 }
 
 function PrivySessionProvider({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, user, logout: privyLogout } = usePrivy();
+  const {
+    ready,
+    authenticated,
+    user,
+    login: privyLogin,
+    linkEmail,
+    linkTwitter,
+    logout: privyLogout,
+  } = usePrivy();
   const [me, setMe] = useState<SessionUser | null>(null);
   const [error, setError] = useState<string | undefined>();
   const [exchanging, setExchanging] = useState(false);
   const exchangedFor = useRef<string | null>(null);
+  const walletProvisionedFor = useRef<string | null>(null);
+  const { createWallet: createSolanaWallet } = useCreateSolanaWallet();
+  const { addSigners } = useSigners();
+  const { refreshUser } = useUser();
+  const signerId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID;
+  const { showMfaEnrollmentModal } = useMfaEnrollment();
+  const embeddedWallet = user?.linkedAccounts.flatMap((account) => {
+    if (account.type !== 'wallet'
+      || !('address' in account)
+      || !('chainType' in account)
+      || !('walletClientType' in account)
+      || account.chainType !== 'solana'
+      || account.walletClientType !== 'privy') return [];
+    return [{
+      address: account.address,
+      delegated: 'delegated' in account && Boolean(account.delegated),
+    }];
+  })[0];
 
   const exchange = useCallback(async () => {
     setExchanging(true);
@@ -63,25 +113,20 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
       setMe(session);
       setError(undefined);
     } catch (e) {
+      exchangedFor.current = null;
       setMe(null);
+      if (e instanceof ApiError && e.status === 401) {
+        await privyLogout();
+      }
       setError(
         e instanceof Error
           ? e.message
-          : 'X login reached Privy but the API rejected the session. Set PRIVY_APP_SECRET on the backend.',
+          : 'Privy login succeeded but the API rejected the session. Check the backend Privy configuration.',
       );
     } finally {
       setExchanging(false);
     }
-  }, []);
-
-  const { initOAuth, loading } = useLoginWithOAuth({
-    onComplete: () => {
-      void exchange();
-    },
-    onError: (err) => {
-      setError(err ? String(err) : 'X login failed. Enable Twitter in the Privy dashboard.');
-    },
-  });
+  }, [privyLogout]);
 
   useEffect(() => {
     if (!ready) return;
@@ -92,9 +137,13 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const did = user?.id ?? 'authed';
+      if (exchangedFor.current === did && me) return;
+      if (exchangedFor.current && exchangedFor.current !== did) setMe(null);
       try {
-        const existing = exchangedFor.current === did ? null : await fetchApiMe().catch(() => null);
-        const stale = existing?.handle?.startsWith('user-') && !!user?.twitter?.username;
+        const existing = await fetchApiMe().catch(() => null);
+        const staleHandle = existing?.handle?.startsWith('user-') && !!user?.twitter?.username;
+        const staleWallet = Boolean(existing?.walletAddress && embeddedWallet?.address && existing.walletAddress !== embeddedWallet.address);
+        const stale = staleHandle || staleWallet;
         if (existing && !stale) {
           exchangedFor.current = did;
           setMe(existing);
@@ -108,24 +157,65 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
         await exchange();
       }
     })();
-  }, [ready, authenticated, user?.id, user?.twitter?.username, exchange]);
+  }, [ready, authenticated, user, me, embeddedWallet?.address, exchange]);
+
+  useEffect(() => {
+    if (!authenticated || !me || embeddedWallet?.address || walletProvisionedFor.current === me.did) return;
+    walletProvisionedFor.current = me.did;
+    void createSolanaWallet()
+      .catch(() => undefined)
+      .then(exchange);
+  }, [authenticated, me, embeddedWallet?.address, createSolanaWallet, exchange]);
+
+  const walletDelegated = Boolean(embeddedWallet?.delegated);
+  const mfaEnabled = (user?.mfaMethods?.length ?? 0) > 0;
+  const walletAddress = embeddedWallet?.address ?? me?.walletAddress;
+  const onboardingComplete = Boolean(me?.hasX && me.email && walletAddress && walletDelegated);
 
   const value: AuthSession = {
     ready: ready && !exchanging,
-    authenticated: Boolean(authenticated && me?.handle),
+    privyAuthenticated: authenticated,
+    authenticated: Boolean(authenticated && me?.hasX),
     userId: me?.id,
     isReviewer: me?.isReviewer ?? false,
     handle: me?.handle,
     name: me?.name ?? user?.twitter?.name ?? undefined,
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,
-    loggingIn: loading || exchanging,
+    email: me?.email,
+    walletAddress,
+    walletDelegated,
+    mfaEnabled,
+    hasX: me?.hasX ?? false,
+    onboardingComplete,
+    loggingIn: exchanging,
     error,
     login: () => {
       setError(undefined);
-      void initOAuth({ provider: 'twitter' });
+      if (authenticated) {
+        exchangedFor.current = null;
+        void exchange();
+      } else {
+        privyLogin();
+      }
     },
+    linkEmail,
+    linkX: linkTwitter,
+    delegateWallet: async () => {
+      setError(undefined);
+      try {
+        if (!embeddedWallet?.address) throw new Error('Privy wallet is not ready');
+        if (!signerId) throw new Error('NEXT_PUBLIC_PRIVY_SIGNER_ID is not configured');
+        await addSigners({ address: embeddedWallet.address, signers: [{ signerId }] });
+        await refreshUser();
+        await exchange();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not enable gasless transactions.');
+      }
+    },
+    setupMfa: showMfaEnrollmentModal,
     logout: async () => {
       exchangedFor.current = null;
+      walletProvisionedFor.current = null;
       setMe(null);
       try {
         await logoutApiSession();
@@ -136,5 +226,57 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     },
   };
 
-  return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>;
+  return (
+    <AuthSessionContext.Provider value={value}>
+      {children}
+      {authenticated && me && !onboardingComplete && <ProfileCompletionModal auth={value} />}
+    </AuthSessionContext.Provider>
+  );
+}
+
+function ProfileCompletionModal({ auth }: { auth: AuthSession }) {
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/45 p-4" role="dialog" aria-modal="true" aria-labelledby="complete-profile-title">
+      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#4166fb]">One last step</p>
+        <h2 id="complete-profile-title" className="mt-2 text-2xl font-semibold text-[#020817]">Complete your profile</h2>
+        <p className="mt-2 text-sm leading-6 text-[#526079]">Verify your contact details and prepare your embedded Solana wallet for Adspaces transactions.</p>
+        <div className="mt-6 space-y-3">
+          <ProfileRequirement complete={auth.hasX} label="X account" actionLabel="Connect X" onAction={auth.linkX} />
+          <ProfileRequirement complete={Boolean(auth.email)} label="Verified email" actionLabel="Add email" onAction={auth.linkEmail} />
+          <ProfileRequirement complete={Boolean(auth.walletAddress)} label="Privy Solana wallet" pendingLabel="Creating wallet…" />
+          <ProfileRequirement complete={auth.walletDelegated} label="Gasless transactions" actionLabel="Enable" onAction={() => void auth.delegateWallet()} />
+        </div>
+        {auth.error && <p className="mt-4 text-sm text-red-600">{auth.error}</p>}
+        <button type="button" onClick={() => void auth.logout()} className="mt-5 text-sm text-[#526079] underline underline-offset-4">Log out</button>
+      </div>
+    </div>
+  );
+}
+
+function ProfileRequirement({
+  complete,
+  label,
+  actionLabel,
+  pendingLabel,
+  onAction,
+}: {
+  complete: boolean;
+  label: string;
+  actionLabel?: string;
+  pendingLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-[#e7e5e0] p-4">
+      <span className="text-sm font-medium text-[#020817]">{label}</span>
+      {complete ? (
+        <span className="text-sm font-semibold text-emerald-700">Ready</span>
+      ) : onAction && actionLabel ? (
+        <button type="button" onClick={onAction} className="rounded-lg bg-[#020817] px-3 py-2 text-sm font-medium text-white">{actionLabel}</button>
+      ) : (
+        <span className="text-sm text-[#526079]">{pendingLabel}</span>
+      )}
+    </div>
+  );
 }

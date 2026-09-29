@@ -32,7 +32,12 @@ async function login(agent: ReturnType<typeof request.agent>, token: keyof typeo
   return response.body.csrfToken as string;
 }
 
-const reviewApp = () => createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token], reviewers: ["@reviewer"] });
+const reviewApp = (published?: string[]) => createApp({
+  auth: new FakeAuthRepository(),
+  verifyToken: async (token) => identities[token],
+  reviewers: ["@reviewer"],
+  ...(published ? { listingPublisher: { publish: async (listing) => { published.push(listing.slug); } } } : {}),
+});
 
 test("sessions disclose reviewer status for reviewer-only UI", async () => {
   const app = reviewApp();
@@ -56,7 +61,8 @@ test("review queue is reviewer-only", async () => {
 });
 
 test("approve stages, accept-terms goes live, then buyers can claim", async () => {
-  const app = reviewApp();
+  const published: string[] = [];
+  const app = reviewApp(published);
   const owner = request.agent(app);
   const reviewer = request.agent(app);
   const buyer = request.agent(app);
@@ -72,6 +78,7 @@ test("approve stages, accept-terms goes live, then buyers can claim", async () =
 
   const staged = await reviewer.post(`/api/listings/${created.body.slug}/approve`).set("X-CSRF-Token", reviewerCsrf).send({}).expect(200);
   assert.equal(staged.body.status, "approved");
+  assert.deepEqual(published, []);
 
   // Approved is still hidden and unbuyable — terms come first.
   const summaries = await request(app).get("/api/listings").expect(200);
@@ -82,6 +89,7 @@ test("approve stages, accept-terms goes live, then buyers can claim", async () =
   await owner.post(`/api/listings/${created.body.slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v0" }).expect(400);
   await buyer.post(`/api/listings/${created.body.slug}/accept-terms`).set("X-CSRF-Token", buyerCsrf).send({ version: "v1" }).expect(403);
   const live = await owner.post(`/api/listings/${created.body.slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v1" }).expect(200);
+  assert.deepEqual(published, [created.body.slug]);
   assert.equal(live.body.status, "active");
   assert.equal(live.body.termsVersion, "v1");
   assert.equal(typeof live.body.termsAcceptedAt, "string");
@@ -94,6 +102,7 @@ test("approve stages, accept-terms goes live, then buyers can claim", async () =
 
   // Accepting a live listing is a no-op; approving twice is a 409.
   await owner.post(`/api/listings/${created.body.slug}/accept-terms`).set("X-CSRF-Token", ownerCsrf).send({ version: "v1" }).expect(200);
+  assert.deepEqual(published, [created.body.slug]);
   await reviewer.post(`/api/listings/${created.body.slug}/approve`).set("X-CSRF-Token", reviewerCsrf).send({}).expect(409);
   await reviewer.post("/api/listings/missing/approve").set("X-CSRF-Token", reviewerCsrf).send({}).expect(404);
 

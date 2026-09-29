@@ -612,7 +612,7 @@ export function formatMoney(n: number, currency?: string): string {
 export function minBidFor(listing: Listing, spot: Spot): number {
   if (spot.bid == null) return spot.price;
   if (listing.doubleUp) return spot.bid * 2;
-  return spot.bid + (listing.minIncrement ?? 10);
+  return spot.bid + (listing.minIncrement ?? 1);
 }
 
 const SELLER_COLORS = [

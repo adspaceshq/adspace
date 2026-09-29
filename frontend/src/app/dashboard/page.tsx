@@ -1,15 +1,17 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
+import { useMfa } from '@privy-io/react-auth'
 import Link from 'next/link'
-import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3 } from 'lucide-react'
+import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
-import { acceptListingTerms, approveApiSpot, closeApiListing, deleteApiListing, fetchSellerDashboard, fetchTerms, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
+import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, executeWalletWithdrawal, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto, isEnded } from '@/lib/listings'
-import type { SellerDashboard, TermsDoc } from '@/lib/types'
+import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
+import { embeddedUsdcBalance } from '@/lib/adspaces-program'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(amount)
 const relative = (iso: string) => {
@@ -28,6 +30,16 @@ export default function DashboardPage() {
   const [terms, setTerms] = useState<TermsDoc | null>(null)
   const [termsFor, setTermsFor] = useState<string | null>(null)
   const [termsError, setTermsError] = useState<string>()
+  const { clear: clearMfa, promptMfa } = useMfa()
+  const [withdrawOpen, setWithdrawOpen] = useState(false)
+  const [withdrawAddress, setWithdrawAddress] = useState('')
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawError, setWithdrawError] = useState<string>()
+  const [withdrawSignature, setWithdrawSignature] = useState<string>()
+  const [withdrawing, setWithdrawing] = useState(false)
+  const [walletUsdc, setWalletUsdc] = useState<number>()
+  const [withdrawals, setWithdrawals] = useState<WalletWithdrawal[]>([])
+  const termsListing = termsFor ? data?.listings.find((listing) => listing.slug === termsFor) : undefined
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -42,6 +54,18 @@ export default function DashboardPage() {
       (e) => { if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load your dashboard.') },
     )
     return () => { cancelled = true }
+  }, [auth.authenticated])
+  useEffect(() => {
+    if (!auth.walletAddress) return
+    let cancelled = false
+    void embeddedUsdcBalance(auth.walletAddress).then((balance) => {
+      if (!cancelled) setWalletUsdc(balance)
+    })
+    return () => { cancelled = true }
+  }, [auth.walletAddress])
+  useEffect(() => {
+    if (!auth.authenticated) return
+    void fetchWalletWithdrawals().then(setWithdrawals).catch(() => setWithdrawals([]))
   }, [auth.authenticated])
 
   const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill') => {
@@ -88,6 +112,47 @@ export default function DashboardPage() {
     finally { setBusy(undefined) }
   }
 
+  const withdraw = async () => {
+    if (!auth.walletDelegated) {
+      setWithdrawError('Enable gasless transactions from your profile before withdrawing.')
+      return
+    }
+    setWithdrawing(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
+    let intent: WalletWithdrawal | undefined
+    let submittedSignature: string | undefined
+    try {
+      if (!auth.mfaEnabled) {
+        auth.setupMfa()
+        throw new Error('Set up two-factor authentication before withdrawing')
+      }
+      await clearMfa()
+      await promptMfa()
+      intent = await createWalletWithdrawal(withdrawAddress.trim(), Number(withdrawAmount))
+      setWithdrawals((current) => [intent!, ...current])
+      const confirmed = await executeWalletWithdrawal(intent.id)
+      submittedSignature = confirmed.signature
+      setWithdrawals((current) => current.map((item) => item.id === confirmed.id ? confirmed : item))
+      setWithdrawSignature(confirmed.signature)
+      setWithdrawAmount('')
+      if (auth.walletAddress) setWalletUsdc(await embeddedUsdcBalance(auth.walletAddress))
+    } catch (e) {
+      if (intent && !submittedSignature) {
+        void failWalletWithdrawal(intent.id).then((failed) => {
+          setWithdrawals((current) => current.map((item) => item.id === failed.id ? failed : item))
+        }).catch(() => undefined)
+      }
+      if (submittedSignature) {
+        setWithdrawSignature(submittedSignature)
+        void fetchWalletWithdrawals().then(setWithdrawals).catch(() => undefined)
+        setWithdrawError('Transfer submitted. Confirmation is still pending and can be retried below.')
+      } else {
+        setWithdrawError(e instanceof Error ? e.message : 'Withdrawal failed.')
+      }
+    } finally {
+      setWithdrawing(false)
+    }
+  }
+
   return <>
     <Header />
     <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
@@ -111,6 +176,31 @@ export default function DashboardPage() {
               <Metric icon={<Clock3/>} label="Pending approval" value={String(data.summary.pendingApproval)}/>
               <Metric icon={<CircleDollarSign/>} label="Revenue" value={money(data.summary.revenue, data.summary.currency)}/>
               <Metric icon={<CircleDollarSign/>} label="Paid out" value={money(data.summary.paidOut ?? 0, data.summary.currency)}/>
+            </section>
+
+            <section aria-labelledby="withdrawals-title" className="mb-10 border border-[#e7e5e0] bg-white p-6">
+              <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
+                <div className="flex min-w-0 items-start gap-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#eef2ff] text-[#4166fb]"><Wallet size={20}/></span>
+                  <div className="min-w-0">
+                    <h2 id="withdrawals-title" className="text-[24px]">Withdrawals</h2>
+                    <p className="mt-1 text-sm text-[#64748b]">Released USDC is settled directly to your Privy embedded wallet.</p>
+                    <p className="mt-3 break-all font-mono text-xs text-[#020817]">{auth.walletAddress}</p>
+                  </div>
+                </div>
+                <div className="grid shrink-0 grid-cols-3 gap-8 md:text-right">
+                  <div><p className="text-xs text-[#64748b]">Wallet USDC</p><p className="mt-1 font-mono text-lg">{walletUsdc === undefined ? 'Loading' : `$${walletUsdc.toFixed(2)}`}</p></div>
+                  <div><p className="text-xs text-[#64748b]">Pending settlement</p><p className="mt-1 font-mono text-lg">{money(Math.max(0, data.summary.revenue - (data.summary.paidOut ?? 0)), data.summary.currency)}</p></div>
+                  <div><p className="text-xs text-[#64748b]">Withdrawn</p><p className="mt-1 font-mono text-lg">{money(data.summary.paidOut ?? 0, data.summary.currency)}</p></div>
+                </div>
+              </div>
+              <div className="mt-5 flex flex-col justify-between gap-3 border-t border-[#e7e5e0] pt-4 sm:flex-row sm:items-center">
+                <p className="text-xs text-[#64748b]">Seller settlements arrive here automatically. You can transfer wallet USDC to another Solana address.</p>
+                <button type="button" onClick={() => {
+                  if (!auth.mfaEnabled) { void auth.setupMfa(); return }
+                  setWithdrawOpen(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
+                }} className="shrink-0 rounded-md bg-[#020817] px-5 py-2.5 text-sm font-semibold text-white">Withdraw USDC</button>
+              </div>
             </section>
 
             <section className="mb-10">
@@ -148,11 +238,41 @@ export default function DashboardPage() {
                 <div className="max-h-[85vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]" onClick={(e) => e.stopPropagation()}>
                   <h2 id="terms-title" className="mb-1 text-[22px]">Seller terms{terms && ` (${terms.version})`}</h2>
                   <p className="mb-4 text-[14px] text-[#64748b]">Your space was approved. Accept the terms to put it live.</p>
+                  {termsListing && (
+                    <div className="mb-4 space-y-2 rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3 text-[14px]">
+                      <div className="flex justify-between"><span className="text-[#64748b]">Pricing model</span><span className="font-semibold">{termsListing.mode === 'fixed' ? 'Fixed price' : 'Auction'}</span></div>
+                      <div className="flex justify-between"><span className="text-[#64748b]">Platform fee</span><span className="font-semibold">{((termsListing.platformFeeBps ?? 0)/100).toFixed(2)}%</span></div>
+                      {termsListing.mode === 'auction' && <div className="flex justify-between"><span className="text-[#64748b]">Uplift / maximum fee</span><span className="font-semibold">{((termsListing.upliftFeeBps ?? 0)/100).toFixed(2)}% / {((termsListing.maxFeeBps ?? 0)/100).toFixed(2)}%</span></div>}
+                      <div className="flex justify-between"><span className="text-[#64748b]">Settlement window</span><span className="font-semibold">{termsListing.settlementWindowHours ?? 0} hours</span></div>
+                      <div className="flex justify-between"><span className="text-[#64748b]">Delivery deadline</span><span className="font-semibold">{termsListing.deliveryDeadline ? new Date(termsListing.deliveryDeadline).toLocaleString() : 'Not set'}</span></div>
+                    </div>
+                  )}
                   <pre className="mb-6 whitespace-pre-wrap rounded-xl bg-[#f6f6f4] p-4 font-sans text-[13px] leading-relaxed text-[#020817]/80">{terms ? terms.text : 'Loading terms…'}</pre>
                   {termsError && <p role="alert" className="mb-4 text-sm text-[#dc2626]">{termsError}</p>}
                   <div className="flex items-center justify-between gap-3">
                     <button type="button" onClick={() => setTermsFor(null)} disabled={busy === termsFor} className="text-[14px] font-medium text-[#020817] transition hover:text-[#64748b] disabled:opacity-60">Not yet</button>
                     <button type="button" onClick={() => void accept()} disabled={!terms || busy === termsFor} className="inline-flex items-center whitespace-nowrap rounded-full bg-[#4166fb] px-6 py-[10px] text-[14px] font-medium text-white shadow-sm transition hover:bg-[#3558e8] disabled:opacity-60">{busy === termsFor ? 'Accepting…' : 'Accept & go live'}</button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {withdrawOpen && (
+              <div role="dialog" aria-modal="true" aria-labelledby="withdraw-title" className="fixed inset-0 z-50 flex items-center justify-center bg-[#020817]/50 p-6">
+                <div className="w-full max-w-[480px] rounded-2xl bg-white p-7 shadow-[0_24px_64px_rgba(2,8,23,0.28)]">
+                  <h2 id="withdraw-title" className="text-[24px]">Withdraw USDC</h2>
+                  <p className="mt-1 text-sm text-[#64748b]">Transfer devnet USDC from your Privy embedded wallet.</p>
+                  <div className="mt-4 flex items-center justify-between rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3">
+                    <div><p className="text-sm font-medium">Two-factor authentication</p><p className="mt-0.5 text-xs text-[#64748b]">Required for every withdrawal</p></div>
+                    {auth.mfaEnabled ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={() => void auth.setupMfa()} className="rounded-md bg-[#020817] px-3 py-2 text-xs font-semibold text-white">Set up</button>}
+                  </div>
+                  <label className="mt-5 block text-sm font-medium">Destination Solana address<input value={withdrawAddress} onChange={(event) => setWithdrawAddress(event.target.value)} spellCheck={false} className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
+                  <label className="mt-4 block text-sm font-medium">Amount <span className="font-normal text-[#64748b]">{walletUsdc !== undefined && `(available $${walletUsdc.toFixed(2)})`}</span><input value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} inputMode="decimal" placeholder="0.00" className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
+                  {withdrawError && <p role="alert" className="mt-4 text-sm text-[#dc2626]">{withdrawError}</p>}
+                  {withdrawSignature && <a href={`https://explorer.solana.com/tx/${withdrawSignature}?cluster=${encodeURIComponent(process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet')}`} target="_blank" rel="noopener" className="mt-4 block break-all text-sm font-medium text-[#4166fb] underline">Withdrawal confirmed: {withdrawSignature}</a>}
+                  {withdrawals.length > 0 && <div className="mt-5 border-t border-[#e7e5e0] pt-4"><p className="mb-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">Recent withdrawals</p><div className="max-h-36 space-y-2 overflow-y-auto">{withdrawals.slice(0, 5).map((item) => <div key={item.id} className="flex items-center justify-between gap-3 text-xs"><span className="truncate font-mono">{item.destination}</span><span className="shrink-0 font-mono">${item.amount.toFixed(2)}</span>{item.status === 'pending' && item.signature ? <button type="button" onClick={() => void confirmWalletWithdrawal(item.id, item.signature!).then((confirmed) => setWithdrawals((current) => current.map((entry) => entry.id === confirmed.id ? confirmed : entry))).catch((error) => setWithdrawError(error instanceof Error ? error.message : 'Still pending'))} className="shrink-0 font-semibold text-[#4166fb]">Retry</button> : <span className={item.status === 'confirmed' ? 'shrink-0 text-emerald-700' : item.status === 'failed' ? 'shrink-0 text-[#dc2626]' : 'shrink-0 text-amber-700'}>{item.status}</span>}</div>)}</div></div>}
+                  <div className="mt-6 flex justify-end gap-3">
+                    <button type="button" onClick={() => setWithdrawOpen(false)} disabled={withdrawing} className="rounded-md border border-[#d8d6d0] px-5 py-2.5 text-sm font-semibold disabled:opacity-50">Close</button>
+                    <button type="button" onClick={() => void withdraw()} disabled={withdrawing || !withdrawAddress.trim() || !withdrawAmount.trim()} className="rounded-md bg-[#4166fb] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{withdrawing ? 'Withdrawing…' : 'Withdraw'}</button>
                   </div>
                 </div>
               </div>

@@ -118,6 +118,11 @@ export interface Listing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   status: "active" | "approved" | "submitted" | "closed";
   /** Why the platform rejected this submission (set on reject, cleared on approve/resubmit). */
   reviewNote?: string;
@@ -153,7 +158,22 @@ export interface CreateListingRequest {
   currency?: string;
   deadline?: string;
   artworkClose?: string;
+  minIncrement?: number;
+  doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   spots?: CreateSpotRequest[];
+}
+
+export interface ReviewPolicy {
+  platformFeeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  settlementWindowHours: number;
+  deliveryDeadline: string;
 }
 
 export interface CreateSpotRequest {
@@ -179,9 +199,12 @@ export interface SessionUser {
   handle: string;
   name?: string;
   avatar?: string;
+  email?: string;
+  walletAddress?: string;
+  hasX: boolean;
 }
 
-export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId: string }
+export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId?: string }
 export interface SessionResponse extends SessionUser { csrfToken: string; expiresAt: string; isReviewer: boolean }
 
 /** Public seller profile at 3000/{username}. payoutWallet is only ever returned to the owner. */
@@ -215,6 +238,11 @@ export interface SellerDashboardListing {
   open: number;
   total: number;
   revenue: number;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
 }
 
 export interface SellerAttentionItem {

@@ -48,7 +48,8 @@ export default function ListPage() {
   const [deadline, setDeadline] = useState(() => toDateInput(new Date(Date.now() + 14 * 86_400_000)))
   // Optional artwork due date: buyers must submit final art by then (empty = none).
   const [artworkClose, setArtworkClose] = useState('')
-  const priceType = 'auction' as const
+  const [priceType, setPriceType] = useState<'fixed' | 'auction' | null>(null)
+  const [minIncrement, setMinIncrement] = useState('1')
   const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
   // Id of the spot whose price panel is open — set by dropping or tapping a sticker.
   const [editingSpot, setEditingSpot] = useState<string | null>(null)
@@ -155,7 +156,7 @@ export default function ListPage() {
         seller: { name: '', handle: '', color: '#4166fb' },
         deadline: '',
         endsAt: '',
-        priceType,
+        priceType: priceType ?? 'fixed',
         spots: pspots,
         mockup: {
           views: [
@@ -191,7 +192,7 @@ export default function ListPage() {
       seller: { name: '', handle: '', color: '#4166fb' },
       deadline: '',
       endsAt: '',
-      priceType,
+      priceType: priceType ?? 'fixed',
       spots: pspots,
       // Lid first (the main sticker surface), then the deck. Each view draws only its own spots.
       mockup: { views: [gearPhotoView(lidIds, lidPlaced), gearInsideView(deckIds, deckPlaced)] },
@@ -293,8 +294,12 @@ export default function ListPage() {
       )
       return
     }
+    if (!priceType) {
+      setError('Choose fixed price or auction.')
+      return
+    }
     if (!deadline) {
-      setError('Pick a deadline for the auction.')
+      setError('Pick a listing deadline.')
       return
     }
     const prices = spots.map((s) => Number(s.price))
@@ -310,6 +315,15 @@ export default function ListPage() {
   // point of no return. The listing lands as submitted: hidden until review.
   const submitListing = async () => {
     if (publishing) return
+    if (!priceType) {
+      setError('Choose fixed price or auction.')
+      setReviewing(false)
+      return
+    }
+    if (priceType === 'auction' && !(Number(minIncrement) > 0)) {
+      setError('Enter an auction bid increment above zero.')
+      return
+    }
     setPublishing(true)
     const seller = PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()
     const id = `user-${Date.now()}`
@@ -331,6 +345,7 @@ export default function ListPage() {
       deadline: prettyDeadline(deadline),
       endsAt: new Date(`${deadline}T23:59:00`).toISOString(),
       priceType,
+      minIncrement: priceType === 'auction' ? Number(minIncrement) : undefined,
       spots: spots.map((s, i) => ({
         id: `${id}-s${i + 1}`,
         label: s.label.trim() || `Spot ${i + 1}`,
@@ -378,12 +393,12 @@ export default function ListPage() {
         <div className="mb-6 text-center">
           <p className="mb-3 flex items-center justify-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-[#64748b]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
-            {isTee ? 'T-shirt · auction · mock — no money moves' : 'Mac-only · auction · mock — no money moves'}
+            {`${isTee ? 'T-shirt' : 'Mac-only'} · ${priceType === 'fixed' ? 'fixed price' : priceType === 'auction' ? 'auction' : 'choose pricing'} · mock — no money moves`}
           </p>
           <h1 className="mb-2" style={{ fontSize: '40px' }}>{isTee ? 'List your T-shirt.' : 'List your Mac lid.'}</h1>
           <p className="text-[16px] text-[#64748b]">
             {spots.length} sticker{spots.length === 1 ? '' : 's'}
-            {floor > 0 ? ` · from ${formatMoney(floor, currency)}` : ' · set a starting bid below'}
+            {floor > 0 ? ` · ${priceType === 'auction' ? 'bids from' : 'prices from'} ${formatMoney(floor, currency)}` : ` · set ${priceType === 'auction' ? 'a starting bid' : 'a price'} below`}
             {' '}· ends {prettyDeadline(deadline)}
           </p>
         </div>
@@ -395,7 +410,7 @@ export default function ListPage() {
               <span className="text-[13px] font-semibold" id="list-surface-label">Surface</span>
               <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-labelledby="list-surface-label">
                 {([
-                  { key: 'gear', title: 'MacBook lid', sub: 'stickers · auction' },
+                  { key: 'gear', title: 'MacBook lid', sub: 'sticker placements' },
                   { key: 'apparel', title: 'T-shirt', sub: 'print zones' },
                 ] as const).map((opt) => {
                   const selected = surface === opt.key
@@ -425,6 +440,37 @@ export default function ListPage() {
                   )
                 })}
               </div>
+            </div>
+            <div className="mb-5 flex flex-col gap-[6px]">
+              <span className="text-[13px] font-semibold" id="list-pricing-label">Pricing model</span>
+              <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-labelledby="list-pricing-label">
+                {([
+                  { key: 'fixed', title: 'Fixed price', sub: 'First buyer pays the listed price' },
+                  { key: 'auction', title: 'Auction', sub: 'Buyers can outbid until the deadline' },
+                ] as const).map((opt) => {
+                  const selected = priceType === opt.key
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      onClick={() => setPriceType(opt.key)}
+                      className={`rounded-xl border px-4 py-3 text-left transition ${selected ? 'border-[#4166fb] bg-[#e9edfe]/50 shadow-[0_0_0_3px_#e9edfe]' : 'border-[#e7e5e0] bg-white hover:border-[#c3cdfd]'}`}
+                    >
+                      <span className="block text-[15px] font-semibold text-[#020817]">{opt.title}</span>
+                      <span className="block text-[13px] text-[#64748b]">{opt.sub}</span>
+                    </button>
+                  )
+                })}
+              </div>
+              {priceType === 'auction' && (
+                <label className="mt-3 flex flex-col gap-[6px] text-[13px] font-semibold" htmlFor="list-min-increment">
+                  Minimum bid increment
+                  <input id="list-min-increment" className={field} type="number" inputMode="decimal" min="0.01" step="0.01" value={minIncrement} onChange={(event) => setMinIncrement(event.target.value)} required />
+                  <span className="font-normal text-[#64748b]">Each new bid must be at least this much higher.</span>
+                </label>
+              )}
             </div>
             {/* Seller identity comes from the X session — never a typed name — so there is
                 no "Your name" field when Privy login is on. Demo mode (no Privy) keeps it. */}
@@ -568,7 +614,7 @@ export default function ListPage() {
                            {spots[i]?.view === INSIDE_VIEW_ID ? 'INSIDE' : spots[i]?.view === TEE_BACK_VIEW_ID ? 'BACK' : spots[i]?.view === TEE_LEFT_VIEW_ID ? 'LEFT' : spots[i]?.view === TEE_RIGHT_VIEW_ID ? 'RIGHT' : isTee ? 'FRONT' : 'LID'}
                         </span>
                         <span className={`shrink-0 whitespace-nowrap font-mono text-[13px] ${p.price > 0 ? 'text-[#020817]' : 'text-[#64748b]'}`}>
-                          {p.price > 0 ? `from ${formatMoney(p.price, preview.currency)}` : 'No price yet'}
+                          {p.price > 0 ? `${priceType === 'auction' ? 'Bid from ' : ''}${formatMoney(p.price, preview.currency)}` : 'No price yet'}
                         </span>
                       </button>
                     </li>
@@ -688,8 +734,18 @@ export default function ListPage() {
             <dl className="mb-4 space-y-3 text-[14px]">
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="shrink-0 text-[#64748b]">Surface</dt>
-                <dd className="truncate font-medium">{isTee ? 'T-shirt · auction' : 'MacBook lid · auction'}</dd>
+                <dd className="truncate font-medium">{isTee ? 'T-shirt' : 'MacBook lid'}</dd>
               </div>
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="shrink-0 text-[#64748b]">Pricing</dt>
+                <dd className="truncate font-medium">{priceType === 'fixed' ? 'Fixed price' : 'Auction'}</dd>
+              </div>
+              {priceType === 'auction' && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="shrink-0 text-[#64748b]">Minimum bid increment</dt>
+                  <dd className="truncate font-medium">{formatMoney(Number(minIncrement), preview.currency)}</dd>
+                </div>
+              )}
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="shrink-0 text-[#64748b]">Seller</dt>
                 <dd className="truncate font-medium">{PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()}</dd>
@@ -717,12 +773,12 @@ export default function ListPage() {
               {preview.spots.map((p) => (
                 <li key={p.id} className="flex items-center gap-3 text-[14px]">
                   <span className="min-w-0 flex-1 truncate font-semibold">{p.label}</span>
-                  <span className="whitespace-nowrap font-mono text-[13px] text-[#64748b]">from {formatMoney(p.price, preview.currency)}</span>
+                  <span className="whitespace-nowrap font-mono text-[13px] text-[#64748b]">{priceType === 'auction' ? 'starting bid ' : ''}{formatMoney(p.price, preview.currency)}</span>
                 </li>
               ))}
             </ul>
             <div className="mb-6 flex items-center justify-between border-t border-[#e7e5e0] pt-3 text-[14px]">
-              <span className="font-semibold">Total asking</span>
+              <span className="font-semibold">{priceType === 'auction' ? 'Total starting bids' : 'Total asking'}</span>
               <span className="whitespace-nowrap font-mono text-[13px]">{formatMoney(total, preview.currency)}</span>
             </div>
             <div className="flex items-center justify-between gap-3">

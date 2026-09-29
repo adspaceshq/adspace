@@ -1,6 +1,6 @@
 import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, ReviewPolicy, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
@@ -155,6 +155,8 @@ export class Store {
     currency?: string;
     deadline?: string;
     artworkClose?: string;
+    minIncrement?: number;
+    doubleUp?: boolean;
     spots?: Array<{ label?: string; location?: string; size?: string; price?: number; view?: string; x?: number; y?: number; w?: number }>;
   }): Listing {
     const title = req.title.trim();
@@ -163,6 +165,10 @@ export class Store {
       throw Object.assign(new Error("title and seller are required"), { status: 400 });
     }
     const mode: Listing["mode"] = req.mode === "auction" ? "auction" : "fixed";
+    const minIncrement = mode === "auction" ? Number(req.minIncrement ?? 1) : undefined;
+    if (mode === "auction" && !(minIncrement! > 0)) {
+      throw Object.assign(new Error("auction minimum bid increment must be above zero"), { status: 400 });
+    }
     const currency = req.currency?.trim() || "USD";
     let deadline = daysFromNow(14);
     if (req.deadline !== undefined && req.deadline !== "") {
@@ -215,6 +221,8 @@ export class Store {
       sellerHandle: req.sellerHandle ?? seller,
       sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
+      minIncrement,
+      doubleUp: mode === "auction" && req.doubleUp === true,
       image, mode, fabric,
       // Step 2: submissions land as submitted — platform review activates them.
       currency, deadline, artworkClose: parseArtworkClose(req.artworkClose), status: "submitted", spots,
@@ -283,7 +291,7 @@ export class Store {
     const sellerWallet = listing.sellerUserId ? this.sellerWallets.get(listing.sellerUserId) : undefined;
     if (!sellerWallet) throw Object.assign(new Error("seller payout wallet is not set"), { status: 409 });
     const amount = spot.currentBid ?? spot.price;
-    const fee = Math.round(amount * (platformFeeBps() / 10_000) * 100) / 100;
+    const fee = Math.round(amount * ((listing.platformFeeBps ?? platformFeeBps()) / 10_000) * 100) / 100;
     const note = await resolvePayoutReference({
       reference,
       destination: sellerWallet,
@@ -399,12 +407,13 @@ export class Store {
     return this.order.map((slug) => this.listings.get(slug)!).filter((l) => l.status === "submitted");
   }
 
-  approveReview(slug: string): Listing {
+  approveReview(slug: string, policy: ReviewPolicy): Listing {
     const listing = this.listings.get(slug);
     if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
     if (listing.status !== "submitted") throw Object.assign(new Error("listing is not awaiting review"), { status: 409 });
     listing.status = "approved";
     listing.reviewNote = undefined;
+    Object.assign(listing, policy);
     return listing;
   }
 
@@ -489,7 +498,7 @@ export class Store {
       ? spot.price
       : listing.doubleUp
         ? (spot.currentBid ?? 0) * 2
-        : (spot.currentBid ?? 0) + (listing.minIncrement ?? 0);
+        : (spot.currentBid ?? 0) + (listing.minIncrement ?? 1);
     if (amount < required) {
       throw Object.assign(new Error(`bid must be at least ${required} ${listing.currency}`), { status: 409 });
     }

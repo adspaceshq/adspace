@@ -6,8 +6,10 @@ import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken 
 import { csrfMatches, isReviewer, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
 import type { MarketplaceRepository } from "./market.js";
 import { TERMS_TEXT, TERMS_VERSION } from "./types.js";
-import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
+import type { AuthenticatedIdentity, CreateListingRequest, Listing, PurchaseAssets, ReviewPolicy, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
+import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdrawals.js";
+import type { WalletWithdrawal } from "./withdrawals.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -22,11 +24,19 @@ export interface AppDependencies {
   frontendUrl?: string;
   trustProxy?: number;
   chain?: { cluster: SolanaCluster; programId: string };
+  withdrawals?: WithdrawalRepository;
+  withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> };
+  listingPublisher?: { publish(listing: Listing, seller: SessionUser): Promise<void> };
 }
 
 const sendErr = (res: Response, e: unknown) => {
-  const status = (e as { status?: number }).status ?? 500;
-  res.status(status).json({ error: status === 500 ? "internal error" : e instanceof Error ? e.message : "request failed" });
+  const candidate = e as { status?: number; statusCode?: number };
+  const status = candidate.status ?? candidate.statusCode ?? 500;
+  const message = e instanceof Error ? e.message : "request failed";
+  if (status >= 500) console.error(e);
+  res.status(status).json({
+    error: status === 500 && process.env.NODE_ENV === "production" ? "internal error" : message,
+  });
 };
 
 /** Buyer brand assets ride the claim/bid body; the repo validates them. */
@@ -48,6 +58,9 @@ export function createApp({
   frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000",
   trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
   chain = { cluster: "devnet", programId: adspacesProgramId },
+  withdrawals = new MemoryWithdrawalRepository(),
+  withdrawalSponsor,
+  listingPublisher,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -56,7 +69,7 @@ export function createApp({
     close: async (slug,user) => store.close(slug,user), reopen: async (slug,user) => store.reopen(slug,user), remove: async (slug,user) => store.remove(slug,user),
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
-    reviewQueue: async () => store.reviewQueue(), approveReview: async slug => store.approveReview(slug),
+    reviewQueue: async () => store.reviewQueue(), approveReview: async (slug, policy) => store.approveReview(slug, policy),
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
     acceptTerms: async (slug,user,version) => store.acceptTerms(slug,user,version),
     submitArtwork: async (id,user,assets) => store.submitArtwork(id,user,assets),
@@ -90,12 +103,25 @@ export function createApp({
       const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
       if (token) {
         const identity = await verifyToken(token);
-        req.user = { id: identity.did, did: identity.did, handle: identity.handle, name: identity.name, avatar: identity.avatar };
+        req.user = {
+          id: identity.did,
+          did: identity.did,
+          handle: identity.handle,
+          name: identity.name,
+          avatar: identity.avatar,
+          email: identity.email,
+          walletAddress: identity.walletAddress,
+          hasX: identity.hasX,
+        };
       }
       next();
     } catch { next(); }
   };
-  const requireUser = (req: Request, res: Response, next: NextFunction) => req.user ? next() : void res.status(401).json({ error: "log in with X" });
+  const requireUser = (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) return void res.status(401).json({ error: "log in required" });
+    if (req.user.hasX === false) return void res.status(403).json({ error: "connect X to complete your Adspaces account" });
+    next();
+  };
   const requireCsrf = (req: Request, res: Response, next: NextFunction) => {
     // No session cookie (e.g. expired) but a valid Privy Bearer: the client
     // must exchange for a fresh session — a CSRF retry can never succeed.
@@ -112,7 +138,7 @@ export function createApp({
     status: "ok",
     auth: privyConfigured ? "privy" : "unconfigured",
     sessions: "postgres",
-    chain: { cluster: chain.cluster, programId: chain.programId, integration: "pending-idl" },
+    chain: { cluster: chain.cluster, programId: chain.programId, integration: listingPublisher ? "accept-terms" : "disabled" },
   }));
   app.post("/api/auth/session", authLimiter, async (req, res) => {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
@@ -155,11 +181,47 @@ export function createApp({
     };
     try { res.json(await profiles.updateProfile(req.user!.id, patch)); } catch (e) { sendErr(res, e); }
   });
+  app.get("/api/wallet/withdrawals", attachUser, requireUser, async (req, res) => {
+    try { res.json(await withdrawals.list(req.user!.id)); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/wallet/withdrawals", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const body = (req.body ?? {}) as { destination?: unknown; amount?: unknown };
+    if (!req.user!.walletAddress) return void res.status(409).json({ error: "embedded wallet is not ready" });
+    try {
+      res.status(201).json(await withdrawals.create(
+        req.user!.id,
+        req.user!.walletAddress,
+        typeof body.destination === "string" ? body.destination.trim() : "",
+        Number(body.amount),
+      ));
+    } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/wallet/withdrawals/:id/confirm", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    const signature = (req.body as { signature?: unknown } | null)?.signature;
+    try { res.json(await withdrawals.confirm(req.params.id, req.user!.id, typeof signature === "string" ? signature : "")); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/wallet/withdrawals/:id/execute", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    if (!withdrawalSponsor) return void res.status(503).json({ error: "withdrawal sponsorship is unavailable" });
+    let reserved: WalletWithdrawal | undefined;
+    try {
+      reserved = await withdrawals.reserve(req.params.id, req.user!.id);
+      const signature = await withdrawalSponsor.send(req.user!, reserved);
+      res.json(await withdrawals.confirm(reserved.id, req.user!.id, signature));
+    } catch (e) {
+      if (reserved) await withdrawals.fail(reserved.id, req.user!.id).catch(() => undefined);
+      sendErr(res, e);
+    }
+  });
+  app.post("/api/wallet/withdrawals/:id/fail", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    try { res.json(await withdrawals.fail(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); }
+  });
   app.get("/api/review/queue", attachUser, requireUser, requireReviewer, async (_req, res) => {
     try { res.json(await repo.reviewQueue()); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/listings/:slug/approve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
-    try { res.json(await repo.approveReview(req.params.slug)); } catch (e) { sendErr(res, e); }
+    const body = (req.body ?? {}) as Partial<ReviewPolicy>;
+    const policy: ReviewPolicy = { platformFeeBps:Number(body.platformFeeBps ?? process.env.PLATFORM_FEE_BPS ?? process.env.ADSPACES_FEE_BPS ?? 0), upliftFeeBps:Number(body.upliftFeeBps ?? process.env.ADSPACES_UPLIFT_FEE_BPS ?? 1000), maxFeeBps:Number(body.maxFeeBps ?? process.env.ADSPACES_MAX_FEE_BPS ?? 1000), settlementWindowHours:Number(body.settlementWindowHours ?? 48), deliveryDeadline:String(body.deliveryDeadline ?? new Date(Date.now()+7*86400000).toISOString()) };
+    try { res.json(await repo.approveReview(req.params.slug, policy)); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/listings/:slug/reject", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
     const reason = (req.body as { reason?: unknown } | null)?.reason;
@@ -170,7 +232,16 @@ export function createApp({
   });
   app.post("/api/listings/:slug/accept-terms", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const version = (req.body as { version?: unknown } | null)?.version;
-    try { res.json(await repo.acceptTerms(req.params.slug, req.user!.id, typeof version === "string" ? version : "")); } catch (e) { sendErr(res, e); }
+    try {
+      const selectedVersion = typeof version === "string" ? version : "";
+      const listing = await repo.get(req.params.slug);
+      if (!listing) return void res.status(404).json({ error: "listing not found" });
+      if (listing.sellerUserId !== req.user!.id) return void res.status(403).json({ error: "forbidden" });
+      if (selectedVersion !== TERMS_VERSION) return void res.status(400).json({ error: `terms version ${selectedVersion || "(missing)"} is stale — accept ${TERMS_VERSION}` });
+      if (listing.status !== "active" && listing.status !== "approved") return void res.status(409).json({ error: "listing is not approved yet" });
+      if (listing.status === "approved" && listingPublisher) await listingPublisher.publish(listing, req.user!);
+      res.json(await repo.acceptTerms(req.params.slug, req.user!.id, selectedVersion));
+    } catch (e) { sendErr(res, e); }
   });
   app.get("/api/listings", async (_req, res) => { try { res.json(await repo.summaries()); } catch(e){sendErr(res,e);} });
   app.get("/api/listings/:slug", async (req, res) => { try { const listing = await repo.get(req.params.slug); listing ? res.json(listing) : res.status(404).json({ error: "listing not found" }); } catch(e){sendErr(res,e);} });
