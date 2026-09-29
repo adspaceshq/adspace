@@ -181,7 +181,7 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
   const viewSpotIds = active.grid
     ? active.grid.flat().map((c) => c.spot).filter(Boolean)
     : spots.map((s) => s.id)
-  const claimedOnView = listing.spots.filter((s) => s.claimedBy && viewSpotIds.includes(s.id)).length
+  const claimedOnView = listing.spots.filter((s) => (listing.priceType === 'auction' ? s.bidBy : s.claimedBy) && viewSpotIds.includes(s.id)).length
   // An empty view has no count to report — in the seller's own preview, point at the editor instead.
   // The creator never needs a claimed count (nothing can be claimed before publishing), so it only
   // shows on buyer pages; the seller preview leaves that corner empty.
@@ -189,7 +189,7 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
     ? (onPlaceSpot ? 'CLICK THE PHOTO TO ADD A SPOT' : '')
     : onPlaceSpot
       ? ''
-      : `${claimedOnView}/${viewSpotIds.length} CLAIMED`
+      : `${claimedOnView}/${viewSpotIds.length} ${listing.priceType === 'auction' ? 'WITH BIDS' : 'CLAIMED'}`
 
   return (
     <div className="w-full">
@@ -317,9 +317,9 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                         type="button"
                         onClick={() => {
                           if (editing) return
-                          if (taken) return
-                          if (listing.priceType === 'auction') onBid(spot)
-                          else onClaim(spot)
+                          if (listing.priceType === 'auction') {
+                            if (!spot.sold) onBid(spot)
+                          } else if (!taken) onClaim(spot)
                         }}
                         onPointerDown={editing ? (e) => {
                           const p = pointFromPointer(e)
@@ -372,13 +372,13 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                                 : `${spot.label}, ${formatMoney(amount, listing.currency)}`
                         }
                         className={`relative flex aspect-square w-full flex-col items-center justify-center gap-[3px] rounded-xl px-1 py-2 font-mono leading-normal transition ${
-                          taken
+                          taken && (listing.priceType !== 'auction' || spot.sold)
                             ? 'text-white shadow-[0_6px_18px_rgba(0,0,0,0.28)]'
                             : 'border-[1.5px] border-dashed border-[#94a3b8] text-[#020817] hover:z-[3] hover:border-[#4166fb] hover:shadow-[0_8px_24px_rgba(65,102,251,0.28)]'
                         } ${taken && spot.logoImage ? 'overflow-hidden p-0' : ''} ${
                           editing
                             ? `touch-none select-none ${draggingId === spot.id ? 'cursor-grabbing scale-[1.06] ring-2 ring-[#4166fb]' : 'cursor-grab'} ${selectedSpotId === spot.id ? 'ring-2 ring-[#4166fb]' : ''}`
-                            : taken
+                            : taken && (listing.priceType !== 'auction' || spot.sold)
                               ? 'cursor-default'
                               : 'cursor-pointer hover:scale-[1.06]'
                         }`}

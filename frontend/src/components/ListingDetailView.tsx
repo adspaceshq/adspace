@@ -442,7 +442,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           <div className="overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white">
             {listing.spots.map((sp, i) => {
               const held = sp.claimedBy ?? sp.bidBy
-              const open = !held
+              const open = isAuction ? !sp.sold : !held
               return (
                 <div key={sp.id} className={`flex items-center gap-3 px-5 py-3 text-sm ${i > 0 ? 'border-t border-[#e7e5e0]' : ''}`}>
                   <span className="w-6 shrink-0 font-mono text-[13px] text-[#64748b]">{i + 1}</span>
