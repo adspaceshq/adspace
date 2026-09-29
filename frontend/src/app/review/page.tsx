@@ -7,7 +7,7 @@ import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { approveReviewListing, fetchPayableQueue, fetchReviewQueue, payApiSpot, rejectReviewListing } from '@/lib/auth-api'
 import { cardPhoto, explorerTxUrl, isSignatureLike, sellerDisplay } from '@/lib/listings'
-import type { ApiListing, PayoutItem } from '@/lib/types'
+import type { ApiListing, PayoutItem, ReviewPolicy } from '@/lib/types'
 
 const money = (amount: number, currency: string) => new Intl.NumberFormat('en-US', {
   style: 'currency', currency, maximumFractionDigits: 2,
@@ -24,6 +24,7 @@ export default function ReviewPage() {
   const [payBusy, setPayBusy] = useState<string>()
   const [payError, setPayError] = useState<string>()
   const [approval, setApproval] = useState<ApiListing | null>(null)
+  const [policy, setPolicy] = useState<ReviewPolicy | null>(null)
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -62,7 +63,10 @@ export default function ReviewPage() {
     setBusy(slug)
     setError(undefined)
     try {
-      if (action === 'approve') await approveReviewListing(slug)
+      if (action === 'approve') {
+        if (!policy) throw new Error('Review policy is required.')
+        await approveReviewListing(slug, policy)
+      }
       else {
         const reason = (reasons[slug] ?? '').trim()
         if (!reason) throw new Error('Enter a rejection reason first.')
@@ -121,7 +125,7 @@ export default function ReviewPage() {
                       <td className="px-4 py-4 font-mono text-xs">{l.spots.length}</td>
                       <td className="px-4 py-4"><input value={reasons[l.slug] ?? ''} onChange={(e) => setReasons((prev) => ({ ...prev, [l.slug]: e.target.value }))} placeholder="Why is it rejected?" maxLength={500} className="w-full min-w-[200px] rounded-lg border border-[#e7e5e0] px-3 py-2 text-[13px] outline-none transition focus:border-[#4166fb]" /></td>
                       <td className="px-4 py-4"><div className="flex gap-2">
-                        <button disabled={busy === l.slug} onClick={() => setApproval(l)} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Review & approve</button>
+                        <button disabled={busy === l.slug} onClick={() => { setApproval(l); setPolicy({ platformFeeBps:250, upliftFeeBps:l.mode === 'auction' ? 1000 : 0, maxFeeBps:l.mode === 'auction' ? 1000 : 250, settlementWindowHours:48, deliveryDeadline:new Date(Date.now()+7*86400000).toISOString().slice(0,16) }) }} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Review & approve</button>
                         <button disabled={busy === l.slug} onClick={() => void act(l.slug, 'reject')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold text-[#dc2626] disabled:opacity-50">Reject</button>
                       </div></td>
                     </tr>
@@ -129,7 +133,7 @@ export default function ReviewPage() {
                 </table>
               </div>
             )}
-            {approval && (
+            {approval && policy && (
               <div role="dialog" aria-modal="true" aria-labelledby="approval-title" className="fixed inset-0 z-50 flex items-center justify-center bg-[#020817]/50 p-6" onClick={() => { if (busy !== approval.slug) setApproval(null) }}>
                 <div className="max-h-[85vh] w-full max-w-[560px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]" onClick={(event) => event.stopPropagation()}>
                   <h2 id="approval-title" className="text-[24px]">Approve {approval.mode === 'auction' ? 'auction' : 'fixed-price listing'}?</h2>
@@ -150,6 +154,13 @@ export default function ReviewPage() {
                         <span className="font-mono text-xs text-[#64748b]">{approval.mode === 'auction' ? 'Starts at ' : ''}{money(spot.price, approval.currency)}</span>
                       </div>
                     ))}
+                  </div>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                    <label className="text-xs font-semibold">Platform fee (%)<input type="number" min="0" max="100" step="0.01" value={policy.platformFeeBps/100} onChange={(e)=>setPolicy({...policy,platformFeeBps:Math.round(Number(e.target.value)*100)})} className="mt-1 w-full rounded-lg border border-[#e7e5e0] px-3 py-2 text-sm" /></label>
+                    {approval.mode === 'auction' && <label className="text-xs font-semibold">Uplift fee (%)<input type="number" min="0" max="100" step="0.01" value={policy.upliftFeeBps/100} onChange={(e)=>setPolicy({...policy,upliftFeeBps:Math.round(Number(e.target.value)*100)})} className="mt-1 w-full rounded-lg border border-[#e7e5e0] px-3 py-2 text-sm" /></label>}
+                    {approval.mode === 'auction' && <label className="text-xs font-semibold">Maximum fee (%)<input type="number" min="0" max="100" step="0.01" value={policy.maxFeeBps/100} onChange={(e)=>setPolicy({...policy,maxFeeBps:Math.round(Number(e.target.value)*100)})} className="mt-1 w-full rounded-lg border border-[#e7e5e0] px-3 py-2 text-sm" /></label>}
+                    <label className="text-xs font-semibold">Settlement window (hours)<input type="number" min="1" step="1" value={policy.settlementWindowHours} onChange={(e)=>setPolicy({...policy,settlementWindowHours:Number(e.target.value)})} className="mt-1 w-full rounded-lg border border-[#e7e5e0] px-3 py-2 text-sm" /></label>
+                    <label className="text-xs font-semibold sm:col-span-2">Delivery deadline<input type="datetime-local" value={policy.deliveryDeadline} onChange={(e)=>setPolicy({...policy,deliveryDeadline:e.target.value})} className="mt-1 w-full rounded-lg border border-[#e7e5e0] px-3 py-2 text-sm" /></label>
                   </div>
                   <p className="mt-4 rounded-lg bg-[#f8fafc] px-4 py-3 text-xs leading-relaxed text-[#64748b]">Approval does not create anything on-chain. The listing and spots are created only after the seller reviews and accepts these terms.</p>
                   <div className="mt-6 flex justify-end gap-3">

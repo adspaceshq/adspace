@@ -62,6 +62,11 @@ export interface ApiListing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   status: "active" | "approved" | "submitted" | "closed";
   reviewNote?: string;
   termsVersion?: string;
@@ -100,6 +105,11 @@ export interface ApiCreateListingRequest {
   artworkClose?: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   spots?: ApiCreateSpotRequest[];
 }
 
@@ -159,6 +169,19 @@ export interface SellerDashboardListing {
   total: number;
   paid: number;
   revenue: number;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
+}
+
+export interface ReviewPolicy {
+  platformFeeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  settlementWindowHours: number;
+  deliveryDeadline: string;
 }
 
 export interface SellerAttentionItem {

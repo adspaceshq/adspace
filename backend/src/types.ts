@@ -118,6 +118,11 @@ export interface Listing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   status: "active" | "approved" | "submitted" | "closed";
   /** Why the platform rejected this submission (set on reject, cleared on approve/resubmit). */
   reviewNote?: string;
@@ -155,7 +160,20 @@ export interface CreateListingRequest {
   artworkClose?: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
   spots?: CreateSpotRequest[];
+}
+
+export interface ReviewPolicy {
+  platformFeeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  settlementWindowHours: number;
+  deliveryDeadline: string;
 }
 
 export interface CreateSpotRequest {
@@ -220,6 +238,11 @@ export interface SellerDashboardListing {
   open: number;
   total: number;
   revenue: number;
+  platformFeeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  settlementWindowHours?: number;
+  deliveryDeadline?: string;
 }
 
 export interface SellerAttentionItem {

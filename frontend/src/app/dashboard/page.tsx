@@ -239,9 +239,12 @@ export default function DashboardPage() {
                   <h2 id="terms-title" className="mb-1 text-[22px]">Seller terms{terms && ` (${terms.version})`}</h2>
                   <p className="mb-4 text-[14px] text-[#64748b]">Your space was approved. Accept the terms to put it live.</p>
                   {termsListing && (
-                    <div className="mb-4 flex items-center justify-between rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3 text-[14px]">
-                      <span className="text-[#64748b]">Pricing model</span>
-                      <span className="font-semibold">{termsListing.mode === 'fixed' ? 'Fixed price' : 'Auction'}</span>
+                    <div className="mb-4 space-y-2 rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3 text-[14px]">
+                      <div className="flex justify-between"><span className="text-[#64748b]">Pricing model</span><span className="font-semibold">{termsListing.mode === 'fixed' ? 'Fixed price' : 'Auction'}</span></div>
+                      <div className="flex justify-between"><span className="text-[#64748b]">Platform fee</span><span className="font-semibold">{((termsListing.platformFeeBps ?? 0)/100).toFixed(2)}%</span></div>
+                      {termsListing.mode === 'auction' && <div className="flex justify-between"><span className="text-[#64748b]">Uplift / maximum fee</span><span className="font-semibold">{((termsListing.upliftFeeBps ?? 0)/100).toFixed(2)}% / {((termsListing.maxFeeBps ?? 0)/100).toFixed(2)}%</span></div>}
+                      <div className="flex justify-between"><span className="text-[#64748b]">Settlement window</span><span className="font-semibold">{termsListing.settlementWindowHours ?? 0} hours</span></div>
+                      <div className="flex justify-between"><span className="text-[#64748b]">Delivery deadline</span><span className="font-semibold">{termsListing.deliveryDeadline ? new Date(termsListing.deliveryDeadline).toLocaleString() : 'Not set'}</span></div>
                     </div>
                   )}
                   <pre className="mb-6 whitespace-pre-wrap rounded-xl bg-[#f6f6f4] p-4 font-sans text-[13px] leading-relaxed text-[#020817]/80">{terms ? terms.text : 'Loading terms…'}</pre>

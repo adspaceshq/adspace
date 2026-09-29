@@ -64,11 +64,11 @@ export class PrivyListingPublisher {
       const deadline = Math.floor(new Date(listing.deadline).getTime()/1000);
       const requestedArtwork = Math.floor(new Date(listing.artworkClose || listing.deadline).getTime()/1000);
       const artwork = Math.max(deadline, requestedArtwork);
-      const delivery = artwork + Number(process.env.ADSPACES_DELIVERY_WINDOW_SECONDS ?? 259200);
-      const reviewWindow = Number(process.env.ADSPACES_REVIEW_WINDOW_SECONDS ?? 172800);
-      const fee = Number(process.env.ADSPACES_FEE_BPS ?? 250);
-      const uplift = listing.mode === "fixed" ? 0 : Number(process.env.ADSPACES_UPLIFT_FEE_BPS ?? 1000);
-      const maxFee = listing.mode === "fixed" ? fee : Number(process.env.ADSPACES_MAX_FEE_BPS ?? 1000);
+      const delivery = listing.deliveryDeadline ? Math.floor(new Date(listing.deliveryDeadline).getTime()/1000) : artwork + Number(process.env.ADSPACES_DELIVERY_WINDOW_SECONDS ?? 259200);
+      const reviewWindow = (listing.settlementWindowHours ?? 48) * 3600;
+      const fee = listing.platformFeeBps ?? Number(process.env.ADSPACES_FEE_BPS ?? 250);
+      const uplift = listing.mode === "fixed" ? 0 : (listing.upliftFeeBps ?? Number(process.env.ADSPACES_UPLIFT_FEE_BPS ?? 1000));
+      const maxFee = listing.mode === "fixed" ? fee : (listing.maxFeeBps ?? Number(process.env.ADSPACES_MAX_FEE_BPS ?? 1000));
       const metadata = `${process.env.FRONTEND_URL ?? "http://localhost:3000"}/listings/${listing.slug}`;
       const metadataBytes = Buffer.from(metadata);
       const data = Buffer.concat([CREATE_LISTING, slugHash, u32(metadataBytes.length), metadataBytes,

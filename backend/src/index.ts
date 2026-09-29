@@ -6,7 +6,7 @@ import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken 
 import { csrfMatches, isReviewer, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
 import type { MarketplaceRepository } from "./market.js";
 import { TERMS_TEXT, TERMS_VERSION } from "./types.js";
-import type { AuthenticatedIdentity, CreateListingRequest, Listing, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
+import type { AuthenticatedIdentity, CreateListingRequest, Listing, PurchaseAssets, ReviewPolicy, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
 import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdrawals.js";
 import type { WalletWithdrawal } from "./withdrawals.js";
@@ -69,7 +69,7 @@ export function createApp({
     close: async (slug,user) => store.close(slug,user), reopen: async (slug,user) => store.reopen(slug,user), remove: async (slug,user) => store.remove(slug,user),
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
-    reviewQueue: async () => store.reviewQueue(), approveReview: async slug => store.approveReview(slug),
+    reviewQueue: async () => store.reviewQueue(), approveReview: async (slug, policy) => store.approveReview(slug, policy),
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
     acceptTerms: async (slug,user,version) => store.acceptTerms(slug,user,version),
     submitArtwork: async (id,user,assets) => store.submitArtwork(id,user,assets),
@@ -219,7 +219,9 @@ export function createApp({
     try { res.json(await repo.reviewQueue()); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/listings/:slug/approve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
-    try { res.json(await repo.approveReview(req.params.slug)); } catch (e) { sendErr(res, e); }
+    const body = (req.body ?? {}) as Partial<ReviewPolicy>;
+    const policy: ReviewPolicy = { platformFeeBps:Number(body.platformFeeBps ?? process.env.PLATFORM_FEE_BPS ?? process.env.ADSPACES_FEE_BPS ?? 0), upliftFeeBps:Number(body.upliftFeeBps ?? process.env.ADSPACES_UPLIFT_FEE_BPS ?? 1000), maxFeeBps:Number(body.maxFeeBps ?? process.env.ADSPACES_MAX_FEE_BPS ?? 1000), settlementWindowHours:Number(body.settlementWindowHours ?? 48), deliveryDeadline:String(body.deliveryDeadline ?? new Date(Date.now()+7*86400000).toISOString()) };
+    try { res.json(await repo.approveReview(req.params.slug, policy)); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/listings/:slug/reject", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
     const reason = (req.body as { reason?: unknown } | null)?.reason;
