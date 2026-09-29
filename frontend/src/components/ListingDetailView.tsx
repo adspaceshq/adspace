@@ -178,6 +178,10 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       showToast('You cannot bid on your own listing.')
       return
     }
+    if (x?.handle && spot.bidBy && normHandle(x.handle) === normHandle(spot.bidBy)) {
+      showToast('You already hold the top bid.')
+      return
+    }
     setName(x?.handle ?? '')
     setWebsite('')
     setLogo(null)
@@ -469,7 +473,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {spotBidCount(sp) > 0 && <span className="text-[#64748b]"> · {spotBidCount(sp)} bid{spotBidCount(sp) === 1 ? '' : 's'}</span>}
                     </span>
                   )}
-                  {open && !ended && !isOwner && (
+                  {open && !ended && !isOwner && normHandle(sp.bidBy ?? '') !== normHandle(x?.handle ?? '') && (
                     <button
                       type="button"
                       onClick={() => (isAuction ? openBid(sp) : openClaim(sp))}
@@ -477,6 +481,9 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     >
                       {isAuction ? 'Bid' : 'Claim'}
                     </button>
+                  )}
+                  {isAuction && sp.bidBy && normHandle(sp.bidBy) === normHandle(x?.handle ?? '') && (
+                    <span className="shrink-0 font-mono text-[11px] font-semibold text-[#16a34a]">TOP BIDDER</span>
                   )}
                   {sp.chainTransaction && <a href={explorerTxUrl(sp.chainTransaction)} target="_blank" rel="noopener" onClick={(event) => event.stopPropagation()} className="shrink-0 font-mono text-[11px] font-semibold text-[#4166fb] underline">ON-CHAIN ↗</a>}
                   {sp.fulfilledAt && (sp.claimedBy ?? sp.bidBy) === x?.handle && (

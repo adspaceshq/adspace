@@ -44,6 +44,8 @@ type Linked = {
   email?: string | null;
   chain_type?: string | null;
   chainType?: string | null;
+  wallet_client_type?: string | null;
+  walletClientType?: string | null;
 };
 
 function isXAccount(type: string | undefined): boolean {
@@ -91,7 +93,8 @@ function accountDetails(accounts: Linked[] | undefined): { email?: string; walle
   const solanaWallet = (accounts ?? []).find((account) => {
     const type = (account.type ?? "").toLowerCase();
     const chain = (account.chain_type ?? account.chainType ?? "").toLowerCase();
-    return type.includes("wallet") && chain === "solana" && account.address;
+    const client = (account.wallet_client_type ?? account.walletClientType ?? "").toLowerCase();
+    return type.includes("wallet") && chain === "solana" && client === "privy" && account.address;
   });
   return {
     email: emailAccount?.address ?? emailAccount?.email ?? undefined,

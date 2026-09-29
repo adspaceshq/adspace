@@ -63,6 +63,9 @@ export class PrivyAuctionBidExecutor implements AuctionBidExecutor {
       : row.double_up ? current * 2 : current + Number(row.min_increment ?? 1);
     if (amount < minimum) throw httpError(`bid must be at least ${minimum}`, 400);
     const bidderKey = new PublicKey(bidder.walletAddress);
+    if (row.previous_wallet && bidderKey.equals(new PublicKey(row.previous_wallet))) {
+      throw httpError("this Privy wallet already holds the top bid; use a different account to outbid", 409);
+    }
     const bidderAta = ata(bidderKey, this.mint);
     if (!(await this.connection.getAccountInfo(bidderAta, "confirmed"))) throw httpError("bidder devnet USDC account was not found", 409);
     const previousAta = row.previous_wallet ? ata(new PublicKey(row.previous_wallet), this.mint) : this.programId;
