@@ -9,6 +9,8 @@ import type { SessionUser } from '@/lib/types';
 
 export interface AuthSession {
   ready: boolean;
+  /** Privy may be authenticated while the backend session is recovering. */
+  privyAuthenticated: boolean;
   authenticated: boolean;
   /** Stable Adspaces user ID — compare this, never handles, for owner UI. */
   userId: string | undefined;
@@ -35,6 +37,7 @@ export interface AuthSession {
 
 const guest: AuthSession = {
   ready: true,
+  privyAuthenticated: false,
   authenticated: false,
   userId: undefined,
   isReviewer: false,
@@ -110,6 +113,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
       setMe(session);
       setError(undefined);
     } catch (e) {
+      exchangedFor.current = null;
       setMe(null);
       setError(
         e instanceof Error
@@ -130,8 +134,10 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
         return;
       }
       const did = user?.id ?? 'authed';
+      if (exchangedFor.current === did && me) return;
+      if (exchangedFor.current && exchangedFor.current !== did) setMe(null);
       try {
-        const existing = exchangedFor.current === did ? null : await fetchApiMe().catch(() => null);
+        const existing = await fetchApiMe().catch(() => null);
         const staleHandle = existing?.handle?.startsWith('user-') && !!user?.twitter?.username;
         const staleWallet = Boolean(existing?.walletAddress && embeddedWallet?.address && existing.walletAddress !== embeddedWallet.address);
         const stale = staleHandle || staleWallet;
@@ -148,7 +154,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
         await exchange();
       }
     })();
-  }, [ready, authenticated, user, embeddedWallet?.address, exchange]);
+  }, [ready, authenticated, user, me, embeddedWallet?.address, exchange]);
 
   useEffect(() => {
     if (!authenticated || !me || embeddedWallet?.address || walletProvisionedFor.current === me.did) return;
@@ -165,6 +171,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
 
   const value: AuthSession = {
     ready: ready && !exchanging,
+    privyAuthenticated: authenticated,
     authenticated: Boolean(authenticated && me?.hasX),
     userId: me?.id,
     isReviewer: me?.isReviewer ?? false,
@@ -181,7 +188,12 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     error,
     login: () => {
       setError(undefined);
-      privyLogin();
+      if (authenticated) {
+        exchangedFor.current = null;
+        void exchange();
+      } else {
+        privyLogin();
+      }
     },
     linkEmail,
     linkX: linkTwitter,
