@@ -12,6 +12,13 @@ export interface ApiBid {
 export interface ApiSpot {
   id: string;
   listingId: string;
+  chainAddress?: string;
+  chainVaultAddress?: string;
+  chainSignature?: string;
+  chainClaimSignature?: string;
+  chainBidSignature?: string;
+  chainProofSignature?: string;
+  chainDisputeSignature?: string;
   label: string;
   location: string;
   size: string;
@@ -62,15 +69,17 @@ export interface ApiListing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
-  platformFeeBps?: number;
-  upliftFeeBps?: number;
-  maxFeeBps?: number;
-  settlementWindowHours?: number;
-  deliveryDeadline?: string;
   status: "active" | "approved" | "submitted" | "closed";
   reviewNote?: string;
   termsVersion?: string;
   termsAcceptedAt?: string;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  reviewWindowSeconds?: number;
+  deliveryDeadline?: string;
+  chainAddress?: string;
+  chainSignatures?: string[];
   spots: ApiSpot[];
 }
 
@@ -100,16 +109,11 @@ export interface ApiCreateListingRequest {
   story?: string;
   fabric?: string;
   mode?: string;
+  minIncrement?: number;
+  doubleUp?: boolean;
   currency?: string;
   deadline?: string;
   artworkClose?: string;
-  minIncrement?: number;
-  doubleUp?: boolean;
-  platformFeeBps?: number;
-  upliftFeeBps?: number;
-  maxFeeBps?: number;
-  settlementWindowHours?: number;
-  deliveryDeadline?: string;
   spots?: ApiCreateSpotRequest[];
 }
 
@@ -169,19 +173,11 @@ export interface SellerDashboardListing {
   total: number;
   paid: number;
   revenue: number;
-  platformFeeBps?: number;
+  feeBps?: number;
   upliftFeeBps?: number;
   maxFeeBps?: number;
-  settlementWindowHours?: number;
+  reviewWindowSeconds?: number;
   deliveryDeadline?: string;
-}
-
-export interface ReviewPolicy {
-  platformFeeBps: number;
-  upliftFeeBps: number;
-  maxFeeBps: number;
-  settlementWindowHours: number;
-  deliveryDeadline: string;
 }
 
 export interface SellerAttentionItem {
@@ -218,12 +214,22 @@ export interface PayoutItem {
   releasedAt: string;
 }
 
+export interface DisputeItem extends Omit<PayoutItem, 'releasedAt'> { reason?: string }
+
+export interface ReviewPolicyRequest {
+  feeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  reviewWindowSeconds: number;
+  deliveryDeadline: string;
+}
+
 export interface WalletWithdrawal {
   id: string;
   source: string;
   destination: string;
   amount: number;
-  status: 'pending' | 'processing' | 'confirmed' | 'failed';
+  status: 'pending' | 'confirmed' | 'failed';
   signature?: string;
   createdAt: string;
   confirmedAt?: string;

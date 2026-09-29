@@ -1,6 +1,7 @@
 import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, ReviewPolicy, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { ChainPublication } from "./listing-chain.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
@@ -152,11 +153,11 @@ export class Store {
     image?: string;
     fabric?: string;
     mode?: string;
+    minIncrement?: number;
+    doubleUp?: boolean;
     currency?: string;
     deadline?: string;
     artworkClose?: string;
-    minIncrement?: number;
-    doubleUp?: boolean;
     spots?: Array<{ label?: string; location?: string; size?: string; price?: number; view?: string; x?: number; y?: number; w?: number }>;
   }): Listing {
     const title = req.title.trim();
@@ -165,10 +166,6 @@ export class Store {
       throw Object.assign(new Error("title and seller are required"), { status: 400 });
     }
     const mode: Listing["mode"] = req.mode === "auction" ? "auction" : "fixed";
-    const minIncrement = mode === "auction" ? Number(req.minIncrement ?? 1) : undefined;
-    if (mode === "auction" && !(minIncrement! > 0)) {
-      throw Object.assign(new Error("auction minimum bid increment must be above zero"), { status: 400 });
-    }
     const currency = req.currency?.trim() || "USD";
     let deadline = daysFromNow(14);
     if (req.deadline !== undefined && req.deadline !== "") {
@@ -221,9 +218,9 @@ export class Store {
       sellerHandle: req.sellerHandle ?? seller,
       sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
-      minIncrement,
-      doubleUp: mode === "auction" && req.doubleUp === true,
       image, mode, fabric,
+      minIncrement: mode === "auction" ? Number(req.minIncrement ?? 1) : undefined,
+      doubleUp: mode === "auction" && req.doubleUp === true,
       // Step 2: submissions land as submitted — platform review activates them.
       currency, deadline, artworkClose: parseArtworkClose(req.artworkClose), status: "submitted", spots,
     };
@@ -291,7 +288,7 @@ export class Store {
     const sellerWallet = listing.sellerUserId ? this.sellerWallets.get(listing.sellerUserId) : undefined;
     if (!sellerWallet) throw Object.assign(new Error("seller payout wallet is not set"), { status: 409 });
     const amount = spot.currentBid ?? spot.price;
-    const fee = Math.round(amount * ((listing.platformFeeBps ?? platformFeeBps()) / 10_000) * 100) / 100;
+    const fee = Math.round(amount * (platformFeeBps() / 10_000) * 100) / 100;
     const note = await resolvePayoutReference({
       reference,
       destination: sellerWallet,
@@ -407,14 +404,37 @@ export class Store {
     return this.order.map((slug) => this.listings.get(slug)!).filter((l) => l.status === "submitted");
   }
 
-  approveReview(slug: string, policy: ReviewPolicy): Listing {
+  approveReview(slug: string, policy?: ListingFeePolicy): Listing {
     const listing = this.listings.get(slug);
     if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
     if (listing.status !== "submitted") throw Object.assign(new Error("listing is not awaiting review"), { status: 409 });
     listing.status = "approved";
     listing.reviewNote = undefined;
-    Object.assign(listing, policy);
+    listing.feeBps = policy?.feeBps ?? 250;
+    listing.upliftFeeBps = policy?.upliftFeeBps ?? 0;
+    listing.maxFeeBps = policy?.maxFeeBps ?? listing.feeBps;
+    listing.reviewWindowSeconds = policy?.reviewWindowSeconds ?? 172800;
+    listing.deliveryDeadline = policy?.deliveryDeadline;
     return listing;
+  }
+
+  disputeQueue():DisputeItem[]{const items:DisputeItem[]=[];for(const listing of this.listings.values())for(const spot of listing.spots)if(spot.disputedAt&&!spot.paidAt)items.push({spotId:spot.id,listingId:listing.id,listingSlug:listing.slug,listingTitle:listing.title,spotLabel:spot.label,seller:listing.sellerHandle,buyer:spot.buyer??"",amount:spot.currentBid??spot.price,currency:spot.currency,reason:spot.disputeReason});return items;}
+
+  resolveDispute(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});if(!found.spot.disputedAt)throw Object.assign(new Error("spot has no open dispute"),{status:409});found.spot.disputedAt=undefined;found.spot.disputeReason=undefined;found.spot.paidAt=new Date().toISOString();found.spot.payoutReference=reference;return found.spot;}
+  recordRefund(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});found.spot.paidAt=new Date().toISOString();found.spot.payoutAmount=0;found.spot.payoutReference=reference;return found.spot;}
+
+  recordChainPublication(slug: string, publication: ChainPublication): void {
+    const listing = this.listings.get(slug);
+    if (!listing) throw Object.assign(new Error("listing not found"), { status: 404 });
+    listing.chainAddress = publication.listingAddress;
+    listing.chainSignatures = [...publication.signatures];
+    for (const item of publication.spots) {
+      const spot = listing.spots.find((candidate) => candidate.id === item.id);
+      if (!spot) throw Object.assign(new Error("listing spot changed during approval"), { status: 409 });
+      spot.chainAddress = item.address;
+      spot.chainVaultAddress = item.vaultAddress;
+      spot.chainSignature = item.signature;
+    }
   }
 
   acceptTerms(slug: string, actorUserId: string, version: string): Listing {
@@ -498,7 +518,7 @@ export class Store {
       ? spot.price
       : listing.doubleUp
         ? (spot.currentBid ?? 0) * 2
-        : (spot.currentBid ?? 0) + (listing.minIncrement ?? 1);
+        : (spot.currentBid ?? 0) + (listing.minIncrement ?? 0);
     if (amount < required) {
       throw Object.assign(new Error(`bid must be at least ${required} ${listing.currency}`), { status: 409 });
     }

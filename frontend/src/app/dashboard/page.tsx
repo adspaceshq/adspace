@@ -1,14 +1,14 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useMfa } from '@privy-io/react-auth'
+import { useMfa, useMfaEnrollment } from '@privy-io/react-auth'
 import Link from 'next/link'
 import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
-import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, executeWalletWithdrawal, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
+import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, executeWalletWithdrawal, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, refundApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
 import { cardPhoto, isEnded } from '@/lib/listings'
 import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
 import { embeddedUsdcBalance } from '@/lib/adspaces-program'
@@ -30,7 +30,8 @@ export default function DashboardPage() {
   const [terms, setTerms] = useState<TermsDoc | null>(null)
   const [termsFor, setTermsFor] = useState<string | null>(null)
   const [termsError, setTermsError] = useState<string>()
-  const { clear: clearMfa, promptMfa } = useMfa()
+  const { clear: clearMfa, promptMfa, mfaMethods } = useMfa()
+  const { showMfaEnrollmentModal } = useMfaEnrollment()
   const [withdrawOpen, setWithdrawOpen] = useState(false)
   const [withdrawAddress, setWithdrawAddress] = useState('')
   const [withdrawAmount, setWithdrawAmount] = useState('')
@@ -39,7 +40,6 @@ export default function DashboardPage() {
   const [withdrawing, setWithdrawing] = useState(false)
   const [walletUsdc, setWalletUsdc] = useState<number>()
   const [withdrawals, setWithdrawals] = useState<WalletWithdrawal[]>([])
-  const termsListing = termsFor ? data?.listings.find((listing) => listing.slug === termsFor) : undefined
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -68,12 +68,13 @@ export default function DashboardPage() {
     void fetchWalletWithdrawals().then(setWithdrawals).catch(() => setWithdrawals([]))
   }, [auth.authenticated])
 
-  const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill') => {
+  const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill' | 'refund') => {
     setBusy(spotId); setError(undefined)
     try {
       if (action === 'approve') await approveApiSpot(spotId)
       else if (action === 'reject') await rejectApiSpot(spotId)
-      else await fulfillApiSpot(spotId)
+      else if (action === 'fulfill') await fulfillApiSpot(spotId)
+      else { if (!window.confirm('Refund this buyer from on-chain escrow?')) return; await refundApiSpot(spotId) }
       await load()
     } catch (e) { setError(e instanceof Error ? e.message : 'Action failed.') }
     finally { setBusy(undefined) }
@@ -121,8 +122,8 @@ export default function DashboardPage() {
     let intent: WalletWithdrawal | undefined
     let submittedSignature: string | undefined
     try {
-      if (!auth.mfaEnabled) {
-        auth.setupMfa()
+      if (mfaMethods.length === 0) {
+        showMfaEnrollmentModal()
         throw new Error('Set up two-factor authentication before withdrawing')
       }
       await clearMfa()
@@ -197,7 +198,7 @@ export default function DashboardPage() {
               <div className="mt-5 flex flex-col justify-between gap-3 border-t border-[#e7e5e0] pt-4 sm:flex-row sm:items-center">
                 <p className="text-xs text-[#64748b]">Seller settlements arrive here automatically. You can transfer wallet USDC to another Solana address.</p>
                 <button type="button" onClick={() => {
-                  if (!auth.mfaEnabled) { void auth.setupMfa(); return }
+                  if (mfaMethods.length === 0) { showMfaEnrollmentModal(); return }
                   setWithdrawOpen(true); setWithdrawError(undefined); setWithdrawSignature(undefined)
                 }} className="shrink-0 rounded-md bg-[#020817] px-5 py-2.5 text-sm font-semibold text-white">Withdraw USDC</button>
               </div>
@@ -228,7 +229,7 @@ export default function DashboardPage() {
                   <tbody>{data.attention.map(item=><tr key={item.spotId} className="border-b border-[#e7e5e0] last:border-0">
                     <td className="px-4 py-4 font-mono text-xs">{item.buyer}</td><td className="px-4 py-4 font-medium">{item.listingTitle}</td><td className="px-4 py-4 text-[#64748b]">{item.spotLabel}</td><td className="px-4 py-4 font-mono text-xs">{money(item.amount,item.currency)}</td><td className="px-4 py-4 text-[#64748b]">{relative(item.submittedAt)}</td>
                     <td className="px-4 py-4"><span className={item.status==='pending'?'text-amber-700':item.status==='disputed'?'text-[#dc2626]':'text-emerald-700'}>{item.status==='pending'?'Pending':item.status==='disputed'?'Disputed':item.status==='delivered'?'Delivered':'Approved'}</span>{item.status==='approved'&&item.artworkReceived&&<span className="mt-1 block text-[11px] font-normal text-[#16a34a]">Artwork in ✓</span>}{item.status==='delivered'&&<span className="mt-1 block text-[11px] font-normal text-[#64748b]">Needs proof</span>}{item.status==='disputed'&&<span className="mt-1 block max-w-[240px] text-[11px] font-normal text-[#64748b]">{item.disputeReason || 'No reason given'} — resolve with the buyer, they can withdraw</span>}</td>
-                    <td className="px-4 py-4"><div className="flex gap-2">{item.status==='pending'?<><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'approve')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'reject')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Reject</button></>:item.status==='delivered'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white">Upload proof</Link>:item.status==='disputed'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link>:<button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'fulfill')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Mark fulfilled</button>}</div></td>
+                    <td className="px-4 py-4"><div className="flex gap-2">{item.status==='pending'?<><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'approve')} className="rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white disabled:opacity-50">Approve</button><button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'reject')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Reject</button></>:item.status==='delivered'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white">Upload proof</Link>:item.status==='disputed'?<Link href={`/listings/${item.listingSlug}`} className="inline-flex rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold hover:border-[#4166fb]">View</Link>:<button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'fulfill')} className="rounded-md border border-[#d8d6d0] px-4 py-2 text-xs font-semibold disabled:opacity-50">Mark fulfilled</button>}{item.status!=='pending'&&<button disabled={busy===item.spotId} onClick={()=>void act(item.spotId,'refund')} className="rounded-md border border-red-200 px-4 py-2 text-xs font-semibold text-red-700 disabled:opacity-50">Refund</button>}</div></td>
                   </tr>)}</tbody></table>
                 {data.attention.length===0 && <Empty text="Nothing needs your attention."/>}
               </div>
@@ -238,15 +239,15 @@ export default function DashboardPage() {
                 <div className="max-h-[85vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]" onClick={(e) => e.stopPropagation()}>
                   <h2 id="terms-title" className="mb-1 text-[22px]">Seller terms{terms && ` (${terms.version})`}</h2>
                   <p className="mb-4 text-[14px] text-[#64748b]">Your space was approved. Accept the terms to put it live.</p>
-                  {termsListing && (
-                    <div className="mb-4 space-y-2 rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3 text-[14px]">
-                      <div className="flex justify-between"><span className="text-[#64748b]">Pricing model</span><span className="font-semibold">{termsListing.mode === 'fixed' ? 'Fixed price' : 'Auction'}</span></div>
-                      <div className="flex justify-between"><span className="text-[#64748b]">Platform fee</span><span className="font-semibold">{((termsListing.platformFeeBps ?? 0)/100).toFixed(2)}%</span></div>
-                      {termsListing.mode === 'auction' && <div className="flex justify-between"><span className="text-[#64748b]">Uplift / maximum fee</span><span className="font-semibold">{((termsListing.upliftFeeBps ?? 0)/100).toFixed(2)}% / {((termsListing.maxFeeBps ?? 0)/100).toFixed(2)}%</span></div>}
-                      <div className="flex justify-between"><span className="text-[#64748b]">Settlement window</span><span className="font-semibold">{termsListing.settlementWindowHours ?? 0} hours</span></div>
-                      <div className="flex justify-between"><span className="text-[#64748b]">Delivery deadline</span><span className="font-semibold">{termsListing.deliveryDeadline ? new Date(termsListing.deliveryDeadline).toLocaleString() : 'Not set'}</span></div>
+                  {(() => {
+                    const approved = data.listings.find((listing) => listing.slug === termsFor)
+                    if (!approved?.feeBps) return null
+                    return <div className="mb-4 rounded-xl border border-[#dbe3ff] bg-[#f5f7ff] p-4 text-[13px] text-[#020817]">
+                      <p className="font-semibold">Approved platform fee: {(approved.feeBps / 100).toFixed(2)}%</p>
+                      {approved.mode === 'auction' && <p className="mt-1 text-[#64748b]">Auction fee range: {(approved.feeBps / 100).toFixed(2)}% to {((approved.maxFeeBps ?? approved.feeBps) / 100).toFixed(2)}%. Uplift cap: {((approved.upliftFeeBps ?? approved.feeBps) / 100).toFixed(2)}%.</p>}
+                      <p className="mt-1 text-[#64748b]">Settlement review window: {Math.round((approved.reviewWindowSeconds ?? 172800) / 3600)} hours.</p>
                     </div>
-                  )}
+                  })()}
                   <pre className="mb-6 whitespace-pre-wrap rounded-xl bg-[#f6f6f4] p-4 font-sans text-[13px] leading-relaxed text-[#020817]/80">{terms ? terms.text : 'Loading terms…'}</pre>
                   {termsError && <p role="alert" className="mb-4 text-sm text-[#dc2626]">{termsError}</p>}
                   <div className="flex items-center justify-between gap-3">
@@ -263,7 +264,7 @@ export default function DashboardPage() {
                   <p className="mt-1 text-sm text-[#64748b]">Transfer devnet USDC from your Privy embedded wallet.</p>
                   <div className="mt-4 flex items-center justify-between rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3">
                     <div><p className="text-sm font-medium">Two-factor authentication</p><p className="mt-0.5 text-xs text-[#64748b]">Required for every withdrawal</p></div>
-                    {auth.mfaEnabled ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={() => void auth.setupMfa()} className="rounded-md bg-[#020817] px-3 py-2 text-xs font-semibold text-white">Set up</button>}
+                    {mfaMethods.length > 0 ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={showMfaEnrollmentModal} className="rounded-md bg-[#020817] px-3 py-2 text-xs font-semibold text-white">Set up</button>}
                   </div>
                   <label className="mt-5 block text-sm font-medium">Destination Solana address<input value={withdrawAddress} onChange={(event) => setWithdrawAddress(event.target.value)} spellCheck={false} className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>
                   <label className="mt-4 block text-sm font-medium">Amount <span className="font-normal text-[#64748b]">{walletUsdc !== undefined && `(available $${walletUsdc.toFixed(2)})`}</span><input value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} inputMode="decimal" placeholder="0.00" className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 font-mono text-sm outline-none focus:border-[#4166fb]"/></label>

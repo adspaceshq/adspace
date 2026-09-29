@@ -28,6 +28,13 @@ export interface Bid {
 export interface Spot {
   id: string;
   listingId: string;
+  chainAddress?: string;
+  chainVaultAddress?: string;
+  chainSignature?: string;
+  chainClaimSignature?: string;
+  chainBidSignature?: string;
+  chainProofSignature?: string;
+  chainDisputeSignature?: string;
   label: string;
   location: string;
   size: string;
@@ -118,18 +125,30 @@ export interface Listing {
   artworkClose: string;
   minIncrement?: number;
   doubleUp?: boolean;
-  platformFeeBps?: number;
-  upliftFeeBps?: number;
-  maxFeeBps?: number;
-  settlementWindowHours?: number;
-  deliveryDeadline?: string;
   status: "active" | "approved" | "submitted" | "closed";
   /** Why the platform rejected this submission (set on reject, cleared on approve/resubmit). */
   reviewNote?: string;
   /** Terms version accepted for this listing, and when (set on accept-terms). */
   termsVersion?: string;
   termsAcceptedAt?: string;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
+  reviewWindowSeconds?: number;
+  deliveryDeadline?: string;
+  chainAddress?: string;
+  chainSignatures?: string[];
   spots: Spot[];
+}
+
+export interface DisputeItem extends Omit<PayoutItem,"releasedAt"> { reason?: string }
+
+export interface ListingFeePolicy {
+  feeBps: number;
+  upliftFeeBps: number;
+  maxFeeBps: number;
+  reviewWindowSeconds: number;
+  deliveryDeadline: string;
 }
 
 export interface ListingSummary {
@@ -155,25 +174,12 @@ export interface CreateListingRequest {
   image?: string;
   fabric?: string;
   mode?: string;
+  minIncrement?: number;
+  doubleUp?: boolean;
   currency?: string;
   deadline?: string;
   artworkClose?: string;
-  minIncrement?: number;
-  doubleUp?: boolean;
-  platformFeeBps?: number;
-  upliftFeeBps?: number;
-  maxFeeBps?: number;
-  settlementWindowHours?: number;
-  deliveryDeadline?: string;
   spots?: CreateSpotRequest[];
-}
-
-export interface ReviewPolicy {
-  platformFeeBps: number;
-  upliftFeeBps: number;
-  maxFeeBps: number;
-  settlementWindowHours: number;
-  deliveryDeadline: string;
 }
 
 export interface CreateSpotRequest {
@@ -238,10 +244,10 @@ export interface SellerDashboardListing {
   open: number;
   total: number;
   revenue: number;
-  platformFeeBps?: number;
+  feeBps?: number;
   upliftFeeBps?: number;
   maxFeeBps?: number;
-  settlementWindowHours?: number;
+  reviewWindowSeconds?: number;
   deliveryDeadline?: string;
 }
 

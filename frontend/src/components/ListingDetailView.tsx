@@ -9,7 +9,7 @@ import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { deadlineLabel, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
+import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingOversubscription, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -158,6 +158,8 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   }))
   const takenCount = listing.spots.filter((s) => s.claimedBy || s.bidBy).length
   const spotBidCount = (sp: Spot) => sp.bids?.length ?? (sp.bid != null ? 1 : 0)
+  const demand = listingOversubscription(listing)
+  const expectedPayout = expectedListingPayout(listing)
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -174,6 +176,14 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     setModal({ spot, mode: 'claim' })
   }
   const openBid = (spot: Spot) => {
+    if (listing && x?.handle && normHandle(x.handle) === normHandle(listing.seller.handle || listing.seller.name)) {
+      showToast('You cannot bid on your own listing.')
+      return
+    }
+    if (x?.handle && spot.bidBy && normHandle(x.handle) === normHandle(spot.bidBy)) {
+      showToast('You already hold the top bid.')
+      return
+    }
     setName(x?.handle ?? '')
     setWebsite('')
     setLogo(null)
@@ -382,6 +392,9 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           <p className="mt-4 font-mono text-[13px] font-medium tracking-wide text-[#020817]">
             {takenCount}/{listing.spots.length} spots taken <span className="mx-1 text-[#e7e5e0]">·</span>
             <span className="text-[#64748b]">{allBids.length} bid{allBids.length === 1 ? '' : 's'}</span>
+            {isAuction && demand.percent > 0 && (
+              <><span className="mx-1 text-[#e7e5e0]">·</span><span className="text-[#9a3412]">{demand.bids} bids for {demand.capacity} spots · +{demand.percent}% oversubscribed</span></>
+            )}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[#64748b]">
             <Link
@@ -410,6 +423,22 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
               />
             </div>
           </div>
+          {isOwner && (
+            <section aria-label="Expected seller payout" className="mt-5 rounded-2xl border border-[#dbe3ff] bg-[#f5f7ff] p-5 text-left">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div>
+                  <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4166fb]">Seller estimate</p>
+                  <p className="mt-1 text-sm text-[#64748b]">Updates with every winning bid. Final payout follows settlement and dispute review.</p>
+                </div>
+                <p className="shrink-0 text-[28px] font-semibold tracking-tight">{formatMoney(expectedPayout.net, listing.currency)}</p>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-[#dbe3ff] pt-4 text-sm sm:grid-cols-3">
+                <div><dt className="text-[#64748b]">Gross committed</dt><dd className="mt-1 font-mono font-semibold">{formatMoney(expectedPayout.gross, listing.currency)}</dd></div>
+                <div><dt className="text-[#64748b]">Estimated platform fee</dt><dd className="mt-1 font-mono font-semibold">-{formatMoney(expectedPayout.fee, listing.currency)}</dd></div>
+                <div className="col-span-2 sm:col-span-1"><dt className="text-[#64748b]">Expected payout</dt><dd className="mt-1 font-mono font-semibold text-[#16a34a]">{formatMoney(expectedPayout.net, listing.currency)}</dd></div>
+              </dl>
+            </section>
+          )}
         </div>
 
         <div className="mx-auto mt-8 max-w-5xl">
@@ -442,7 +471,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           <div className="overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white">
             {listing.spots.map((sp, i) => {
               const held = sp.claimedBy ?? sp.bidBy
-              const open = !held
+              const open = isAuction ? !sp.sold : !held
               return (
                 <div key={sp.id} className={`flex items-center gap-3 px-5 py-3 text-sm ${i > 0 ? 'border-t border-[#e7e5e0]' : ''}`}>
                   <span className="w-6 shrink-0 font-mono text-[13px] text-[#64748b]">{i + 1}</span>
@@ -465,7 +494,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {spotBidCount(sp) > 0 && <span className="text-[#64748b]"> · {spotBidCount(sp)} bid{spotBidCount(sp) === 1 ? '' : 's'}</span>}
                     </span>
                   )}
-                  {open && !ended && (
+                  {open && !ended && !isOwner && normHandle(sp.bidBy ?? '') !== normHandle(x?.handle ?? '') && (
                     <button
                       type="button"
                       onClick={() => (isAuction ? openBid(sp) : openClaim(sp))}
@@ -474,6 +503,10 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {isAuction ? 'Bid' : 'Claim'}
                     </button>
                   )}
+                  {isAuction && sp.bidBy && normHandle(sp.bidBy) === normHandle(x?.handle ?? '') && (
+                    <span className="shrink-0 font-mono text-[11px] font-semibold text-[#16a34a]">TOP BIDDER</span>
+                  )}
+                  {sp.chainTransaction && <a href={explorerTxUrl(sp.chainTransaction)} target="_blank" rel="noopener" onClick={(event) => event.stopPropagation()} className="shrink-0 font-mono text-[11px] font-semibold text-[#4166fb] underline">ON-CHAIN ↗</a>}
                   {sp.fulfilledAt && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
                     <span className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                       <span className="font-mono text-[11px] font-semibold text-[#16a34a]">DELIVERED ✓</span>

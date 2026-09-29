@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
+import type { ChainPublication } from "./listing-chain.js";
 import { REVIEW_WINDOW_MS, TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, Listing, ListingSummary, PayoutItem, PurchaseAssets, ReviewPolicy, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
 
 export interface MarketplaceRepository {
   migrate(): Promise<void>;
@@ -16,7 +17,8 @@ export interface MarketplaceRepository {
   reopen(slug: string, actorUserId: string): Promise<Listing>;
   remove(slug: string, actorUserId: string): Promise<{ ok: true }>;
   reviewQueue(): Promise<Listing[]>;
-  approveReview(slug: string, policy: ReviewPolicy): Promise<Listing>;
+  approveReview(slug: string, policy?: ListingFeePolicy): Promise<Listing>;
+  recordChainPublication(slug: string, publication: ChainPublication): Promise<void>;
   rejectReview(slug: string, reason: string): Promise<Listing>;
   acceptTerms(slug: string, actorUserId: string, version: string): Promise<Listing>;
   submitArtwork(spotId: string, actor: SessionUser, assets?: PurchaseAssets): Promise<Spot>;
@@ -24,7 +26,10 @@ export interface MarketplaceRepository {
   confirmSpot(spotId: string, actor: SessionUser): Promise<Spot>;
   disputeSpot(spotId: string, actor: SessionUser, reason: string): Promise<Spot>;
   withdrawDispute(spotId: string, actor: SessionUser): Promise<Spot>;
+  resolveDispute(spotId:string,reference:string):Promise<Spot>;
+  recordRefund(spotId:string,reference:string):Promise<Spot>;
   payableQueue(): Promise<PayoutItem[]>;
+  disputeQueue():Promise<DisputeItem[]>;
   paySpot(spotId: string, reference: string): Promise<Spot>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
@@ -37,8 +42,9 @@ type ListingRow = {
   surface: string; story: string; image_url: string; fabric: string; mode: "fixed" | "auction"; currency: string;
   deadline: Date; artwork_close: string; min_increment: string | null; double_up: boolean; status: "active" | "approved" | "submitted" | "closed";
   review_note: string | null; terms_version: string | null; terms_accepted_at: Date | null;
-  platform_fee_bps: number | null; uplift_fee_bps: number | null; max_fee_bps: number | null;
-  settlement_window_hours: number | null; delivery_deadline: Date | null;
+  fee_bps: number | null; uplift_fee_bps: number | null; max_fee_bps: number | null;
+  review_window_seconds: string | null; delivery_deadline: Date | null;
+  chain_address: string | null; chain_signatures: string[] | null;
 };
 type SpotRow = {
   id: string; listing_id: string; label: string; location: string; size: string; price: string;
@@ -50,20 +56,18 @@ type SpotRow = {
   confirmed_at: Date | null; disputed_at: Date | null; dispute_reason: string | null;
   paid_at: Date | null; payout_amount: string | null; payout_fee: string | null;
   payout_reference: string | null; payout_destination: string | null;
+  chain_address: string | null; chain_vault_address: string | null; chain_signature: string | null;
+  chain_claim_signature: string | null;
+  chain_bid_signature: string | null;
+  chain_proof_signature: string | null;
+  chain_settlement_signature: string | null;
+  chain_dispute_signature: string | null;
+  chain_resolution_signature: string | null;
 };
 
 const n = (value: string | number | null | undefined) => value == null ? undefined : Number(value);
 const slugify = (title: string) => title.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "listing";
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
-const validateReviewPolicy = (policy: ReviewPolicy) => {
-  for (const [name, value] of Object.entries(policy).filter(([key]) => key.endsWith("Bps"))) {
-    if (!Number.isInteger(value) || Number(value) < 0 || Number(value) > 10_000) throw httpError(`${name} must be between 0 and 10000`, 400);
-  }
-  if (!Number.isInteger(policy.settlementWindowHours) || policy.settlementWindowHours < 1) throw httpError("settlement window must be at least 1 hour", 400);
-  if (!policy.deliveryDeadline || Number.isNaN(new Date(policy.deliveryDeadline).getTime())) throw httpError("delivery deadline is invalid", 400);
-  if (new Date(policy.deliveryDeadline).getTime() <= Date.now()) throw httpError("delivery deadline must be in the future", 400);
-  if (policy.maxFeeBps < policy.platformFeeBps) throw httpError("maximum fee cannot be below platform fee", 400);
-};
 
 const MAX_LOGO_URL_LENGTH = 3_000_000;
 
@@ -182,11 +186,6 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE listings ADD CHECK (status IN ('active','approved','submitted','closed'));
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_note text NOT NULL DEFAULT '';
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_version text NOT NULL DEFAULT '';
-      ALTER TABLE listings ADD COLUMN IF NOT EXISTS platform_fee_bps integer;
-      ALTER TABLE listings ADD COLUMN IF NOT EXISTS uplift_fee_bps integer;
-      ALTER TABLE listings ADD COLUMN IF NOT EXISTS max_fee_bps integer;
-      ALTER TABLE listings ADD COLUMN IF NOT EXISTS settlement_window_hours integer;
-      ALTER TABLE listings ADD COLUMN IF NOT EXISTS delivery_deadline timestamptz;
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS artwork_submitted_at timestamptz;
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS proof_photos text[] NOT NULL DEFAULT '{}';
@@ -206,6 +205,22 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS y numeric(6,2);
       ALTER TABLE spots ADD COLUMN IF NOT EXISTS w numeric(6,2);
       ALTER TABLE listings ADD COLUMN IF NOT EXISTS fabric text NOT NULL DEFAULT '#f6f6f7';
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS fee_bps integer;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS uplift_fee_bps integer;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS max_fee_bps integer;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS review_window_seconds bigint;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS delivery_deadline timestamptz;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS chain_address text;
+      ALTER TABLE listings ADD COLUMN IF NOT EXISTS chain_signatures text[] NOT NULL DEFAULT '{}';
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_address text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_vault_address text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_claim_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_bid_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_proof_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_settlement_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_dispute_signature text;
+      ALTER TABLE spots ADD COLUMN IF NOT EXISTS chain_resolution_signature text;
       ALTER TABLE listings ENABLE ROW LEVEL SECURITY;
       ALTER TABLE spots ENABLE ROW LEVEL SECURITY;
       ALTER TABLE bids ENABLE ROW LEVEL SECURITY;
@@ -255,16 +270,16 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const id = randomUUID();
       const slug = `${slugify(title)}-${id.slice(0, 8)}`;
       const mode = body.mode === "auction" ? "auction" : "fixed";
-      const minIncrement = mode === "auction" ? Number(body.minIncrement ?? 1) : null;
-      if (mode === "auction" && !(minIncrement! > 0)) throw httpError("auction minimum bid increment must be above zero", 400);
       const currency = body.currency?.trim().toUpperCase() || "USD";
       const fabric = parseFabric(body.fabric);
       const image = parseListingImage(body.image);
       const artworkClose = parseArtworkClose(body.artworkClose);
       // Step 2: submissions land as submitted — platform review activates them.
-      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,min_increment,double_up,status)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'submitted')`,
-      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,artworkClose,fabric,minIncrement,mode === "auction" && body.doubleUp === true]);
+      const minIncrement=mode==="auction"?Number(body.minIncrement??1):null;
+      if(mode==="auction"&&(minIncrement===null||!Number.isFinite(minIncrement)||minIncrement<=0))throw httpError("minimum bid increase must be positive",400);
+      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,status,min_increment,double_up)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'submitted',$14,$15)`,
+      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,artworkClose,fabric,minIncrement,mode==="auction"&&body.doubleUp===true]);
       for (let i=0;i<drafts.length;i++) {
         const spot=drafts[i];
         const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" || spot.view === "tee-left" || spot.view === "tee-right" ? spot.view : "lid";
@@ -330,16 +345,41 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return Promise.all(result.rows.map((row) => this.hydrate(row)));
   }
 
-  async approveReview(slug: string, policy: ReviewPolicy): Promise<Listing> {
-    validateReviewPolicy(policy);
+  async approveReview(slug: string, policy?: ListingFeePolicy): Promise<Listing> {
     const result = await this.pool.query(
-      `UPDATE listings SET status='approved', review_note='', platform_fee_bps=$2, uplift_fee_bps=$3,
-       max_fee_bps=$4, settlement_window_hours=$5, delivery_deadline=$6, updated_at=now()
+      `UPDATE listings SET status='approved', review_note='', fee_bps=$2, uplift_fee_bps=$3,
+       max_fee_bps=$4, review_window_seconds=$5, delivery_deadline=$6, updated_at=now()
        WHERE slug=$1 AND status='submitted' RETURNING slug`,
-      [slug, policy.platformFeeBps, policy.upliftFeeBps, policy.maxFeeBps, policy.settlementWindowHours, policy.deliveryDeadline],
+      [slug, policy?.feeBps ?? 250, policy?.upliftFeeBps ?? 0, policy?.maxFeeBps ?? 250,
+        policy?.reviewWindowSeconds ?? 172800, policy?.deliveryDeadline ?? null],
     );
     if (!result.rows[0]) await this.throwReviewAccess(slug);
     return (await this.get(slug))!;
+  }
+
+  async recordChainPublication(slug: string, publication: ChainPublication): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const listing = await client.query(
+        "UPDATE listings SET chain_address=$2,chain_signatures=$3,updated_at=now() WHERE slug=$1 RETURNING id",
+        [slug, publication.listingAddress, publication.signatures],
+      );
+      if (!listing.rows[0]) throw httpError("listing not found", 404);
+      for (const spot of publication.spots) {
+        const updated = await client.query(
+          `UPDATE spots SET chain_address=$2,chain_vault_address=$3,
+           chain_signature=COALESCE($4,chain_signature),updated_at=now()
+           WHERE id=$1 AND listing_id=$5 RETURNING id`,
+          [spot.id, spot.address, spot.vaultAddress, spot.signature ?? null, listing.rows[0].id],
+        );
+        if (!updated.rows[0]) throw httpError("listing spot changed during approval", 409);
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
   }
 
   async rejectReview(slug: string, reason: string): Promise<Listing> {
@@ -409,6 +449,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       if (!spot) throw httpError("spot not found",404);
       if (new Date(spot.deadline).getTime() <= Date.now()) throw httpError("listing has ended",409);
       if (spot.mode!=="auction" || spot.status!=="open" || spot.seller_user_id===bidder.id) throw httpError("spot is unavailable or belongs to you",409);
+      if (spot.buyer_user_id===bidder.id) throw httpError("you already hold the top bid",409);
       const current=n(spot.current_bid); const required=current == null ? Number(spot.price) : spot.double_up ? current*2 : current+Number(spot.min_increment ?? 1);
       if (amount<required) throw httpError(`bid must be at least ${required} ${spot.currency}`,409);
       await client.query("INSERT INTO bids(id,spot_id,bidder_user_id,bidder_handle,amount) VALUES($1,$2,$3,$4,$5)",[randomUUID(),spotId,bidder.id,bidder.handle,amount]);
@@ -486,6 +527,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return (await this.getSpot(spotId))!;
   }
 
+  async resolveDispute(spotId:string,reference:string):Promise<Spot>{const result=await this.pool.query(`UPDATE spots SET disputed_at=NULL,dispute_reason='',paid_at=now(),payout_reference=$2,updated_at=now() WHERE id=$1 AND disputed_at IS NOT NULL RETURNING id`,[spotId,reference]);if(!result.rows[0])throw httpError("spot has no open dispute",409);return(await this.getSpot(spotId))!;}
+  async recordRefund(spotId:string,reference:string):Promise<Spot>{const result=await this.pool.query(`UPDATE spots SET paid_at=now(),payout_amount=0,payout_fee=0,payout_reference=$2,updated_at=now() WHERE id=$1 AND paid_at IS NULL RETURNING id`,[spotId,reference]);if(!result.rows[0])throw httpError("spot is already settled",409);return(await this.getSpot(spotId))!;}
+
   async payableQueue(): Promise<PayoutItem[]> {
     const result = await this.pool.query(
       `SELECT s.id spot_id, l.id listing_id, l.slug listing_slug, l.title listing_title, s.label spot_label,
@@ -507,12 +551,14 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     });
   }
 
+  async disputeQueue():Promise<DisputeItem[]>{const result=await this.pool.query(`SELECT s.id spot_id,l.id listing_id,l.slug listing_slug,l.title listing_title,s.label spot_label,l.seller_handle seller,s.buyer_handle buyer,COALESCE(s.current_bid,s.price) amount,s.currency,s.dispute_reason reason FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.disputed_at IS NOT NULL AND s.paid_at IS NULL ORDER BY s.disputed_at`);return result.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,seller:r.seller,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,reason:r.reason||undefined}));}
+
   async paySpot(spotId: string, reference: string): Promise<Spot> {
     if (typeof reference === "string" && reference.trim().length > 200) {
       throw httpError("reference must be at most 200 characters", 400);
     }
-    const found = await this.pool.query<SpotRow & { seller_payout_wallet: string | null; platform_fee_bps: number | null }>(
-      `SELECT s.*, u.payout_wallet AS seller_payout_wallet, l.platform_fee_bps FROM spots s
+    const found = await this.pool.query<SpotRow & { seller_payout_wallet: string | null }>(
+      `SELECT s.*, u.payout_wallet AS seller_payout_wallet FROM spots s
        JOIN listings l ON l.id=s.listing_id LEFT JOIN users u ON u.id=l.seller_user_id WHERE s.id=$1`,
       [spotId],
     );
@@ -526,7 +572,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     })) throw httpError("spot is not released for payout", 409);
     if (!row.seller_payout_wallet) throw httpError("seller payout wallet is not set", 409);
     const amount = Number(row.current_bid ?? row.price);
-    const fee = Math.round(amount * ((row.platform_fee_bps ?? platformFeeBps()) / 10_000) * 100) / 100;
+    const fee = Math.round(amount * (platformFeeBps() / 10_000) * 100) / 100;
     // Manual USDC: the reference is the Solana transfer signature; verified
     // on-chain when it looks like one and an RPC is configured (required
     // when PAYOUT_REQUIRE_ONCHAIN=1).
@@ -563,7 +609,8 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
   }
 
   async dashboard(actorUserId:string):Promise<SellerDashboard>{
-    const listings=await this.pool.query(`SELECT l.id,l.slug,l.title,l.image_url,l.status,l.review_note,l.deadline,l.mode,l.currency,l.platform_fee_bps,l.uplift_fee_bps,l.max_fee_bps,l.settlement_window_hours,l.delivery_deadline,
+    const listings=await this.pool.query(`SELECT l.id,l.slug,l.title,l.image_url,l.status,l.review_note,l.deadline,l.mode,l.currency,
+      l.fee_bps,l.uplift_fee_bps,l.max_fee_bps,l.review_window_seconds,l.delivery_deadline,
       COUNT(s.id)::int total,COUNT(*) FILTER(WHERE s.status='open' AND s.buyer_user_id IS NULL)::int open,COUNT(*) FILTER(WHERE s.status='sold')::int sold,
       COUNT(*) FILTER(WHERE s.paid_at IS NOT NULL)::int paid,
       COALESCE(SUM(CASE WHEN s.status='sold' THEN COALESCE(s.current_bid,s.price) ELSE 0 END),0) revenue,
@@ -577,7 +624,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       AND ((s.status IN('open','claimed') AND s.claimed_at IS NOT NULL)
         OR (s.status='sold' AND (s.fulfilled_at IS NULL OR CARDINALITY(s.proof_photos) = 0))
         OR (s.disputed_at IS NOT NULL)) ORDER BY s.claimed_at DESC`,[actorUserId]);
-    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,deadline:new Date(r.deadline).toISOString(),reviewNote:r.review_note || undefined,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,paid:r.paid,revenue:Number(r.revenue),platformFeeBps:n(r.platform_fee_bps),upliftFeeBps:n(r.uplift_fee_bps),maxFeeBps:n(r.max_fee_bps),settlementWindowHours:n(r.settlement_window_hours),deliveryDeadline:r.delivery_deadline?.toISOString()}));
+    const rows=listings.rows.map(r=>({id:r.id,slug:r.slug,title:r.title,image:r.image_url,status:r.status,deadline:new Date(r.deadline).toISOString(),reviewNote:r.review_note || undefined,mode:r.mode,currency:r.currency,sold:r.sold,open:r.open,total:r.total,paid:r.paid,revenue:Number(r.revenue),feeBps:n(r.fee_bps),upliftFeeBps:n(r.uplift_fee_bps),maxFeeBps:n(r.max_fee_bps),reviewWindowSeconds:n(r.review_window_seconds),deliveryDeadline:r.delivery_deadline?new Date(r.delivery_deadline).toISOString():undefined}));
     const pending=attention.rows.filter(r=>r.status==="pending").length;
     const live = (r: { status: string; deadline: string }) => r.status === "active" && new Date(r.deadline).getTime() > Date.now();
     return {summary:{activeListings:rows.filter(live).length,openSpots:rows.reduce((a,r)=>a+r.open,0),pendingApproval:pending,revenue:rows.reduce((a,r)=>a+r.revenue,0),paidOut:listings.rows.reduce((a,r)=>a+Number(r.paid_out),0),currency:rows[0]?.currency ?? "USD"},listings:rows,attention:attention.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,submittedAt:new Date(r.submitted_at).toISOString(),status:r.status,artworkReceived:Boolean(r.artwork_received),disputeReason:r.dispute_reason || undefined}))};
@@ -587,9 +634,9 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const spotsResult=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE listing_id=$1 ORDER BY created_at,id",[row.id]);
     const ids=spotsResult.rows.map(s=>s.id); const bids=new Map<string,Bid[]>();
     if(ids.length){const br=await this.pool.query("SELECT spot_id,bidder_handle,amount,created_at FROM bids WHERE spot_id=ANY($1) ORDER BY created_at",[ids]);for(const b of br.rows)bids.set(b.spot_id,[...(bids.get(b.spot_id)??[]),{bidder:b.bidder_handle,amount:Number(b.amount),at:new Date(b.created_at).toISOString()}]);}
-    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,platformFeeBps:n(row.platform_fee_bps),upliftFeeBps:n(row.uplift_fee_bps),maxFeeBps:n(row.max_fee_bps),settlementWindowHours:n(row.settlement_window_hours),deliveryDeadline:row.delivery_deadline?.toISOString(),status:row.status,reviewNote:row.review_note || undefined,termsVersion:row.terms_version || undefined,termsAcceptedAt:row.terms_accepted_at?.toISOString(),spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
+    return {id:row.id,slug:row.slug,title:row.title,seller:row.seller_handle,sellerHandle:row.seller_handle,sellerUserId:row.seller_user_id,surface:row.surface,story:row.story,image:row.image_url,fabric:row.fabric ?? "#f6f6f7",mode:row.mode,currency:row.currency,deadline:new Date(row.deadline).toISOString(),artworkClose:row.artwork_close,minIncrement:n(row.min_increment),doubleUp:row.double_up,status:row.status,reviewNote:row.review_note || undefined,termsVersion:row.terms_version || undefined,termsAcceptedAt:row.terms_accepted_at?.toISOString(),feeBps:n(row.fee_bps),upliftFeeBps:n(row.uplift_fee_bps),maxFeeBps:n(row.max_fee_bps),reviewWindowSeconds:n(row.review_window_seconds),deliveryDeadline:row.delivery_deadline?.toISOString(),chainAddress:row.chain_address||undefined,chainSignatures:row.chain_signatures?.length?[...row.chain_signatures]:undefined,spots:spotsResult.rows.map(s=>this.mapSpot(s,bids.get(s.id)??[]))};
   }
-  private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString(),artworkSubmittedAt:s.artwork_submitted_at?.toISOString(),proofPhotos:(s.proof_photos?.length ? [...s.proof_photos] : undefined),proofPost:s.proof_post || undefined,confirmedAt:s.confirmed_at?.toISOString(),disputedAt:s.disputed_at?.toISOString(),disputeReason:s.dispute_reason || undefined,paidAt:s.paid_at?.toISOString(),payoutAmount:n(s.payout_amount),payoutFee:n(s.payout_fee) ?? 0,payoutReference:s.payout_reference || undefined,payoutDestination:s.payout_destination || undefined};}
+  private mapSpot(s:SpotRow,bids:Bid[]=[]):Spot{return{id:s.id,listingId:s.listing_id,chainAddress:s.chain_address||undefined,chainVaultAddress:s.chain_vault_address||undefined,chainSignature:s.chain_signature||undefined,chainClaimSignature:s.chain_claim_signature||undefined,chainBidSignature:s.chain_bid_signature||undefined,chainProofSignature:s.chain_proof_signature||undefined,chainDisputeSignature:s.chain_dispute_signature||undefined,label:s.label,location:s.location,size:s.size,price:Number(s.price),currency:s.currency,view:s.view ?? "lid",x:n(s.x),y:n(s.y),w:n(s.w),website:s.website_url || undefined,logoUrl:s.logo_url || undefined,status:s.status,currentBid:n(s.current_bid),buyer:s.buyer_handle??undefined,bids,fulfilledAt:s.fulfilled_at?.toISOString(),artworkSubmittedAt:s.artwork_submitted_at?.toISOString(),proofPhotos:(s.proof_photos?.length ? [...s.proof_photos] : undefined),proofPost:s.proof_post || undefined,confirmedAt:s.confirmed_at?.toISOString(),disputedAt:s.disputed_at?.toISOString(),disputeReason:s.dispute_reason || undefined,paidAt:s.paid_at?.toISOString(),payoutAmount:n(s.payout_amount),payoutFee:n(s.payout_fee) ?? 0,payoutReference:s.payout_reference || undefined,payoutDestination:s.payout_destination || undefined};}
   private async getSpot(id:string):Promise<Spot|undefined>{const r=await this.pool.query<SpotRow>("SELECT * FROM spots WHERE id=$1",[id]);if(!r.rows[0])return undefined;const b=await this.pool.query("SELECT bidder_handle,amount,created_at FROM bids WHERE spot_id=$1 ORDER BY created_at",[id]);return this.mapSpot(r.rows[0],b.rows.map(x=>({bidder:x.bidder_handle,amount:Number(x.amount),at:new Date(x.created_at).toISOString()})));}
   private async ownerTransition(id:string,userId:string,from:string,to:string):Promise<Spot>{const r=await this.pool.query(`UPDATE spots s SET status=$4,updated_at=now() FROM listings l WHERE s.id=$1 AND l.id=s.listing_id AND l.seller_user_id=$2 AND s.status=$3 RETURNING s.id`,[id,userId,from,to]);if(!r.rows[0])await this.throwSpotAccess(id,userId);return(await this.getSpot(id))!;}
   private async throwListingAccess(slug:string,userId:string):Promise<never>{const r=await this.pool.query("SELECT seller_user_id FROM listings WHERE slug=$1",[slug]);throw httpError(!r.rows[0]?"listing not found":r.rows[0].seller_user_id!==userId?"forbidden":"listing cannot be updated",!r.rows[0]?404:r.rows[0].seller_user_id!==userId?403:409);}

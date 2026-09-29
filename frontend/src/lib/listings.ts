@@ -48,6 +48,20 @@ export interface Spot {
   payoutFee?: number;
   payoutReference?: string;
   payoutDestination?: string;
+  chainTransaction?: string;
+}
+
+/** Demand above the listing's available spot capacity. */
+export function listingOversubscription(listing: Pick<Listing, "spots">): { bids: number; capacity: number; percent: number } {
+  const capacity = listing.spots.length;
+  const bids = listing.spots.reduce(
+    (total, spot) => total + (spot.bids?.length ?? (spot.bid != null ? 1 : 0)),
+    0,
+  );
+  const percent = capacity > 0 && bids > capacity
+    ? Math.round(((bids - capacity) / capacity) * 100)
+    : 0;
+  return { bids, capacity, percent };
 }
 
 /** Solana tx signatures are 64 raw bytes → 87–88 base58 chars. */
@@ -122,9 +136,36 @@ export interface Listing {
   currency?: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
   status?: "active" | "approved" | "submitted" | "closed";
   spots: Spot[];
   mockup: { views: MockupView[] };
+}
+
+export function expectedListingPayout(listing: Listing): { gross: number; fee: number; net: number } {
+  const feeBps = listing.feeBps ?? 250;
+  const upliftFeeBps = listing.upliftFeeBps ?? feeBps;
+  const maxFeeBps = listing.maxFeeBps ?? feeBps;
+  let gross = 0;
+  let fee = 0;
+
+  for (const spot of listing.spots) {
+    if (!spot.claimedBy && !spot.bidBy) continue;
+    const balance = listing.priceType === "auction" ? (spot.bid ?? spot.price) : spot.price;
+    gross += balance;
+    if (listing.priceType === "fixed") {
+      fee += balance * feeBps / 10_000;
+      continue;
+    }
+    const base = Math.min(balance, spot.price);
+    const uplift = Math.max(0, balance - base);
+    const calculated = base * feeBps / 10_000 + uplift * upliftFeeBps / 10_000;
+    fee += Math.min(calculated, balance * maxFeeBps / 10_000);
+  }
+
+  return { gross, fee, net: Math.max(0, gross - fee) };
 }
 
 export const surfaceLabels: Record<string, string> = {
@@ -700,6 +741,7 @@ export function apiSpotToUi(s: ApiSpot, mode: ApiMode): Spot {
     payoutFee: s.payoutFee,
     payoutReference: s.payoutReference || undefined,
     payoutDestination: s.payoutDestination || undefined,
+    chainTransaction: s.chainDisputeSignature || s.chainProofSignature || s.chainBidSignature || s.chainClaimSignature || s.chainSignature,
   };
 }
 
@@ -749,6 +791,9 @@ export function apiListingToUi(a: ApiListing): Listing {
     currency: a.currency,
     minIncrement: a.minIncrement,
     doubleUp: a.doubleUp,
+    feeBps: a.feeBps,
+    upliftFeeBps: a.upliftFeeBps,
+    maxFeeBps: a.maxFeeBps,
     status: a.status,
     spots,
       mockup: {

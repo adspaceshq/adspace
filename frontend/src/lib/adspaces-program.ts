@@ -47,7 +47,10 @@ export function configPda(): PublicKey {
 }
 
 export function reviewAuthorityPda(): PublicKey {
-  return PublicKey.findProgramAddressSync([seed('review_authority')], ADSPACES_PROGRAM_ID)[0];
+  return PublicKey.findProgramAddressSync(
+    [seed('review_authority'), configPda().toBuffer()],
+    ADSPACES_PROGRAM_ID,
+  )[0];
 }
 
 export function authorityTransferPda(): PublicKey {
@@ -58,9 +61,10 @@ export function authorityTransferPda(): PublicKey {
 }
 
 export async function listingPda(seller: PublicKey, slug: string): Promise<PublicKey> {
-  const slugHash = new Uint8Array(
+  const digest = new Uint8Array(
     await crypto.subtle.digest('SHA-256', new TextEncoder().encode(slug)),
   );
+  const slugHash = digest.slice(0, 16);
   return PublicKey.findProgramAddressSync(
     [seed('listing'), seller.toBuffer(), slugHash],
     ADSPACES_PROGRAM_ID,
