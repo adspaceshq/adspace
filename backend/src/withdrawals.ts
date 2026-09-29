@@ -57,8 +57,8 @@ export class MemoryWithdrawalRepository implements WithdrawalRepository {
     return record;
   }
   async fail(id: string, userId: string): Promise<WalletWithdrawal> {
-    const record = this.records.find((item) => item.id === id && item.userId === userId && item.status === "pending");
-    if (!record) throw httpError("pending withdrawal not found", 404);
+    const record = this.records.find((item) => item.id === id && item.userId === userId && (item.status === "pending" || item.status === "processing"));
+    if (!record) throw httpError("active withdrawal not found", 404);
     record.status = "failed";
     return record;
   }
@@ -148,9 +148,9 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
 
   async fail(id: string, userId: string): Promise<WalletWithdrawal> {
     const updated = await this.pool.query<WithdrawalRow>(
-      `UPDATE wallet_withdrawals SET status='failed' WHERE id=$1 AND user_id=$2 AND status='pending' RETURNING *`, [id, userId],
+      `UPDATE wallet_withdrawals SET status='failed' WHERE id=$1 AND user_id=$2 AND status IN ('pending','processing') RETURNING *`, [id, userId],
     );
-    if (!updated.rows[0]) throw httpError("pending withdrawal not found", 404);
+    if (!updated.rows[0]) throw httpError("active withdrawal not found", 404);
     return this.map(updated.rows[0]);
   }
 

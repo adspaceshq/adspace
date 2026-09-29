@@ -41,9 +41,10 @@ export class PrivyWithdrawalSponsor {
     this.mint = new PublicKey(usdcMintFor(cluster, process.env.USDC_MINT));
   }
 
-  async send(user: SessionUser, withdrawal: WalletWithdrawal, userJwt: string): Promise<string> {
+  async send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> {
     if (!privy) throw Object.assign(new Error("Privy is not configured"), { status: 503 });
-    if (!userJwt) throw Object.assign(new Error("fresh Privy authorization is required"), { status: 401 });
+    const authorizationPrivateKey = process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY;
+    if (!authorizationPrivateKey) throw Object.assign(new Error("Privy authorization key is not configured"), { status: 503 });
     const privyUser = await privy.users()._get(user.did);
     const wallet = privyUser.linked_accounts.find((account) =>
       account.type === "wallet"
@@ -95,7 +96,7 @@ export class PrivyWithdrawalSponsor {
       transaction: transaction.serialize({ requireAllSignatures: false, verifySignatures: false }),
       caip2: caip2[this.cluster],
       sponsor: true,
-      authorization_context: { user_jwts: [userJwt] },
+      authorization_context: { authorization_private_keys: [authorizationPrivateKey] },
     });
     return result.hash;
   }

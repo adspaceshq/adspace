@@ -29,6 +29,14 @@ test("a withdrawal can be reserved for execution only once", async () => {
   assert.equal(attempts.filter((attempt) => attempt.status === "rejected").length, 1);
 });
 
+test("a failed execution releases a processing withdrawal", async () => {
+  const repo = new MemoryWithdrawalRepository();
+  const pending = await repo.create("user", source, destination, 2);
+  await repo.reserve(pending.id, "user");
+  const failed = await repo.fail(pending.id, "user");
+  assert.equal(failed.status, "failed");
+});
+
 test("wallet withdrawals reject unsafe requests", async () => {
   const repo = new MemoryWithdrawalRepository();
   await assert.rejects(() => repo.create("user", source, source, 1), /different wallet/);

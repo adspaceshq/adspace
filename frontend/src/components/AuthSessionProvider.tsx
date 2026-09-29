@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { useMfa, useMfaEnrollment, usePrivy, useSigners, useUser } from '@privy-io/react-auth';
+import { useAuthMfaEnrollment, usePrivy, useSigners, useUser } from '@privy-io/react-auth';
 import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
 import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
@@ -29,7 +29,7 @@ export interface AuthSession {
   linkEmail: () => void;
   linkX: () => void;
   delegateWallet: () => Promise<void>;
-  setupMfa: () => void;
+  setupMfa: () => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -53,7 +53,7 @@ const guest: AuthSession = {
   linkEmail: () => {},
   linkX: () => {},
   delegateWallet: async () => {},
-  setupMfa: () => {},
+  setupMfa: async () => {},
   logout: async () => {},
 };
 
@@ -89,8 +89,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const { addSigners } = useSigners();
   const { refreshUser } = useUser();
   const signerId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID;
-  const { mfaMethods } = useMfa();
-  const { showMfaEnrollmentModal } = useMfaEnrollment();
+  const { enroll: enrollMfa } = useAuthMfaEnrollment();
   const embeddedWallet = user?.linkedAccounts.flatMap((account) => {
     if (account.type !== 'wallet'
       || !('address' in account)
@@ -160,7 +159,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   }, [authenticated, me, embeddedWallet?.address, createSolanaWallet, exchange]);
 
   const walletDelegated = Boolean(embeddedWallet?.delegated);
-  const mfaEnabled = mfaMethods.length > 0;
+  const mfaEnabled = (user?.mfaMethods?.length ?? 0) > 0;
   const walletAddress = embeddedWallet?.address ?? me?.walletAddress;
   const onboardingComplete = Boolean(me?.hasX && me.email && walletAddress && walletDelegated);
 
@@ -198,7 +197,10 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
         setError(e instanceof Error ? e.message : 'Could not enable gasless transactions.');
       }
     },
-    setupMfa: showMfaEnrollmentModal,
+    setupMfa: async () => {
+      await enrollMfa();
+      await refreshUser();
+    },
     logout: async () => {
       exchangedFor.current = null;
       walletProvisionedFor.current = null;
