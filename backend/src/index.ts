@@ -25,7 +25,7 @@ export interface AppDependencies {
   trustProxy?: number;
   chain?: { cluster: SolanaCluster; programId: string };
   withdrawals?: WithdrawalRepository;
-  withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> };
+  withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal, userJwt: string): Promise<string> };
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -196,9 +196,12 @@ export function createApp({
   app.post("/api/wallet/withdrawals/:id/execute", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     if (!withdrawalSponsor) return void res.status(503).json({ error: "withdrawal sponsorship is unavailable" });
     try {
-      const withdrawal = await withdrawals.get(req.params.id, req.user!.id);
-      if (withdrawal.status !== "pending") return void res.status(409).json({ error: "withdrawal is not pending" });
-      const signature = await withdrawalSponsor.send(req.user!, withdrawal);
+      const userJwt = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+      if (!userJwt) return void res.status(401).json({ error: "fresh Privy authorization is required" });
+      const verified = await verifyToken(userJwt);
+      if (verified.did !== req.user!.did) return void res.status(403).json({ error: "Privy authorization does not match this session" });
+      const withdrawal = await withdrawals.reserve(req.params.id, req.user!.id);
+      const signature = await withdrawalSponsor.send(req.user!, withdrawal, userJwt);
       res.json(await withdrawals.confirm(withdrawal.id, req.user!.id, signature));
     } catch (e) { sendErr(res, e); }
   });

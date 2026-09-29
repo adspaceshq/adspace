@@ -198,7 +198,7 @@ export interface WalletWithdrawal {
   source: string;
   destination: string;
   amount: number;
-  status: 'pending' | 'confirmed' | 'failed';
+  status: 'pending' | 'processing' | 'confirmed' | 'failed';
   signature?: string;
   createdAt: string;
   confirmedAt?: string;

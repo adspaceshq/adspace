@@ -11,9 +11,22 @@ test("wallet withdrawals are private to their user and record confirmed signatur
   const pending = await repo.create("user-one", source, destination, 12.5);
   assert.equal(pending.status, "pending");
   assert.equal((await repo.list("user-two")).length, 0);
+  const processing = await repo.reserve(pending.id, "user-one");
+  assert.equal(processing.status, "processing");
   const confirmed = await repo.confirm(pending.id, "user-one", signature);
   assert.equal(confirmed.status, "confirmed");
   assert.equal(confirmed.signature, signature);
+});
+
+test("a withdrawal can be reserved for execution only once", async () => {
+  const repo = new MemoryWithdrawalRepository();
+  const pending = await repo.create("user", source, destination, 2);
+  const attempts = await Promise.allSettled([
+    repo.reserve(pending.id, "user"),
+    repo.reserve(pending.id, "user"),
+  ]);
+  assert.equal(attempts.filter((attempt) => attempt.status === "fulfilled").length, 1);
+  assert.equal(attempts.filter((attempt) => attempt.status === "rejected").length, 1);
 });
 
 test("wallet withdrawals reject unsafe requests", async () => {
