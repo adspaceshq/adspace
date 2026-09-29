@@ -39,6 +39,7 @@ export default function DashboardPage() {
   const [withdrawing, setWithdrawing] = useState(false)
   const [walletUsdc, setWalletUsdc] = useState<number>()
   const [withdrawals, setWithdrawals] = useState<WalletWithdrawal[]>([])
+  const termsListing = termsFor ? data?.listings.find((listing) => listing.slug === termsFor) : undefined
 
   const load = useCallback(async () => {
     if (!auth.authenticated) return
@@ -237,6 +238,12 @@ export default function DashboardPage() {
                 <div className="max-h-[85vh] w-full max-w-[520px] overflow-y-auto rounded-2xl bg-white p-8 shadow-[0_24px_64px_rgba(2,8,23,0.28)]" onClick={(e) => e.stopPropagation()}>
                   <h2 id="terms-title" className="mb-1 text-[22px]">Seller terms{terms && ` (${terms.version})`}</h2>
                   <p className="mb-4 text-[14px] text-[#64748b]">Your space was approved. Accept the terms to put it live.</p>
+                  {termsListing && (
+                    <div className="mb-4 flex items-center justify-between rounded-xl border border-[#e7e5e0] bg-[#f8fafc] px-4 py-3 text-[14px]">
+                      <span className="text-[#64748b]">Pricing model</span>
+                      <span className="font-semibold">{termsListing.mode === 'fixed' ? 'Fixed price' : 'Auction'}</span>
+                    </div>
+                  )}
                   <pre className="mb-6 whitespace-pre-wrap rounded-xl bg-[#f6f6f4] p-4 font-sans text-[13px] leading-relaxed text-[#020817]/80">{terms ? terms.text : 'Loading terms…'}</pre>
                   {termsError && <p role="alert" className="mb-4 text-sm text-[#dc2626]">{termsError}</p>}
                   <div className="flex items-center justify-between gap-3">
