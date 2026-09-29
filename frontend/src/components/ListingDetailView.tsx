@@ -9,7 +9,7 @@ import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { deadlineLabel, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, spotOversubscription, surfaceLabels, type Spot } from '@/lib/listings'
+import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, spotOversubscription, surfaceLabels, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -162,6 +162,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     ? listing.spots.filter((spot) => spotOversubscription(spot) > 0)
     : []
   const highestOversubscription = Math.max(0, ...oversubscribedSpots.map(spotOversubscription))
+  const expectedPayout = expectedListingPayout(listing)
 
   const showToast = (msg: string) => {
     setToast(msg)
@@ -425,6 +426,22 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
               />
             </div>
           </div>
+          {isOwner && (
+            <section aria-label="Expected seller payout" className="mt-5 rounded-2xl border border-[#dbe3ff] bg-[#f5f7ff] p-5 text-left">
+              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                <div>
+                  <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4166fb]">Seller estimate</p>
+                  <p className="mt-1 text-sm text-[#64748b]">Updates with every winning bid. Final payout follows settlement and dispute review.</p>
+                </div>
+                <p className="shrink-0 text-[28px] font-semibold tracking-tight">{formatMoney(expectedPayout.net, listing.currency)}</p>
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-[#dbe3ff] pt-4 text-sm sm:grid-cols-3">
+                <div><dt className="text-[#64748b]">Gross committed</dt><dd className="mt-1 font-mono font-semibold">{formatMoney(expectedPayout.gross, listing.currency)}</dd></div>
+                <div><dt className="text-[#64748b]">Estimated platform fee</dt><dd className="mt-1 font-mono font-semibold">-{formatMoney(expectedPayout.fee, listing.currency)}</dd></div>
+                <div className="col-span-2 sm:col-span-1"><dt className="text-[#64748b]">Expected payout</dt><dd className="mt-1 font-mono font-semibold text-[#16a34a]">{formatMoney(expectedPayout.net, listing.currency)}</dd></div>
+              </dl>
+            </section>
+          )}
         </div>
 
         <div className="mx-auto mt-8 max-w-5xl">

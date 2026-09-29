@@ -130,9 +130,36 @@ export interface Listing {
   currency?: string;
   minIncrement?: number;
   doubleUp?: boolean;
+  feeBps?: number;
+  upliftFeeBps?: number;
+  maxFeeBps?: number;
   status?: "active" | "approved" | "submitted" | "closed";
   spots: Spot[];
   mockup: { views: MockupView[] };
+}
+
+export function expectedListingPayout(listing: Listing): { gross: number; fee: number; net: number } {
+  const feeBps = listing.feeBps ?? 250;
+  const upliftFeeBps = listing.upliftFeeBps ?? feeBps;
+  const maxFeeBps = listing.maxFeeBps ?? feeBps;
+  let gross = 0;
+  let fee = 0;
+
+  for (const spot of listing.spots) {
+    if (!spot.claimedBy && !spot.bidBy) continue;
+    const balance = listing.priceType === "auction" ? (spot.bid ?? spot.price) : spot.price;
+    gross += balance;
+    if (listing.priceType === "fixed") {
+      fee += balance * feeBps / 10_000;
+      continue;
+    }
+    const base = Math.min(balance, spot.price);
+    const uplift = Math.max(0, balance - base);
+    const calculated = base * feeBps / 10_000 + uplift * upliftFeeBps / 10_000;
+    fee += Math.min(calculated, balance * maxFeeBps / 10_000);
+  }
+
+  return { gross, fee, net: Math.max(0, gross - fee) };
 }
 
 export const surfaceLabels: Record<string, string> = {
@@ -758,6 +785,9 @@ export function apiListingToUi(a: ApiListing): Listing {
     currency: a.currency,
     minIncrement: a.minIncrement,
     doubleUp: a.doubleUp,
+    feeBps: a.feeBps,
+    upliftFeeBps: a.upliftFeeBps,
+    maxFeeBps: a.maxFeeBps,
     status: a.status,
     spots,
       mockup: {
