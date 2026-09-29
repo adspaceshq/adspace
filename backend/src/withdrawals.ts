@@ -11,7 +11,7 @@ export interface WalletWithdrawal {
   source: string;
   destination: string;
   amount: number;
-  status: "pending" | "confirmed" | "failed";
+  status: "pending" | "processing" | "confirmed" | "failed";
   signature?: string;
   createdAt: string;
   confirmedAt?: string;
@@ -20,6 +20,7 @@ export interface WalletWithdrawal {
 export interface WithdrawalRepository {
   migrate?(): Promise<void>;
   create(userId: string, source: string, destination: string, amount: number): Promise<WalletWithdrawal>;
+  reserve(id: string, userId: string): Promise<WalletWithdrawal>;
   confirm(id: string, userId: string, signature: string): Promise<WalletWithdrawal>;
   fail(id: string, userId: string): Promise<WalletWithdrawal>;
   list(userId: string): Promise<WalletWithdrawal[]>;
@@ -49,9 +50,15 @@ export class MemoryWithdrawalRepository implements WithdrawalRepository {
     record.status = "confirmed"; record.signature = signature; record.confirmedAt = new Date().toISOString();
     return record;
   }
+  async reserve(id: string, userId: string): Promise<WalletWithdrawal> {
+    const record = this.records.find((item) => item.id === id && item.userId === userId && item.status === "pending");
+    if (!record) throw httpError("pending withdrawal not found", 409);
+    record.status = "processing";
+    return record;
+  }
   async fail(id: string, userId: string): Promise<WalletWithdrawal> {
-    const record = this.records.find((item) => item.id === id && item.userId === userId);
-    if (!record) throw httpError("withdrawal not found", 404);
+    const record = this.records.find((item) => item.id === id && item.userId === userId && (item.status === "pending" || item.status === "processing"));
+    if (!record) throw httpError("active withdrawal not found", 404);
     record.status = "failed";
     return record;
   }
@@ -84,9 +91,12 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
       CREATE TABLE IF NOT EXISTS wallet_withdrawals (
         id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         source_wallet text NOT NULL, destination_wallet text NOT NULL, amount numeric(20,6) NOT NULL,
-        status text NOT NULL CHECK (status IN ('pending','confirmed','failed')),
+        status text NOT NULL,
         signature text UNIQUE, created_at timestamptz NOT NULL DEFAULT now(), confirmed_at timestamptz
       );
+      ALTER TABLE wallet_withdrawals DROP CONSTRAINT IF EXISTS wallet_withdrawals_status_check;
+      ALTER TABLE wallet_withdrawals ADD CONSTRAINT wallet_withdrawals_status_check
+        CHECK (status IN ('pending','processing','confirmed','failed'));
       CREATE INDEX IF NOT EXISTS wallet_withdrawals_user_created_idx ON wallet_withdrawals(user_id, created_at DESC);
       ALTER TABLE wallet_withdrawals ENABLE ROW LEVEL SECURITY;
     `);
@@ -96,7 +106,7 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
     validate(source, destination, amount);
     const used = await this.pool.query<{ total: string }>(
       `SELECT COALESCE(SUM(amount),0) total FROM wallet_withdrawals
-       WHERE user_id=$1 AND status IN ('pending','confirmed') AND created_at > now() - interval '24 hours'`,
+       WHERE user_id=$1 AND status IN ('pending','processing','confirmed') AND created_at > now() - interval '24 hours'`,
       [userId],
     );
     if (Number(used.rows[0]?.total ?? 0) + amount > this.dailyLimit) throw httpError(`daily withdrawal limit is ${this.dailyLimit} USDC`, 429);
@@ -106,6 +116,16 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
       [randomUUID(), userId, source, destination, amount],
     );
     return this.map(result.rows[0]);
+  }
+
+  async reserve(id: string, userId: string): Promise<WalletWithdrawal> {
+    const updated = await this.pool.query<WithdrawalRow>(
+      `UPDATE wallet_withdrawals SET status='processing'
+       WHERE id=$1 AND user_id=$2 AND status='pending' RETURNING *`,
+      [id, userId],
+    );
+    if (!updated.rows[0]) throw httpError("pending withdrawal not found", 409);
+    return this.map(updated.rows[0]);
   }
 
   async confirm(id: string, userId: string, signature: string): Promise<WalletWithdrawal> {
@@ -128,9 +148,9 @@ export class PostgresWithdrawalRepository implements WithdrawalRepository {
 
   async fail(id: string, userId: string): Promise<WalletWithdrawal> {
     const updated = await this.pool.query<WithdrawalRow>(
-      `UPDATE wallet_withdrawals SET status='failed' WHERE id=$1 AND user_id=$2 AND status='pending' RETURNING *`, [id, userId],
+      `UPDATE wallet_withdrawals SET status='failed' WHERE id=$1 AND user_id=$2 AND status IN ('pending','processing') RETURNING *`, [id, userId],
     );
-    if (!updated.rows[0]) throw httpError("pending withdrawal not found", 404);
+    if (!updated.rows[0]) throw httpError("active withdrawal not found", 404);
     return this.map(updated.rows[0]);
   }
 

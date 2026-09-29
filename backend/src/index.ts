@@ -169,7 +169,7 @@ export function createApp({
     status: "ok",
     auth: privyConfigured ? "privy" : "unconfigured",
     sessions: "postgres",
-    chain: { cluster: chain.cluster, programId: chain.programId, integration: "pending-idl" },
+    chain: { cluster: chain.cluster, programId: chain.programId, integration: listingPublisher ? "accept-terms" : "disabled" },
   }));
   app.post("/api/auth/session", authLimiter, async (req, res) => {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
@@ -262,13 +262,6 @@ export function createApp({
           ? body.deliveryDeadline
           : new Date(artworkClose + 7 * 86_400_000).toISOString(),
       };
-      if (listingPublisher) {
-        if (!sellerIdentities || !listing.sellerUserId) return void res.status(503).json({ error: "seller identity lookup is unavailable" });
-        const seller = await sellerIdentities.get(listing.sellerUserId);
-        if (!seller) return void res.status(409).json({ error: "seller account was not found" });
-        const publication = await listingPublisher.publish(listing, seller, policy);
-        await repo.recordChainPublication(req.params.slug, publication);
-      }
       res.json(await repo.approveReview(req.params.slug, policy));
     } catch (e) { sendErr(res, e); }
   });
@@ -281,7 +274,16 @@ export function createApp({
   });
   app.post("/api/listings/:slug/accept-terms", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const version = (req.body as { version?: unknown } | null)?.version;
-    try { res.json(await repo.acceptTerms(req.params.slug, req.user!.id, typeof version === "string" ? version : "")); } catch (e) { sendErr(res, e); }
+    try {
+      const listing = await repo.get(req.params.slug);
+      if (!listing) return void res.status(404).json({ error: "listing not found" });
+      if (listing.status === "approved" && listingPublisher && version === TERMS_VERSION && listing.sellerUserId === req.user!.id) {
+        const policy: ReviewPolicy = { feeBps:listing.feeBps ?? 250, upliftFeeBps:listing.upliftFeeBps ?? 0, maxFeeBps:listing.maxFeeBps ?? 250, reviewWindowSeconds:listing.reviewWindowSeconds ?? 172800, deliveryDeadline:listing.deliveryDeadline ?? new Date(Date.now()+7*86400000).toISOString() };
+        const publication = await listingPublisher.publish(listing, req.user!, policy);
+        if (publication) await repo.recordChainPublication(req.params.slug, publication);
+      }
+      res.json(await repo.acceptTerms(req.params.slug, req.user!.id, typeof version === "string" ? version : ""));
+    } catch (e) { sendErr(res, e); }
   });
   app.get("/api/listings", async (_req, res) => { try { res.json(await repo.summaries()); } catch(e){sendErr(res,e);} });
   app.get("/api/listings/:slug", async (req, res) => { try { const listing = await repo.get(req.params.slug); listing ? res.json(listing) : res.status(404).json({ error: "listing not found" }); } catch(e){sendErr(res,e);} });
@@ -341,8 +343,7 @@ export function createApp({
     const reason = (req.body as { reason?: unknown } | null)?.reason;
     try {
       const cleanReason=typeof reason === "string" ? reason.trim() : "";
-      if(!cleanReason) return void res.status(400).json({error:"dispute reason is required"});
-      if(disputeChainExecutor) await disputeChainExecutor.raise(req.params.id,req.user!,cleanReason);
+      if(disputeChainExecutor && cleanReason) await disputeChainExecutor.raise(req.params.id,req.user!,cleanReason);
       res.json(await repo.disputeSpot(req.params.id, req.user!, cleanReason));
     } catch (e) { sendErr(res, e); }
   });

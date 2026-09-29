@@ -1,6 +1,6 @@
 'use client'
 
-import { cardPhoto, formatMoney, isEnded, sellerDisplay, spotOversubscription, surfaceLabels, type Listing } from '@/lib/listings'
+import { cardPhoto, formatMoney, isEnded, listingOversubscription, sellerDisplay, surfaceLabels, type Listing } from '@/lib/listings'
 import SellerAvatar from '@/components/SellerAvatar'
 
 function SpotProgress({ spots, auction }: { spots: Listing['spots']; auction: boolean }) {
@@ -31,10 +31,7 @@ export default function ListingCard({ listing }: { listing: Listing }) {
   const minPrice = Math.min(...listing.spots.map((s) => s.price))
   const badge = soldOut ? 'closed' : isAuction ? 'auction' : 'live'
   const photo = cardPhoto(listing)
-  const oversubscribed = isAuction
-    ? listing.spots.map(spotOversubscription).filter((percent) => percent > 0)
-    : []
-  const highestOversubscription = Math.max(0, ...oversubscribed)
+  const demand = listingOversubscription(listing)
 
   return (
     <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white transition duration-200 hover:-translate-y-1 hover:border-[#c3cdfd] hover:shadow-[0_16px_40px_rgba(2,8,23,0.1)]">
@@ -55,9 +52,9 @@ export default function ListingCard({ listing }: { listing: Listing }) {
         <span className={`absolute left-3 top-3 inline-flex items-center rounded-full px-3 py-[5px] font-mono text-[11px] font-medium uppercase tracking-wide shadow-sm ${badgeStyles[badge]}`}>
           {soldOut ? 'Sold out' : isAuction ? 'Live auction' : 'Live'}
         </span>
-        {highestOversubscription > 0 && (
+        {isAuction && demand.percent > 0 && (
           <span className="absolute right-3 top-3 inline-flex items-center rounded-full bg-[#fff7ed] px-3 py-[5px] font-mono text-[11px] font-semibold uppercase tracking-wide text-[#9a3412] shadow-sm">
-            {oversubscribed.length} hot · up to +{highestOversubscription}%
+            +{demand.percent}% oversubscribed
           </span>
         )}
       </div>

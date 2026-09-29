@@ -51,11 +51,17 @@ export interface Spot {
   chainTransaction?: string;
 }
 
-/** Price uplift for a contested auction spot. A single opening bid is not oversubscription. */
-export function spotOversubscription(spot: Spot): number {
-  const bidCount = spot.bids?.length ?? (spot.bid != null ? 1 : 0);
-  if (bidCount < 2 || !spot.bid || spot.price <= 0) return 0;
-  return Math.max(0, Math.round(((spot.bid - spot.price) / spot.price) * 100));
+/** Demand above the listing's available spot capacity. */
+export function listingOversubscription(listing: Pick<Listing, "spots">): { bids: number; capacity: number; percent: number } {
+  const capacity = listing.spots.length;
+  const bids = listing.spots.reduce(
+    (total, spot) => total + (spot.bids?.length ?? (spot.bid != null ? 1 : 0)),
+    0,
+  );
+  const percent = capacity > 0 && bids > capacity
+    ? Math.round(((bids - capacity) / capacity) * 100)
+    : 0;
+  return { bids, capacity, percent };
 }
 
 /** Solana tx signatures are 64 raw bytes → 87–88 base58 chars. */

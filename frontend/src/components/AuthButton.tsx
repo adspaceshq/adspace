@@ -28,7 +28,7 @@ export default function AuthButton() {
 }
 
 function PrivyAuthButton() {
-  const { ready, authenticated, handle, avatar, loggingIn, error, login } = useAuthSession();
+  const { ready, privyAuthenticated, authenticated, handle, avatar, loggingIn, error, login } = useAuthSession();
 
   if (!ready && !authenticated) {
     return (
@@ -53,7 +53,7 @@ function PrivyAuthButton() {
           aria-label="Log in"
           className="rounded-lg border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium text-[#020817] shadow-sm transition hover:-translate-y-px hover:border-[#c3cdfd] hover:bg-[#f8f8ff] disabled:cursor-wait disabled:opacity-60"
         >
-          {loggingIn ? 'Connecting…' : 'Log in'}
+          {loggingIn ? 'Connecting…' : privyAuthenticated ? 'Retry session' : 'Log in'}
         </button>
         {error && <span className="max-w-[240px] text-right text-[11px] text-[#dc2626]">{error}</span>}
       </span>
