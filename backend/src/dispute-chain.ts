@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 import { privy } from "./auth.js";
+import { loadKeypair } from "./keypair.js";
 import type { SessionUser } from "./types.js";
 
 const RAISE_DISPUTE = Buffer.from([41, 243, 1, 51, 150, 95, 246, 73]);
@@ -17,7 +17,7 @@ export class PrivyDisputeChainExecutor implements DisputeChainExecutor {
   private feePayer: Keypair;
   constructor(private pool: Pool, rpcUrl: string, programId: string, walletPath: string, private baseUrl: string) {
     this.connection=new Connection(rpcUrl,"confirmed"); this.programId=new PublicKey(programId);
-    this.feePayer=Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(walletPath,"utf8"))));
+    this.feePayer=loadKeypair(walletPath);
   }
   async raise(spotId:string,buyer:SessionUser,reason:string):Promise<string>{
     if(!privy||!buyer.walletAddress) throw httpError("buyer Privy wallet is unavailable",409);

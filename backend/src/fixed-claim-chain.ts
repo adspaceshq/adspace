@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
 import { Connection, Keypair, PublicKey, Transaction, TransactionInstruction } from "@solana/web3.js";
 import { privy } from "./auth.js";
+import { loadKeypair } from "./keypair.js";
 import { usdcMintFor } from "./payout.js";
 import type { SolanaCluster } from "./config.js";
 import type { SessionUser } from "./types.js";
@@ -39,7 +39,7 @@ export class PrivyFixedClaimExecutor implements FixedClaimExecutor {
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId = new PublicKey(programId);
     this.mint = new PublicKey(usdcMintFor(cluster, process.env.USDC_MINT));
-    this.feePayer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(reviewerWalletPath, "utf8"))));
+    this.feePayer = loadKeypair(reviewerWalletPath);
   }
 
   async claim(spotId: string, buyer: SessionUser): Promise<string> {

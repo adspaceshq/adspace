@@ -111,7 +111,12 @@ export function createDatabasePool(
   const databaseUrl = new URL(connectionString);
   for (const parameter of ["sslmode", "sslcert", "sslkey", "sslrootcert"]) databaseUrl.searchParams.delete(parameter);
   const caPath = process.env.DATABASE_CA_CERT;
-  const ssl = process.env.DATABASE_SSL === "disable" ? false : { rejectUnauthorized: true, ...(caPath ? { ca: readFileSync(caPath, "utf8") } : {}) };
+  const ssl = process.env.DATABASE_SSL === "disable"
+    ? false
+    : {
+        rejectUnauthorized: process.env.DATABASE_SSL !== "no-verify",
+        ...(caPath ? { ca: readFileSync(caPath, "utf8") } : {}),
+      };
   return new Pool({
     connectionString: databaseUrl.toString(),
     ssl,

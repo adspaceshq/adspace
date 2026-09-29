@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
 import { privy } from "./auth.js";
+import { loadKeypair } from "./keypair.js";
 import type { SessionUser } from "./types.js";
 
 const SUBMIT_PROOF = Buffer.from([54, 241, 46, 84, 4, 212, 46, 94]);
@@ -26,7 +26,7 @@ export class PrivyProofChainExecutor implements ProofChainExecutor {
   constructor(private readonly pool: Pool, rpcUrl: string, programId: string, walletPath: string, private readonly publicBaseUrl: string) {
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId = new PublicKey(programId);
-    this.feePayer = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(walletPath, "utf8"))));
+    this.feePayer = loadKeypair(walletPath);
   }
 
   async submit(spotId: string, seller: SessionUser, proofInput: { photos: unknown; postUrl?: unknown }): Promise<string> {

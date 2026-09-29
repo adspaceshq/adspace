@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
+import { loadKeypair } from "./keypair.js";
 import { usdcMintFor } from "./payout.js";
 import type { SolanaCluster } from "./config.js";
 
@@ -32,7 +32,7 @@ export class ProgramSettlementExecutor implements SettlementExecutor {
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId = new PublicKey(programId);
     this.mint = new PublicKey(usdcMintFor(cluster, process.env.USDC_MINT));
-    this.caller = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(walletPath, "utf8"))));
+    this.caller = loadKeypair(walletPath);
   }
 
   async settle(spotId: string): Promise<string> {

@@ -1,7 +1,7 @@
-import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
 import { Connection,Keypair,PublicKey,Transaction,TransactionInstruction } from "@solana/web3.js";
 import { privy } from "./auth.js";
+import { loadKeypair } from "./keypair.js";
 import type { SessionUser } from "./types.js";
 
 const TOKEN=new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
@@ -11,7 +11,7 @@ export interface CloseSpotsChainExecutor{close(slug:string,seller:SessionUser):P
 
 export class PrivyCloseSpotsChainExecutor implements CloseSpotsChainExecutor{
   private connection:Connection;private program:PublicKey;private payer:Keypair;
-  constructor(private pool:Pool,rpc:string,program:string,walletPath:string){this.connection=new Connection(rpc,"confirmed");this.program=new PublicKey(program);this.payer=Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(walletPath,"utf8"))))}
+  constructor(private pool:Pool,rpc:string,program:string,walletPath:string){this.connection=new Connection(rpc,"confirmed");this.program=new PublicKey(program);this.payer=loadKeypair(walletPath)}
   async close(slug:string,seller:SessionUser):Promise<string[]>{
     const result=await this.pool.query(`SELECT l.seller_user_id,l.chain_address listing_address,s.chain_address spot_address,s.chain_vault_address vault_address FROM listings l LEFT JOIN spots s ON s.listing_id=l.id AND s.status='open' WHERE l.slug=$1 ORDER BY s.created_at,s.id`,[slug]);
     if(!result.rows[0])throw error("listing not found",404);if(result.rows[0].seller_user_id!==seller.id)throw error("forbidden",403);

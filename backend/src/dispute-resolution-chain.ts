@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
+import { loadKeypair } from "./keypair.js";
 import { usdcMintFor } from "./payout.js";
 import type { SolanaCluster } from "./config.js";
 
@@ -14,7 +14,7 @@ const createAta=(p:PublicKey,o:PublicKey,m:PublicKey,a:PublicKey)=>new Transacti
 export interface DisputeResolutionExecutor{resolve(spotId:string,sellerShareBps:number,decision:string):Promise<string>}
 export class ProgramDisputeResolutionExecutor implements DisputeResolutionExecutor{
  private connection:Connection;private programId:PublicKey;private mint:PublicKey;private resolver:Keypair;
- constructor(private pool:Pool,rpc:string,cluster:SolanaCluster,pid:string,wallet:string,private baseUrl:string){this.connection=new Connection(rpc,"confirmed");this.programId=new PublicKey(pid);this.mint=new PublicKey(usdcMintFor(cluster,process.env.USDC_MINT));this.resolver=Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(wallet,"utf8"))));}
+ constructor(private pool:Pool,rpc:string,cluster:SolanaCluster,pid:string,wallet:string,private baseUrl:string){this.connection=new Connection(rpc,"confirmed");this.programId=new PublicKey(pid);this.mint=new PublicKey(usdcMintFor(cluster,process.env.USDC_MINT));this.resolver=loadKeypair(wallet);}
  async resolve(spotId:string,sellerShareBps:number,decision:string){
   if(!Number.isInteger(sellerShareBps)||sellerShareBps<0||sellerShareBps>10000)throw fail("seller share must be between 0 and 10000 bps",400);if(!decision.trim())throw fail("decision is required",400);
   const q=await this.pool.query(`SELECT s.chain_address,s.chain_vault_address,l.chain_address listing_address,l.slug,u.wallet_address seller_wallet,bu.wallet_address buyer_wallet FROM spots s JOIN listings l ON l.id=s.listing_id JOIN users u ON u.id=l.seller_user_id LEFT JOIN users bu ON bu.id=s.buyer_user_id WHERE s.id=$1`,[spotId]),r=q.rows[0];

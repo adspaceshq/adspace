@@ -1,9 +1,9 @@
-import { readFileSync } from "node:fs";
 import type { Pool } from "pg";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { privy } from "./auth.js";
 import { createListingInstructions, type ReviewPolicy } from "./adspaces-program.js";
 import type { SolanaCluster } from "./config.js";
+import { loadKeypair } from "./keypair.js";
 import { usdcMintFor } from "./payout.js";
 import type { Listing, SessionUser } from "./types.js";
 
@@ -56,8 +56,7 @@ export class PrivyListingPublisher implements ListingPublisher {
     this.connection = new Connection(rpcUrl, "confirmed");
     this.programId = new PublicKey(programId);
     this.usdcMint = new PublicKey(usdcMintFor(cluster, process.env.USDC_MINT));
-    const secret = JSON.parse(readFileSync(reviewerWalletPath, "utf8")) as number[];
-    this.reviewer = Keypair.fromSecretKey(Uint8Array.from(secret));
+    this.reviewer = loadKeypair(reviewerWalletPath);
   }
 
   async publish(listing: Listing, seller: SessionUser, policy: ReviewPolicy): Promise<ChainPublication> {
