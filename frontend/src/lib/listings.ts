@@ -51,6 +51,13 @@ export interface Spot {
   chainTransaction?: string;
 }
 
+/** Price uplift for a contested auction spot. A single opening bid is not oversubscription. */
+export function spotOversubscription(spot: Spot): number {
+  const bidCount = spot.bids?.length ?? (spot.bid != null ? 1 : 0);
+  if (bidCount < 2 || !spot.bid || spot.price <= 0) return 0;
+  return Math.max(0, Math.round(((spot.bid - spot.price) / spot.price) * 100));
+}
+
 /** Solana tx signatures are 64 raw bytes → 87–88 base58 chars. */
 export function isSignatureLike(value: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(value);
