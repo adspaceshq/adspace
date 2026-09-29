@@ -45,9 +45,6 @@ export class PrivyWithdrawalSponsor {
     if (!privy) throw Object.assign(new Error("Privy is not configured"), { status: 503 });
     if (!userJwt) throw Object.assign(new Error("fresh Privy authorization is required"), { status: 401 });
     const privyUser = await privy.users()._get(user.did);
-    if (!privyUser.mfa_methods?.length) {
-      throw Object.assign(new Error("MFA enrollment is required for withdrawals"), { status: 403 });
-    }
     const wallet = privyUser.linked_accounts.find((account) =>
       account.type === "wallet"
       && account.chain_type === "solana"
