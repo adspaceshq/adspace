@@ -29,8 +29,13 @@ export interface AppDependencies {
 }
 
 const sendErr = (res: Response, e: unknown) => {
-  const status = (e as { status?: number }).status ?? 500;
-  res.status(status).json({ error: status === 500 ? "internal error" : e instanceof Error ? e.message : "request failed" });
+  const candidate = e as { status?: number; statusCode?: number };
+  const status = candidate.status ?? candidate.statusCode ?? 500;
+  const message = e instanceof Error ? e.message : "request failed";
+  if (status >= 500) console.error(e);
+  res.status(status).json({
+    error: status === 500 && process.env.NODE_ENV === "production" ? "internal error" : message,
+  });
 };
 
 /** Buyer brand assets ride the claim/bid body; the repo validates them. */
@@ -195,11 +200,15 @@ export function createApp({
   });
   app.post("/api/wallet/withdrawals/:id/execute", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     if (!withdrawalSponsor) return void res.status(503).json({ error: "withdrawal sponsorship is unavailable" });
+    let reserved: WalletWithdrawal | undefined;
     try {
-      const withdrawal = await withdrawals.reserve(req.params.id, req.user!.id);
-      const signature = await withdrawalSponsor.send(req.user!, withdrawal);
-      res.json(await withdrawals.confirm(withdrawal.id, req.user!.id, signature));
-    } catch (e) { sendErr(res, e); }
+      reserved = await withdrawals.reserve(req.params.id, req.user!.id);
+      const signature = await withdrawalSponsor.send(req.user!, reserved);
+      res.json(await withdrawals.confirm(reserved.id, req.user!.id, signature));
+    } catch (e) {
+      if (reserved) await withdrawals.fail(reserved.id, req.user!.id).catch(() => undefined);
+      sendErr(res, e);
+    }
   });
   app.post("/api/wallet/withdrawals/:id/fail", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     try { res.json(await withdrawals.fail(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); }
