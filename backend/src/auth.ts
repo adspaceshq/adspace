@@ -1,4 +1,4 @@
-import { PrivyClient } from "@privy-io/node";
+import { PrivyClient, type VerifyAccessTokenResponse } from "@privy-io/node";
 import type { AuthenticatedIdentity } from "./types.js";
 
 const appId = process.env.PRIVY_APP_ID ?? "";
@@ -106,7 +106,12 @@ export async function userFromAccessToken(
 ): Promise<AuthenticatedIdentity> {
   if (!privy) throw Object.assign(new Error("privy not configured on the API"), { status: 503 });
 
-  const claims = await privy.utils().auth().verifyAccessToken(token);
+  let claims: VerifyAccessTokenResponse;
+  try {
+    claims = await privy.utils().auth().verifyAccessToken(token);
+  } catch {
+    throw Object.assign(new Error("Privy session expired — log in again"), { status: 401 });
+  }
   const did = claims.user_id ?? "";
   if (!did) throw Object.assign(new Error("invalid token claims"), { status: 401 });
 

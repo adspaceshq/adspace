@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useMfaEnrollment, usePrivy, useSigners, useUser } from '@privy-io/react-auth';
 import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
-import { createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
+import { ApiError, createApiSession, fetchApiMe, logoutApiSession } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
 import type { SessionUser } from '@/lib/types';
 
@@ -115,6 +115,9 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       exchangedFor.current = null;
       setMe(null);
+      if (e instanceof ApiError && e.status === 401) {
+        await privyLogout();
+      }
       setError(
         e instanceof Error
           ? e.message
@@ -123,7 +126,7 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setExchanging(false);
     }
-  }, []);
+  }, [privyLogout]);
 
   useEffect(() => {
     if (!ready) return;
