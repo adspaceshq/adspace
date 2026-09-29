@@ -28,7 +28,7 @@ test("configuration validates backend and chain boundaries", () => {
   assert.throws(() => loadConfig({ DATABASE_URL: "postgresql://localhost/db", ADSPACES_PROGRAM_ID: "not-a-key" }), /ADSPACES_PROGRAM_ID/);
 });
 
-test("health exposes explicit pending chain integration without claiming readiness", async () => {
+test("health reports chain integration state", async () => {
   const response = await request(createApp({
     auth,
     chain: { cluster: "devnet", programId: adspacesProgramId },
@@ -36,6 +36,6 @@ test("health exposes explicit pending chain integration without claiming readine
   assert.deepEqual(response.body.chain, {
     cluster: "devnet",
     programId: adspacesProgramId,
-    integration: "pending-idl",
+    integration: "disabled",
   });
 });

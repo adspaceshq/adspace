@@ -6,7 +6,7 @@ import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken 
 import { csrfMatches, isReviewer, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
 import type { MarketplaceRepository } from "./market.js";
 import { TERMS_TEXT, TERMS_VERSION } from "./types.js";
-import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
+import type { AuthenticatedIdentity, CreateListingRequest, Listing, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
 import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdrawals.js";
 import type { WalletWithdrawal } from "./withdrawals.js";
@@ -26,6 +26,7 @@ export interface AppDependencies {
   chain?: { cluster: SolanaCluster; programId: string };
   withdrawals?: WithdrawalRepository;
   withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> };
+  listingPublisher?: { publish(listing: Listing, seller: SessionUser): Promise<void> };
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -59,6 +60,7 @@ export function createApp({
   chain = { cluster: "devnet", programId: adspacesProgramId },
   withdrawals = new MemoryWithdrawalRepository(),
   withdrawalSponsor,
+  listingPublisher,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -136,7 +138,7 @@ export function createApp({
     status: "ok",
     auth: privyConfigured ? "privy" : "unconfigured",
     sessions: "postgres",
-    chain: { cluster: chain.cluster, programId: chain.programId, integration: "pending-idl" },
+    chain: { cluster: chain.cluster, programId: chain.programId, integration: listingPublisher ? "accept-terms" : "disabled" },
   }));
   app.post("/api/auth/session", authLimiter, async (req, res) => {
     const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
@@ -228,7 +230,16 @@ export function createApp({
   });
   app.post("/api/listings/:slug/accept-terms", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const version = (req.body as { version?: unknown } | null)?.version;
-    try { res.json(await repo.acceptTerms(req.params.slug, req.user!.id, typeof version === "string" ? version : "")); } catch (e) { sendErr(res, e); }
+    try {
+      const selectedVersion = typeof version === "string" ? version : "";
+      const listing = await repo.get(req.params.slug);
+      if (!listing) return void res.status(404).json({ error: "listing not found" });
+      if (listing.sellerUserId !== req.user!.id) return void res.status(403).json({ error: "forbidden" });
+      if (selectedVersion !== TERMS_VERSION) return void res.status(400).json({ error: `terms version ${selectedVersion || "(missing)"} is stale — accept ${TERMS_VERSION}` });
+      if (listing.status !== "active" && listing.status !== "approved") return void res.status(409).json({ error: "listing is not approved yet" });
+      if (listing.status === "approved" && listingPublisher) await listingPublisher.publish(listing, req.user!);
+      res.json(await repo.acceptTerms(req.params.slug, req.user!.id, selectedVersion));
+    } catch (e) { sendErr(res, e); }
   });
   app.get("/api/listings", async (_req, res) => { try { res.json(await repo.summaries()); } catch(e){sendErr(res,e);} });
   app.get("/api/listings/:slug", async (req, res) => { try { const listing = await repo.get(req.params.slug); listing ? res.json(listing) : res.status(404).json({ error: "listing not found" }); } catch(e){sendErr(res,e);} });
