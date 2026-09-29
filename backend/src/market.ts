@@ -275,9 +275,11 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const image = parseListingImage(body.image);
       const artworkClose = parseArtworkClose(body.artworkClose);
       // Step 2: submissions land as submitted — platform review activates them.
-      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,status)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'submitted')`,
-      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,artworkClose,fabric]);
+      const minIncrement=mode==="auction"?Number(body.minIncrement??1):null;
+      if(mode==="auction"&&(minIncrement===null||!Number.isFinite(minIncrement)||minIncrement<=0))throw httpError("minimum bid increase must be positive",400);
+      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,status,min_increment,double_up)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'submitted',$14,$15)`,
+      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,artworkClose,fabric,minIncrement,mode==="auction"&&body.doubleUp===true]);
       for (let i=0;i<drafts.length;i++) {
         const spot=drafts[i];
         const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" || spot.view === "tee-left" || spot.view === "tee-right" ? spot.view : "lid";
@@ -447,7 +449,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       if (!spot) throw httpError("spot not found",404);
       if (new Date(spot.deadline).getTime() <= Date.now()) throw httpError("listing has ended",409);
       if (spot.mode!=="auction" || spot.status!=="open" || spot.seller_user_id===bidder.id) throw httpError("spot is unavailable or belongs to you",409);
-      const current=n(spot.current_bid); const required=current == null ? Number(spot.price) : spot.double_up ? current*2 : current+Number(spot.min_increment ?? 0);
+      const current=n(spot.current_bid); const required=current == null ? Number(spot.price) : spot.double_up ? current*2 : current+Number(spot.min_increment ?? 1);
       if (amount<required) throw httpError(`bid must be at least ${required} ${spot.currency}`,409);
       await client.query("INSERT INTO bids(id,spot_id,bidder_user_id,bidder_handle,amount) VALUES($1,$2,$3,$4,$5)",[randomUUID(),spotId,bidder.id,bidder.handle,amount]);
       await client.query("UPDATE spots SET current_bid=$2,buyer_user_id=$3,buyer_handle=$4,claimed_at=now(),updated_at=now(),website_url=$5,logo_url=$6 WHERE id=$1",[spotId,amount,bidder.id,bidder.handle,brand.website ?? "",brand.logoUrl ?? ""]);

@@ -153,6 +153,8 @@ export class Store {
     image?: string;
     fabric?: string;
     mode?: string;
+    minIncrement?: number;
+    doubleUp?: boolean;
     currency?: string;
     deadline?: string;
     artworkClose?: string;
@@ -217,6 +219,8 @@ export class Store {
       sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
       image, mode, fabric,
+      minIncrement: mode === "auction" ? Number(req.minIncrement ?? 1) : undefined,
+      doubleUp: mode === "auction" && req.doubleUp === true,
       // Step 2: submissions land as submitted — platform review activates them.
       currency, deadline, artworkClose: parseArtworkClose(req.artworkClose), status: "submitted", spots,
     };

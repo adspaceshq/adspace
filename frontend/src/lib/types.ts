@@ -109,6 +109,8 @@ export interface ApiCreateListingRequest {
   story?: string;
   fabric?: string;
   mode?: string;
+  minIncrement?: number;
+  doubleUp?: boolean;
   currency?: string;
   deadline?: string;
   artworkClose?: string;
