@@ -155,6 +155,8 @@ export class Store {
     currency?: string;
     deadline?: string;
     artworkClose?: string;
+    minIncrement?: number;
+    doubleUp?: boolean;
     spots?: Array<{ label?: string; location?: string; size?: string; price?: number; view?: string; x?: number; y?: number; w?: number }>;
   }): Listing {
     const title = req.title.trim();
@@ -163,6 +165,10 @@ export class Store {
       throw Object.assign(new Error("title and seller are required"), { status: 400 });
     }
     const mode: Listing["mode"] = req.mode === "auction" ? "auction" : "fixed";
+    const minIncrement = mode === "auction" ? Number(req.minIncrement ?? 1) : undefined;
+    if (mode === "auction" && !(minIncrement! > 0)) {
+      throw Object.assign(new Error("auction minimum bid increment must be above zero"), { status: 400 });
+    }
     const currency = req.currency?.trim() || "USD";
     let deadline = daysFromNow(14);
     if (req.deadline !== undefined && req.deadline !== "") {
@@ -215,6 +221,8 @@ export class Store {
       sellerHandle: req.sellerHandle ?? seller,
       sellerUserId: req.sellerUserId,
       surface: req.surface ?? "", story: req.story ?? "",
+      minIncrement,
+      doubleUp: mode === "auction" && req.doubleUp === true,
       image, mode, fabric,
       // Step 2: submissions land as submitted — platform review activates them.
       currency, deadline, artworkClose: parseArtworkClose(req.artworkClose), status: "submitted", spots,

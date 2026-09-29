@@ -153,6 +153,8 @@ export interface CreateListingRequest {
   currency?: string;
   deadline?: string;
   artworkClose?: string;
+  minIncrement?: number;
+  doubleUp?: boolean;
   spots?: CreateSpotRequest[];
 }
 

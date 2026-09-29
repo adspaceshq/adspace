@@ -239,14 +239,16 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       const id = randomUUID();
       const slug = `${slugify(title)}-${id.slice(0, 8)}`;
       const mode = body.mode === "auction" ? "auction" : "fixed";
+      const minIncrement = mode === "auction" ? Number(body.minIncrement ?? 1) : null;
+      if (mode === "auction" && !(minIncrement! > 0)) throw httpError("auction minimum bid increment must be above zero", 400);
       const currency = body.currency?.trim().toUpperCase() || "USD";
       const fabric = parseFabric(body.fabric);
       const image = parseListingImage(body.image);
       const artworkClose = parseArtworkClose(body.artworkClose);
       // Step 2: submissions land as submitted — platform review activates them.
-      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,status)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'submitted')`,
-      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,artworkClose,fabric]);
+      await client.query(`INSERT INTO listings(id,slug,seller_user_id,seller_handle,title,surface,story,image_url,mode,currency,deadline,artwork_close,fabric,min_increment,double_up,status)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'submitted')`,
+      [id,slug,seller.id,seller.handle,title,body.surface?.trim() ?? "",body.story?.trim() ?? "",image,mode,currency,deadlineIso,artworkClose,fabric,minIncrement,mode === "auction" && body.doubleUp === true]);
       for (let i=0;i<drafts.length;i++) {
         const spot=drafts[i];
         const view = spot.view === "inside" || spot.view === "tee-front" || spot.view === "tee-back" || spot.view === "tee-left" || spot.view === "tee-right" ? spot.view : "lid";

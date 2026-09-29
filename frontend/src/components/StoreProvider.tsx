@@ -118,6 +118,7 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
         currency: listing.currency ?? 'USD',
         deadline: listing.endsAt,
         ...(listing.artworkClose ? { artworkClose: listing.artworkClose } : {}),
+        ...(listing.priceType === 'auction' ? { minIncrement: listing.minIncrement, doubleUp: listing.doubleUp } : {}),
         spots: listing.spots.map((s) => ({
           label: s.label,
           location: s.location,

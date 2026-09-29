@@ -49,6 +49,7 @@ export default function ListPage() {
   // Optional artwork due date: buyers must submit final art by then (empty = none).
   const [artworkClose, setArtworkClose] = useState('')
   const [priceType, setPriceType] = useState<'fixed' | 'auction' | null>(null)
+  const [minIncrement, setMinIncrement] = useState('1')
   const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
   // Id of the spot whose price panel is open — set by dropping or tapping a sticker.
   const [editingSpot, setEditingSpot] = useState<string | null>(null)
@@ -319,6 +320,10 @@ export default function ListPage() {
       setReviewing(false)
       return
     }
+    if (priceType === 'auction' && !(Number(minIncrement) > 0)) {
+      setError('Enter an auction bid increment above zero.')
+      return
+    }
     setPublishing(true)
     const seller = PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()
     const id = `user-${Date.now()}`
@@ -340,6 +345,7 @@ export default function ListPage() {
       deadline: prettyDeadline(deadline),
       endsAt: new Date(`${deadline}T23:59:00`).toISOString(),
       priceType,
+      minIncrement: priceType === 'auction' ? Number(minIncrement) : undefined,
       spots: spots.map((s, i) => ({
         id: `${id}-s${i + 1}`,
         label: s.label.trim() || `Spot ${i + 1}`,
@@ -458,6 +464,13 @@ export default function ListPage() {
                   )
                 })}
               </div>
+              {priceType === 'auction' && (
+                <label className="mt-3 flex flex-col gap-[6px] text-[13px] font-semibold" htmlFor="list-min-increment">
+                  Minimum bid increment
+                  <input id="list-min-increment" className={field} type="number" inputMode="decimal" min="0.01" step="0.01" value={minIncrement} onChange={(event) => setMinIncrement(event.target.value)} required />
+                  <span className="font-normal text-[#64748b]">Each new bid must be at least this much higher.</span>
+                </label>
+              )}
             </div>
             {/* Seller identity comes from the X session — never a typed name — so there is
                 no "Your name" field when Privy login is on. Demo mode (no Privy) keeps it. */}
@@ -727,6 +740,12 @@ export default function ListPage() {
                 <dt className="shrink-0 text-[#64748b]">Pricing</dt>
                 <dd className="truncate font-medium">{priceType === 'fixed' ? 'Fixed price' : 'Auction'}</dd>
               </div>
+              {priceType === 'auction' && (
+                <div className="flex items-baseline justify-between gap-4">
+                  <dt className="shrink-0 text-[#64748b]">Minimum bid increment</dt>
+                  <dd className="truncate font-medium">{formatMoney(Number(minIncrement), preview.currency)}</dd>
+                </div>
+              )}
               <div className="flex items-baseline justify-between gap-4">
                 <dt className="shrink-0 text-[#64748b]">Seller</dt>
                 <dd className="truncate font-medium">{PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()}</dd>

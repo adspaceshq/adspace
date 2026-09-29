@@ -98,6 +98,8 @@ export interface ApiCreateListingRequest {
   currency?: string;
   deadline?: string;
   artworkClose?: string;
+  minIncrement?: number;
+  doubleUp?: boolean;
   spots?: ApiCreateSpotRequest[];
 }
 
