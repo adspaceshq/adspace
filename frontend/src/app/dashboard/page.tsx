@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { useAuthMfa } from '@privy-io/react-auth'
+import { useMfa } from '@privy-io/react-auth'
 import Link from 'next/link'
 import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
@@ -30,7 +30,7 @@ export default function DashboardPage() {
   const [terms, setTerms] = useState<TermsDoc | null>(null)
   const [termsFor, setTermsFor] = useState<string | null>(null)
   const [termsError, setTermsError] = useState<string>()
-  const { verify: verifyMfa } = useAuthMfa()
+  const { clear: clearMfa, promptMfa } = useMfa()
   const [withdrawOpen, setWithdrawOpen] = useState(false)
   const [withdrawAddress, setWithdrawAddress] = useState('')
   const [withdrawAmount, setWithdrawAmount] = useState('')
@@ -121,10 +121,11 @@ export default function DashboardPage() {
     let submittedSignature: string | undefined
     try {
       if (!auth.mfaEnabled) {
-        await auth.setupMfa()
+        auth.setupMfa()
         throw new Error('Set up two-factor authentication before withdrawing')
       }
-      await verifyMfa()
+      await clearMfa()
+      await promptMfa()
       intent = await createWalletWithdrawal(withdrawAddress.trim(), Number(withdrawAmount))
       setWithdrawals((current) => [intent!, ...current])
       const confirmed = await executeWalletWithdrawal(intent.id)
