@@ -9,7 +9,7 @@ import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, spotOversubscription, surfaceLabels, type Spot } from '@/lib/listings'
+import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingOversubscription, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -158,10 +158,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   }))
   const takenCount = listing.spots.filter((s) => s.claimedBy || s.bidBy).length
   const spotBidCount = (sp: Spot) => sp.bids?.length ?? (sp.bid != null ? 1 : 0)
-  const oversubscribedSpots = isAuction
-    ? listing.spots.filter((spot) => spotOversubscription(spot) > 0)
-    : []
-  const highestOversubscription = Math.max(0, ...oversubscribedSpots.map(spotOversubscription))
+  const demand = listingOversubscription(listing)
   const expectedPayout = expectedListingPayout(listing)
 
   const showToast = (msg: string) => {
@@ -395,8 +392,8 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           <p className="mt-4 font-mono text-[13px] font-medium tracking-wide text-[#020817]">
             {takenCount}/{listing.spots.length} spots taken <span className="mx-1 text-[#e7e5e0]">·</span>
             <span className="text-[#64748b]">{allBids.length} bid{allBids.length === 1 ? '' : 's'}</span>
-            {highestOversubscription > 0 && (
-              <><span className="mx-1 text-[#e7e5e0]">·</span><span className="text-[#9a3412]">{oversubscribedSpots.length} oversubscribed · up to +{highestOversubscription}%</span></>
+            {isAuction && demand.percent > 0 && (
+              <><span className="mx-1 text-[#e7e5e0]">·</span><span className="text-[#9a3412]">{demand.bids} bids for {demand.capacity} spots · +{demand.percent}% oversubscribed</span></>
             )}
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[#64748b]">
@@ -475,7 +472,6 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
             {listing.spots.map((sp, i) => {
               const held = sp.claimedBy ?? sp.bidBy
               const open = isAuction ? !sp.sold : !held
-              const oversubscription = isAuction ? spotOversubscription(sp) : 0
               return (
                 <div key={sp.id} className={`flex items-center gap-3 px-5 py-3 text-sm ${i > 0 ? 'border-t border-[#e7e5e0]' : ''}`}>
                   <span className="w-6 shrink-0 font-mono text-[13px] text-[#64748b]">{i + 1}</span>
@@ -483,11 +479,6 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                   <span className="hidden shrink-0 rounded-full bg-[#f1f0ec] px-[10px] py-1 font-mono text-[11px] text-[#64748b] sm:inline">
                     {sp.size}
                   </span>
-                  {oversubscription > 0 && (
-                    <span className="shrink-0 rounded-full bg-[#fff7ed] px-[10px] py-1 font-mono text-[11px] font-semibold text-[#9a3412]">
-                      +{oversubscription}% oversubscribed
-                    </span>
-                  )}
                   {held ? (
                     sp.website ? (
                       <span className="truncate text-[13px] text-[#64748b]">

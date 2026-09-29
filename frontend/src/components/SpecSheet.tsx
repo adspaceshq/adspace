@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Apple, X } from 'lucide-react'
-import { formatMoney, clampStickerWidth, lidPointFromPointer, spotOversubscription, type GridCell, type Listing, type Spot } from '@/lib/listings'
+import { formatMoney, clampStickerWidth, lidPointFromPointer, type GridCell, type Listing, type Spot } from '@/lib/listings'
 
 /*
  * Spec sheets. Two view kinds:
@@ -289,7 +289,6 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                 const taken = isClaimed || isWinning
                 const who = isClaimed ? spot.claimedBy : spot.bidBy
                 const amount = spot.bid ?? spot.price
-                const oversubscription = listing.priceType === 'auction' ? spotOversubscription(spot) : 0
                 const price = spot.bid != null
                   ? formatMoney(spot.bid, listing.currency)
                   : listing.priceType === 'auction'
@@ -461,11 +460,6 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                       <span className="block truncate font-mono text-[12px] leading-tight text-[#64748b]">
                         {amount > 0 ? price : 'No price yet'}
                       </span>
-                      {oversubscription > 0 && (
-                        <span className="mt-1 inline-flex rounded-full bg-[#fff7ed] px-2 py-0.5 font-mono text-[10px] font-semibold leading-tight text-[#9a3412]">
-                          +{oversubscription}% oversubscribed
-                        </span>
-                      )}
                     </span>
                   </div>
                 )
