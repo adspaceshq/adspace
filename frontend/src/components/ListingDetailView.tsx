@@ -174,6 +174,10 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     setModal({ spot, mode: 'claim' })
   }
   const openBid = (spot: Spot) => {
+    if (listing && x?.handle && normHandle(x.handle) === normHandle(listing.seller.handle || listing.seller.name)) {
+      showToast('You cannot bid on your own listing.')
+      return
+    }
     setName(x?.handle ?? '')
     setWebsite('')
     setLogo(null)
@@ -465,7 +469,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       {spotBidCount(sp) > 0 && <span className="text-[#64748b]"> · {spotBidCount(sp)} bid{spotBidCount(sp) === 1 ? '' : 's'}</span>}
                     </span>
                   )}
-                  {open && !ended && (
+                  {open && !ended && !isOwner && (
                     <button
                       type="button"
                       onClick={() => (isAuction ? openBid(sp) : openClaim(sp))}
