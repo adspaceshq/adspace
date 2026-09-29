@@ -18,9 +18,22 @@ import type {
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 let csrfToken: string | null = null;
 
-async function parseError(res: Response): Promise<string> {
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+
+  constructor(message: string, status: number, code?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+async function parseError(res: Response): Promise<{ message: string; code?: string }> {
   const err = await res.json().catch(() => ({ error: res.statusText }));
-  return (err as { error?: string }).error ?? `request failed: ${res.status}`;
+  const body = err as { error?: string; code?: string };
+  return { message: body.error ?? `request failed: ${res.status}`, code: body.code };
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -32,7 +45,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.headers ?? {}),
     },
   });
-  if (!res.ok) throw new Error(await parseError(res));
+  if (!res.ok) {
+    const parsed = await parseError(res);
+    throw new ApiError(parsed.message, res.status, parsed.code);
+  }
   return res.json() as Promise<T>;
 }
 
