@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import SponsorDashboardView from '@/components/SponsorDashboardView'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
 import { acceptListingTerms, approveApiSpot, closeApiListing, confirmWalletWithdrawal, createWalletWithdrawal, deleteApiListing, executeWalletWithdrawal, failWalletWithdrawal, fetchSellerDashboard, fetchTerms, fetchWalletWithdrawals, fulfillApiSpot, refundApiSpot, rejectApiSpot, reopenApiListing } from '@/lib/auth-api'
@@ -22,6 +23,18 @@ const relative = (iso: string) => {
 }
 
 export default function DashboardPage() {
+  const auth = useAuthSession()
+  // Sponsors get the buyer-side view; creators (and users who have not picked a
+  // role yet) keep the seller dashboard.
+  if (auth.accountType === 'sponsor') return <SponsorDashboardPage />
+  return <SellerDashboardPage />
+}
+
+function SponsorDashboardPage() {
+  return <><Header /><main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12"><SponsorDashboardView /></main><Footer /></>
+}
+
+function SellerDashboardPage() {
   const auth = useAuthSession()
   const { refresh } = useStore()
   const [data, setData] = useState<SellerDashboard | null>(null)
