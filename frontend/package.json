@@ -9,7 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@privy-io/react-auth": "^3.43.0",
+    "@privy-io/react-auth": "^3.46.0",
     "@solana-program/memo": "^0.14.0",
     "@solana-program/system": "^0.14.1",
     "@solana-program/token": "^0.16.1",
