@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-27 (Get paid: manual USDC + verify).
+Last updated: 2026-09-30 (Devnet USDC: chain executors live, mock copy removed).
 
 ---
 
@@ -52,22 +52,28 @@ Shared pattern in every campaign:
 
 ## Current status (honest)
 
-Working **demo marketplace**, not a payments product.
+Working **devnet marketplace**: purchases and payouts move devnet USDC
+through the on-chain program when the backend is configured for chain
+(`SOLANA_RPC_URL` + reviewer keypair); without that config the same
+routes fall back to marking spots.
 
 | Have | Don’t have yet |
 |---|---|
-| List / browse / claim / bid | Real money (USDC on Solana, or Stripe like Marc) |
-| Two pricing modes, including `doubleUp` | Escrow, refunds on outbid, seller payouts |
-| Postgres persistence for users, sessions, listings, spots, claims, and bids | Image upload, real mockup editor |
-| X identity via Privy (session + CSRF for mutations) | Wallet login, on-chain verification |
-| Generic photo-grid / overlay mockup | Vincent-style sticker overlay editor, Marc-style 3D body |
-| Seller dashboard with approve / reject / fulfill | Artwork intake, proof uploads, buyer notifications |
+| List / browse / claim / bid | Mainnet money, Stripe rail (like Marc) |
+| Two pricing modes, including `doubleUp` | Escrow, refunds on outbid |
+| Devnet USDC claim/bid/settlement via chain executors | Image upload, real mockup editor |
+| Postgres persistence for users, sessions, listings, spots, claims, and bids | Wallet login, mainnet verification |
+| X identity via Privy (session + CSRF for mutations) | Vincent-style sticker overlay editor, Marc-style 3D body |
+| Generic photo-grid / overlay mockup | Buyer notifications |
+| Seller dashboard with approve / reject / fulfill | Sponsor-side payments UI, role switching after the fact |
+| Creator/sponsor roles at login + role-split `/dashboard` |  |
 
-Money is mock. Claims and bids mark spots. `txSignature` is accepted and
-logged as a Solana hook; nothing is verified on-chain. Stripe and Solana
-packages sit in the frontend unused.
+Claims/bids run the on-chain executor first when configured (devnet USDC
+moves), then record the purchase in Postgres; settlement, refunds, and
+dispute resolution follow the same pattern. Stripe and escrow are still
+out of scope.
 
-Next layer (from `README.md`): **image workflow + Stripe/crypto**. The HTTP
+Next layer: **mainnet + object storage**. The HTTP
 contract is meant to stay stable.
 
 ---
@@ -119,7 +125,7 @@ send the session cookie plus the CSRF token issued at login.
 | `/browse` | Search + surface filter over all listings |
 | `/list` | Create a listing (spots, fixed vs auction) |
 | `/listings/[id]` | Detail: spec sheet, claim/bid modal, bid feed |
-| `/dashboard` | Seller view: listings, pending approvals, fulfill |
+| `/dashboard` | Role-split: creators get the seller view, sponsors the buyer view |
 | `/[handle]` | Seller profile: X avatar, verified badge, bio, owner edit + onboarding nudge, listings grid |
 
 `id` in the URL is the listing **slug**.
@@ -154,7 +160,7 @@ survive restarts. The in-memory store remains only as the test/demo adapter.
 
 ---
 
-## API contract (v1, mock money)
+## API contract (v1, devnet USDC)
 
 Full spec: `CONTRACT.md`. Summary:
 
@@ -173,6 +179,7 @@ Full spec: `CONTRACT.md`. Summary:
 | GET | `/api/users/{handle}` | Public `Profile` (payout wallet owner-only, 404 if unknown) |
 | PATCH | `/api/users/me` | Owner-only bio/payout-wallet edit |
 | GET | `/api/seller/dashboard` | Seller view: listings + pending approvals |
+| GET | `/api/sponsor/dashboard` | Sponsor view: my spots, artwork due, delivery to verify |
 | PATCH | `/api/listings/{slug}` | Owner-only title/story edit |
 | POST | `/api/spots/{id}/approve` | Owner approves a claimed spot → `sold` |
 | POST | `/api/spots/{id}/reject` | Owner reopens a claimed spot |
@@ -319,7 +326,7 @@ docker run -p 8080:8080 adspaces-api
 1. **Generalize the four demos, don’t clone one of them.** Modes and rules
    exist because vana/winny/Vincent/Marc already ran. New modes need a
    real campaign.
-2. **Mock money first, contract stable.** Persistence and payments swap
+2. **Devnet money first, contract stable.** Persistence and payments swap
    behind the same HTTP shapes.
 3. **Split frontend/backend deploys.** Vercel + Docker. CORS via
    `FRONTEND_URL` (open `*` in local default).
@@ -343,12 +350,11 @@ docker run -p 8080:8080 adspaces-api
 11. **Gear mockup = MacBook lid photo with stick-on spots (2026-09-23).**
     `gearPhotoView` places spots on `public/mac/macbook.png` at preset %
     slots (`MAC_LID_SLOTS`), spread per spot count and clear of the Apple
-    logo, with the label + price captioned under each sticker. Stickers
-    shrink as rows stack (18% one row, 13% stacked) so caption + tile stay
-    in their lane down to phone widths. Cards use `macbook-open.png`.
-    Two states only — open (dashed) or taken (seller colour) — because
-    payments are still mock: no paid/unpaid badges, no drag-and-drop
-    placement (that is gap 1 below).
+   logo, with the label + price captioned under each sticker. Stickers
+   shrink as rows stack (18% one row, 13% stacked) so caption + tile stay
+   in their lane down to phone widths. Cards use `macbook-open.png`.
+   Two states only — open (dashed) or taken (seller colour) — no
+   paid/unpaid badges, no drag-and-drop placement (that is gap 1 below).
 12. **Sticker place / move / resize / remove in the list-form preview (2026-09-23).**
     The `Preview` panel on `/list` is an editor, still preview-only —
     publishing lays spots out automatically, since the API has no mockup
@@ -497,7 +503,7 @@ docker run -p 8080:8080 adspaces-api
     withdraws from any status; reopen resubmits (`closed` → `submitted`,
     `submitted` → 409, `active` → no-op) so nothing self-publishes before
     platform review (Step 3). `image` is a `data:image/*` URL ≤ ~3 MB
-    (same mock-grade pattern as buyer logos; `express.json` raised to 4 MB),
+    (same inline pattern as buyer logos; `express.json` raised to 4 MB),
     client-shrunk to 1200px JPEG on `/list`, whose dialog now reads
     “Submit for review” and lands on `/dashboard` (Submitted badge +
     Close/Delete, closed rows offer Resubmit). Submissions stay PATCH-editable
@@ -619,6 +625,45 @@ docker run -p 8080:8080 adspaces-api
     `payout.test.ts` helper fixed to approve via the reviewer
     (50 pass, 0 fail).
 
+35. **Roles: creator | sponsor (2026-09-29/30).** Two account types,
+    chosen once right after the profile step so the dashboard can branch
+    later. New nullable `users.onboarding` jsonb, written by
+    `PUT /api/users/me/onboarding` (session + CSRF) and echoed as
+    `onboarding` on `/api/auth/me` + the session response; `null` until
+    chosen. Creators give at least one social (x/instagram/youtube/tiktok),
+    sponsors a brand name from a fixed category list + optional http(s)
+    site. Validation lives in `parseOnboarding` (`db.ts`) — server-side,
+    so the memory adapter and Postgres agree; tests in
+    `backend/test/onboarding.test.ts`. The form is a client-side modal in
+    `AuthSessionProvider` (no route, no skip).
+    `/dashboard` then splits on `useAuthSession().accountType`: creators
+    (and users with no role yet) keep the seller view, sponsors get
+    `SponsorDashboardView` backed by the new buyer-side
+    `GET /api/sponsor/dashboard` (`SponsorDashboard` in
+    `backend/src/types.ts`, implemented for Postgres and the memory
+    store alike). Buyer status is derived server-side:
+    `pending → sold → delivered → paid`, plus `disputed` and `refunded`
+    (outbid or refunded; the amount shown is the sponsor's own highest
+    bid, not the current price). Postgres reassigns `buyer_user_id` /
+    `buyer_handle` on an outbid takeover, so the buyer query matches
+    `buyer_user_id` **or** an existing row in `bids` — that is why the
+    same user can still see a `refunded` row. One pre-existing Postgres
+    bug fixed on the way: `submitProof` selected an unqualified `status`
+    from `spots JOIN listings` (`42702 ambiguous column`) — the proof
+    upload path never worked against Postgres, only against the memory
+    store the tests use.
+36. **Devnet USDC claim/bid/settlement via chain executors (2026-09-30).**
+    Revises 34: purchases and payouts move devnet USDC through the
+    on-chain program when the backend is configured for chain
+    (`SOLANA_RPC_URL` + reviewer keypair — `PrivyFixedClaimExecutor`,
+    `PrivyAuctionBidExecutor`, `ProgramSettlementExecutor`, plus
+    refund/dispute/proof/close executors in `backend/src/server.ts`).
+    The executors run first inside the same unversioned routes, then the
+    Postgres write records the result — HTTP shapes unchanged. Without
+    that config the same routes fall back to marking spots (local dev,
+    tests). `CONTRACT.md` header is now "devnet USDC" and frontend mock
+    copy is gone; mainnet + escrow + Stripe are still out of scope.
+
 ---
 
 ## Known gaps / likely next work
@@ -628,10 +673,9 @@ Rough priority, not a commitment:
 1. Image upload + persisting a hand-placed sticker layout (the `/list`
    preview already lets a seller drop, move, and resize stickers, but the
    layout is preview-only — the API has no mockup column).
-2. Real payments, continued: escrow, Stripe rail, purchase-time on-chain
-   payment (claims/bids still mock-mark), refunds on outbid for
-   `doubleUp` auctions. Manual-USDC payout + verify already shipped
-   (decision 34).
+2. Real payments, continued: escrow, Stripe rail, mainnet cutover, refunds
+   on outbid for `doubleUp` auctions. Devnet USDC claim/bid/settlement via
+   chain executors already shipped (decision 34 revised below).
 3. Artwork intake, proof uploads, and buyer notifications.
 4. Wallet login via Privy once money moves.
 5. Listing pause/close controls and richer seller reporting.

@@ -65,7 +65,7 @@ export interface Spot {
   /** Open buyer dispute (blocks payout until withdrawn). */
   disputedAt?: string;
   disputeReason?: string;
-  /** Platform-recorded mock payout (Step 10 ledger). */
+  /** Platform-recorded payout (devnet-USDC ledger). */
   paidAt?: string;
   payoutAmount?: number;
   payoutFee?: number;
@@ -90,7 +90,7 @@ export interface PayoutItem {
 /** Lazy 3-day review window from fulfillment (no scheduler). */
 export const REVIEW_WINDOW_MS = Number(process.env.REVIEW_WINDOW_MS ?? 3 * 86_400_000);
 
-/** Platform fee in basis points, shown on every payout record — not moved (mock). */
+/** Platform fee in basis points, shown on every payout record — accounted off-chain, not moved on-chain. */
 export function platformFeeBps(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.PLATFORM_FEE_BPS ?? 0);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000) {
@@ -170,7 +170,7 @@ export interface CreateListingRequest {
   title: string;
   surface?: string;
   story?: string;
-  /** Seller's surface photo as a data:image/* URL (mock-grade until object storage). */
+  /** Seller's surface photo as a data:image/* URL (inline until object storage). */
   image?: string;
   fabric?: string;
   mode?: string;

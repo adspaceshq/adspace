@@ -1,4 +1,4 @@
-# Adspaces API contract (v1, mock money)
+# Adspaces API contract (v1, devnet USDC)
 
 Base URL: `NEXT_PUBLIC_API_URL` (local default `http://localhost:8080`).
 All bodies/returns are JSON. Errors: `{ "error": string }`.
@@ -27,6 +27,8 @@ with zero listings. The profile is public; editing is owner-only.
 |---|---|---|---|---|
 | GET | `/api/users/{handle}` | public | — | `Profile` (404 if unknown) |
 | PATCH | `/api/users/me` | required + CSRF | `{ bio?, payoutWallet? }` | `Profile` |
+| PUT | `/api/users/me/onboarding` | required + CSRF | `{ accountType: "creator", creator: { socials } }` or `{ accountType: "sponsor", sponsor: { brandName, category, website? } }` | `Onboarding` (also returned as `onboarding` on `/api/auth/me`; `null` until chosen) |
+
 | GET | `/api/review/queue` | reviewer (session) | — | `Listing[]` (`submitted`, oldest last) |
 | POST | `/api/listings/{slug}/approve` | reviewer + CSRF | — | `Listing` (`approved`) |
 | POST | `/api/listings/{slug}/reject` | reviewer + CSRF | `{ reason? }` | `Listing` (`closed` + `reviewNote`) |
@@ -50,6 +52,7 @@ compares stable user IDs, never X handles.
 | GET | `/api/listings` | public | — | `ListingSummary[]` |
 | GET | `/api/listings/{slug}` | public | — | `Listing` (with `spots`) |
 | GET | `/api/seller/dashboard` | required | — | `SellerDashboard` |
+| GET | `/api/sponsor/dashboard` | required | — | `SponsorDashboard` (buyer-side: spots this user claimed or bid on) |
 | POST | `/api/listings` | required | `{ title, surface?, story?, image?, fabric?, mode?, currency?, deadline?, artworkClose?, spots?: [{ label?, location?, size?, price, view?, x?, y?, w? }] }` | `Listing` (201, `submitted`) |
 | PATCH | `/api/listings/{slug}` | owner + CSRF | `{ title?, story? }` | `Listing` |
 | POST | `/api/listings/{slug}/close` | owner + CSRF | — | `Listing` |
@@ -94,14 +97,14 @@ compares stable user IDs, never X handles.
   (step 7) gives it something to enforce. Deadlines can't be extended —
   close and relist.
 - Listing `image` is the seller's surface photo as a `data:image/*` URL under
-  ~3 MB (mock-grade inline storage until object storage lands, same pattern
+  ~3 MB (inline storage until object storage lands, same pattern
   as buyer logos). Anything else → 400. Omitted → the preset surface photos.
 - Buying carries the art: `logoUrl` is required on claim/bid (400 if
   missing), so every sold spot has something to produce with — no second
   step, no stuck states. Fulfill is unconditional on sold spots again.
 - Step 9 (proof): after fulfilling, the seller pins delivery evidence to
   the spot with `POST /api/spots/:id/proof` — 1–5 photos as `data:image/*`
-  URLs (≤3 MB each, same mock-grade pattern) plus an optional X-post link
+  URLs (≤3 MB each, same inline pattern) plus an optional X-post link
   (`https` on `x.com`/`twitter.com`). Seller-only (403), fulfilled spots
   only (409 — fulfill first), replaces the previous set. Buyers read the
   proof on the detail page; it is the verification input for payout.
@@ -112,7 +115,10 @@ compares stable user IDs, never X handles.
   buyer-only (403), fulfilled-only (409). A spot is payout-released when
   undisputed AND (confirmed OR the window elapsed) — computed from the
   timestamps, enforced by payout. Disputes surface in seller attention.
-- Get paid (manual USDC; no custody, no escrow yet): the reviewer sends the
+- Get paid (devnet USDC via the on-chain program when configured, manual-USDC
+  fallback otherwise; no custody, no Stripe yet): with the program executor
+  set, `POST /api/spots/:id/pay` (reviewer + CSRF) settles the spot on-chain
+  and the `{ reference }` body is ignored; without it, the reviewer sends the
   USDC transfer from their own wallet, then records it with `POST
   /api/spots/:id/pay` (reviewer + CSRF, `{ reference }` = the Solana
   transaction signature, ≤200 chars). Only released spots (409 otherwise);
@@ -126,7 +132,8 @@ compares stable user IDs, never X handles.
   released-but-unpaid spots for the ops console (`/review` payouts
   section). Paid sums surface on the dashboard; buyers see PAID on own
   spots (explorer link when the reference is a signature). Purchase-time
-  claims/bids stay mock-marked — no money moves until this step.
+  claims/bids move devnet USDC through the on-chain executors when the
+  reviewer keypair is configured, and only mark spots when it is not.
 - Step 7 (artwork, optional upgrade): `artworkClose` is an optional ISO
   date (empty = none, else must parse, 400). After a spot is sold, its
   buyer may replace the purchase art with `POST /api/spots/:id/artwork`
@@ -149,7 +156,7 @@ compares stable user IDs, never X handles.
 - Spot `view` is `"lid"` or `"inside"` (Mac photos) or `"tee-front"` / `"tee-back"` / `"tee-left"` / `"tee-right"` (T-shirt model shots). Omitted or anything else → `"lid"`. Returned on every `Spot`.
 - Spot `x`/`y`/`w` are the seller's hand placement in % of the photo (position + width). Omitted → auto layout. Buyers see exactly what the seller placed.
 - Listing `fabric` is the tee base color as `#rrggbb` (apparel surface; the seller's default). Anything else → `#f6f6f7`. Returned on every `Listing`.
-- Claim/bid accept optional brand assets: `website` must be an http(s) URL, `logoUrl` a `data:image/*` URL under ~3 MB (mock-grade inline storage until object storage lands). Assets attach to the spot, render to every viewer, and a later takeover replaces them.
+- Claim/bid accept optional brand assets: `website` must be an http(s) URL, `logoUrl` a `data:image/*` URL under ~3 MB (inline storage until object storage lands). Assets attach to the spot, render to every viewer, and a later takeover replaces them.
 - Editing, approval, and fulfillment compare immutable user IDs, never X handles.
 - Closing hides a listing from the marketplace; the direct link stops resolving. Reopening restores it. Deleting is permanent and refused (409) while any spot has a buyer or bid.
 
