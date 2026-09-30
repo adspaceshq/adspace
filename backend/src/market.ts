@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type { ChainPublication } from "./listing-chain.js";
 import { REVIEW_WINDOW_MS, TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, ReviewPolicy, SellerDashboard, SessionUser, SponsorDashboard, Spot, SponsorSpotStatus } from "./types.js";
 
 export interface MarketplaceRepository {
   migrate(): Promise<void>;
@@ -35,6 +35,7 @@ export interface MarketplaceRepository {
   reject(spotId: string, actorUserId: string): Promise<Spot>;
   fulfill(spotId: string, actorUserId: string): Promise<Spot>;
   dashboard(actorUserId: string): Promise<SellerDashboard>;
+  buyerSpots(actor: SessionUser): Promise<SponsorDashboard>;
 }
 
 type ListingRow = {
@@ -628,6 +629,60 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     const pending=attention.rows.filter(r=>r.status==="pending").length;
     const live = (r: { status: string; deadline: string }) => r.status === "active" && new Date(r.deadline).getTime() > Date.now();
     return {summary:{activeListings:rows.filter(live).length,openSpots:rows.reduce((a,r)=>a+r.open,0),pendingApproval:pending,revenue:rows.reduce((a,r)=>a+r.revenue,0),paidOut:listings.rows.reduce((a,r)=>a+Number(r.paid_out),0),currency:rows[0]?.currency ?? "USD"},listings:rows,attention:attention.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,submittedAt:new Date(r.submitted_at).toISOString(),status:r.status,artworkReceived:Boolean(r.artwork_received),disputeReason:r.dispute_reason || undefined}))};
+  }
+
+  /** Sponsor view: every spot this user holds as buyer, newest first. */
+  async buyerSpots(actor: SessionUser): Promise<SponsorDashboard> {
+    const result = await this.pool.query(`SELECT s.id spot_id, l.id listing_id, l.slug listing_slug, l.title listing_title,
+      l.image_url listing_image, seller.x_handle seller_handle, s.label spot_label, s.location, s.size,
+      COALESCE((SELECT MAX(b.amount) FROM bids b WHERE b.spot_id=s.id AND (b.bidder_user_id=$1 OR b.bidder_handle=$2)),
+               s.current_bid, s.price) amount, s.currency, l.mode, s.claimed_at, s.fulfilled_at, s.artwork_submitted_at,
+      s.proof_photos, s.proof_post, s.confirmed_at, s.disputed_at, s.dispute_reason, s.paid_at,
+      CASE WHEN s.buyer_user_id IS DISTINCT FROM $1 THEN 'refunded'
+           WHEN s.paid_at IS NOT NULL THEN 'paid'
+           WHEN s.disputed_at IS NOT NULL THEN 'disputed'
+           WHEN s.status='claimed' THEN 'pending'
+           WHEN s.fulfilled_at IS NOT NULL THEN 'delivered'
+           ELSE 'sold' END spot_status
+      FROM spots s JOIN listings l ON l.id=s.listing_id LEFT JOIN users seller ON seller.id=l.seller_user_id
+      WHERE s.buyer_user_id=$1 OR EXISTS (SELECT 1 FROM bids b WHERE b.spot_id=s.id AND (b.bidder_user_id=$1 OR b.bidder_handle=$2))
+      ORDER BY s.claimed_at DESC NULLS LAST`,[actor.id,actor.handle]);
+    const campaigns = result.rows.map((r) => ({
+      spotId: r.spot_id,
+      listingId: r.listing_id,
+      listingSlug: r.listing_slug,
+      listingTitle: r.listing_title,
+      listingImage: r.listing_image,
+      sellerHandle: r.seller_handle,
+      spotLabel: r.spot_label,
+      location: r.location,
+      amount: Number(r.amount),
+      currency: r.currency,
+      mode: r.mode,
+      status: r.spot_status as SponsorSpotStatus,
+      artworkDue: r.spot_status === "sold" && r.artwork_submitted_at === null,
+      artworkSubmittedAt: r.artwork_submitted_at ? new Date(r.artwork_submitted_at).toISOString() : undefined,
+      proofPhotos: ((r.proof_photos ?? []) as string[]).slice(),
+      proofPost: r.proof_post || undefined,
+      claimedAt: r.claimed_at ? new Date(r.claimed_at).toISOString() : undefined,
+      fulfilledAt: r.fulfilled_at ? new Date(r.fulfilled_at).toISOString() : undefined,
+      confirmedAt: r.confirmed_at ? new Date(r.confirmed_at).toISOString() : undefined,
+      disputedAt: r.disputed_at ? new Date(r.disputed_at).toISOString() : undefined,
+      disputeReason: r.dispute_reason || undefined,
+      paidAt: r.paid_at ? new Date(r.paid_at).toISOString() : undefined,
+    }));
+    const live = campaigns.filter((c) => c.status === "pending" || c.status === "sold" || c.status === "delivered" || c.status === "disputed");
+    return {
+      summary: {
+        active: live.length,
+        pendingApproval: campaigns.filter((c) => c.status === "pending").length,
+        awaitingArtwork: campaigns.filter((c) => c.artworkDue).length,
+        delivering: campaigns.filter((c) => c.status === "delivered" || c.status === "disputed").length,
+        committed: live.reduce((sum, c) => sum + c.amount, 0),
+        currency: campaigns[0]?.currency ?? "USD",
+      },
+      campaigns,
+    };
   }
 
   private async hydrate(row:ListingRow):Promise<Listing>{

@@ -96,6 +96,7 @@ export function createApp({
     close: async (slug,user) => store.close(slug,user), reopen: async (slug,user) => store.reopen(slug,user), remove: async (slug,user) => store.remove(slug,user),
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
+    buyerSpots: async user => store.buyerSpots(user),
     reviewQueue: async () => store.reviewQueue(), approveReview: async (slug, policy) => store.approveReview(slug, policy),
     recordChainPublication: async (slug, publication) => { store.recordChainPublication(slug, publication); },
     rejectReview: async (slug,reason) => store.rejectReview(slug,reason),
@@ -293,6 +294,7 @@ export function createApp({
   app.get("/api/listings", async (_req, res) => { try { res.json(await repo.summaries()); } catch(e){sendErr(res,e);} });
   app.get("/api/listings/:slug", async (req, res) => { try { const listing = await repo.get(req.params.slug); listing ? res.json(listing) : res.status(404).json({ error: "listing not found" }); } catch(e){sendErr(res,e);} });
   app.get("/api/seller/dashboard", attachUser, requireUser, async (req,res)=>{try{res.json(await repo.dashboard(req.user!.id));}catch(e){sendErr(res,e);}});
+  app.get("/api/sponsor/dashboard", attachUser, requireUser, async (req,res)=>{try{res.json(await repo.buyerSpots(req.user!));}catch(e){sendErr(res,e);}});
   app.post("/api/listings", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const body = (req.body ?? {}) as Partial<CreateListingRequest>;
     if (!body.title?.trim()) return void res.status(400).json({ error: "title is required" });
