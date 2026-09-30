@@ -34,9 +34,9 @@ const steps = [
   },
   {
     icon: Zap,
-    title: 'You approve (mock)',
-    text: 'Approve, reject, or mark fulfilled from your dashboard. No money moves yet.',
-    checks: ['Approve / reject / fulfill', 'Records stay in Postgres', 'USDC + Stripe later'],
+    title: 'You approve',
+    text: 'Approve, reject, or mark fulfilled from your dashboard. Payouts settle in devnet USDC.',
+    checks: ['Approve / reject / fulfill', 'Records stay in Postgres', 'Devnet USDC payouts'],
   },
 ]
 
@@ -47,7 +47,7 @@ const faqs = [
   },
   {
     q: 'Is real money involved?',
-    a: 'No. Mock only. Spots get marked, nothing is charged, txSignature is just logged.',
+    a: 'Devnet only. Claims and bids move devnet USDC through the on-chain program — no mainnet funds, no card.',
   },
   {
     q: 'What surfaces can I list?',
@@ -82,15 +82,15 @@ export default function Home() {
           />
           <div className="relative mx-auto flex w-full max-w-[1340px] flex-col items-center px-6 pb-16 pt-20 text-center">
             <span className="animate-fade-up mb-8 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-[14px] py-[6px] font-mono text-xs tracking-wide text-slate-200 backdrop-blur">
-              <span className="rounded-full bg-[#28e7b5] px-2 py-[2px] font-semibold text-[#061a38]">Demo</span>
-              Mock money · no card
+              <span className="rounded-full bg-[#28e7b5] px-2 py-[2px] font-semibold text-[#061a38]">Devnet</span>
+              Devnet USDC · no card
               <ArrowRight size={13} className="opacity-70" />
             </span>
             <h1 className="animate-fade-up max-w-[16ch] text-white" style={{ animationDelay: '60ms', fontSize: 'clamp(44px, 7vw, 84px)' }}>
               Suitcases, bikes, laptops, bodies — <em className="italic text-[#28e7b5]">sell the space</em>.
             </h1>
             <p className="animate-fade-up mt-6 max-w-[48ch] text-lg text-slate-300" style={{ animationDelay: '120ms' }}>
-              List spots at a price or as an auction. Buyers claim with X login. You approve. Nothing is charged yet.
+              List spots at a price or as an auction. Buyers claim with X login. You approve. Devnet USDC only.
             </p>
             <div className="animate-fade-up mt-8 flex flex-wrap justify-center gap-3" style={{ animationDelay: '180ms' }}>
               <Link href="/browse" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-[#e7e5e0] bg-white px-7 py-[15px] text-[16px] font-medium text-[#020817] transition hover:-translate-y-px hover:bg-[#f1f0ec]">
@@ -191,14 +191,14 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Mock money, real approvals — replaces the duplicate getting-started + fake stats band. */}
+        {/* Devnet money, real approvals — replaces the duplicate getting-started + fake stats band. */}
         {/* You stay in control */}
         <section className="py-20">
           <div className="mx-auto w-full max-w-[1340px] px-6">
             <div className="mb-12 max-w-[640px]">
-              <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">Demo truth</span>
-              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>Mock money. Real approvals.</h2>
-              <p className="text-[17px] text-[#64748b]">Claims and bids only mark spots. Approvals are real and seller-owned.</p>
+              <span className="mb-4 block font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">Devnet truth</span>
+              <h2 className="mb-4" style={{ fontSize: 'clamp(30px, 4vw, 44px)' }}>Devnet money. Real approvals.</h2>
+              <p className="text-[17px] text-[#64748b]">Claims and bids settle in devnet USDC through the on-chain program. Approvals are real and seller-owned.</p>
             </div>
             <div className="grid gap-6 md:grid-cols-3">
               <div className="flex flex-col gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-8">
@@ -213,7 +213,7 @@ export default function Home() {
                   <Globe size={20} />
                 </span>
                 <h3 className="text-xl">No escrow yet</h3>
-                <p className="text-[15px] text-[#64748b]">Adspaces moves no money. txSignature is logged, never verified.</p>
+                <p className="text-[15px] text-[#64748b]">Adspaces takes no custody. Payouts settle in devnet USDC on Solana.</p>
               </div>
               <div className="flex flex-col gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-8">
                 <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#e9edfe] text-[#4166fb]">
@@ -256,7 +256,7 @@ export default function Home() {
                 style={{ background: 'radial-gradient(circle at 20% 0%, rgba(245,138,231,0.3), transparent 40%), radial-gradient(circle at 80% 0%, rgba(39,135,255,0.35), transparent 45%)' }}
               />
               <h2 className="relative text-white" style={{ fontSize: 'clamp(28px, 4vw, 44px)' }}>Got a suitcase, bike, laptop, or body?</h2>
-              <p className="relative text-[17px] text-slate-300">List spots in under a minute. Mock publishing, no charge.</p>
+              <p className="relative text-[17px] text-slate-300">List spots in under a minute. Devnet publishing, no mainnet charge.</p>
               <div className="relative mt-4 flex flex-wrap justify-center gap-3">
                 <Link href="/browse" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-white/25 bg-white/10 px-7 py-[15px] text-[16px] font-medium text-white transition hover:-translate-y-px hover:bg-white/[0.14]">
                   Browse live spaces

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { sellerUsername } from '@/lib/listings'
 
-// X profile picture with an initial-circle fallback. unavatar is a mock-grade
+// X profile picture with an initial-circle fallback. unavatar is a stopgap
 // avatar proxy (BrandMyMac uses the same); a proper avatar comes with Privy
 // profile data once the API returns it.
 export default function SellerAvatar({

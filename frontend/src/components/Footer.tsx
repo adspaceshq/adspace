@@ -38,8 +38,8 @@ export default function Footer() {
           </div>
         </div>
         <div className="flex flex-wrap justify-between gap-3 border-t border-[#e7e5e0] pt-6 text-[13px] text-[#64748b]">
-          <span>© 2026 Adspaces. Demo build only — no real payments are processed.</span>
-          <span>Figures shown are for demonstration only.</span>
+          <span>© 2026 Adspaces. Devnet build — payments settle in devnet USDC.</span>
+          <span>No mainnet funds move.</span>
         </div>
       </div>
     </footer>

@@ -67,7 +67,7 @@ export default function ListPage() {
   const [imageError, setImageError] = useState<string | null>(null)
 
   // Shrink uploads to a listing-grade photo (max 1200px) so the data URL stays
-  // well under the API's ~3 MB cap. Same mock-grade inline pattern as logos.
+  // well under the API's ~3 MB cap. Same inline pattern as buyer logos.
   const photoDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file)
     const img = new Image()
@@ -393,7 +393,7 @@ export default function ListPage() {
         <div className="mb-6 text-center">
           <p className="mb-3 flex items-center justify-center gap-2 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-[#64748b]">
             <span className="h-1.5 w-1.5 rounded-full bg-[#16a34a]" />
-            {`${isTee ? 'T-shirt' : 'Mac-only'} · ${priceType === 'fixed' ? 'fixed price' : priceType === 'auction' ? 'auction' : 'choose pricing'} · mock — no money moves`}
+            {`${isTee ? 'T-shirt' : 'Mac-only'} · ${priceType === 'fixed' ? 'fixed price' : priceType === 'auction' ? 'auction' : 'choose pricing'} · devnet USDC`}
           </p>
           <h1 className="mb-2" style={{ fontSize: '40px' }}>{isTee ? 'List your T-shirt.' : 'List your Mac lid.'}</h1>
           <p className="text-[16px] text-[#64748b]">

@@ -319,13 +319,13 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       ...(logo ? { logoUrl: logo } : {}),
       ...(normalizeWebsite(website) ? { website: normalizeWebsite(website) } : {}),
     }
-    // Mock checkout: visibly fake processing, then the same API-only mutation as before.
+    // On-chain when the backend is configured for chain (devnet USDC moves),
+    // spot-marking fallback otherwise — same API-only mutation either way.
     setPaying(true)
-    await new Promise((r) => setTimeout(r, 1200))
     try {
       if (modal.mode === 'claim') {
         await claimSpot(listing.id, modal.spot.id, actor, extras)
-        setSuccess({ spotLabel: modal.spot.label, text: `${modal.spot.label} claimed by ${actor} — mock, no charge.` })
+        setSuccess({ spotLabel: modal.spot.label, text: `${modal.spot.label} claimed by ${actor}.` })
       } else {
         const amt = Number(amount)
         const min = minBidFor(listing, modal.spot)
@@ -335,7 +335,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           return
         }
         await placeBid(listing.id, modal.spot.id, actor, amt, extras)
-        setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt, listing.currency)} on ${modal.spot.label} — mock.` })
+        setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt, listing.currency)} on ${modal.spot.label}.` })
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Something went wrong.')
@@ -829,14 +829,14 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     </button>
                   </div>
                 </form>
-                <p className="mt-4 text-center text-xs text-[#64748b]">Demo only — nothing is charged.</p>
+                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC — no mainnet funds move.</p>
               </>
             )}
             {modal && step === 'pay' && !success && (
               <>
                 <h3 className="mb-1 text-2xl">Pay{modal.mode === 'claim' ? ` ${formatMoney(modal.spot.price, listing.currency)}` : ''}</h3>
                 <p className="mb-6 text-sm text-[#64748b]">
-                  {modal.spot.label} · {name || actor}{website.trim() ? ` · ${website.trim()}` : ''} — mock payment, no real charge.
+                  {modal.spot.label} · {name || actor}{website.trim() ? ` · ${website.trim()}` : ''} — devnet USDC payment.
                 </p>
                 <form onSubmit={submit}>
                   {modal.mode === 'bid' && (
@@ -863,11 +863,11 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       Back
                     </button>
                     <button type="submit" disabled={paying} className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8] disabled:opacity-60">
-                      {paying ? 'Paying (mock)…' : modal.mode === 'claim' ? 'Pay and claim' : 'Pay and bid'}
+                      {paying ? 'Paying…' : modal.mode === 'claim' ? 'Pay and claim' : 'Pay and bid'}
                     </button>
                   </div>
                 </form>
-                <p className="mt-4 text-center text-xs text-[#64748b]">Demo only — nothing is charged.</p>
+                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC — no mainnet funds move.</p>
               </>
             )}
           </div>
