@@ -120,7 +120,7 @@ export function createApp({
     if (req.headers.origin === frontendUrl) res.header("Access-Control-Allow-Origin", frontendUrl);
     res.header("Vary", "Origin");
     res.header("Access-Control-Allow-Credentials", "true");
-    res.header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, privy-id-token");
     if (req.method === "OPTIONS") return void res.sendStatus(204);
     next();
@@ -180,12 +180,17 @@ export function createApp({
       // Step 1: every login owns a profile row, even with zero listings.
       try { await profiles.upsertFromSession(created.session.user); } catch (e) { console.warn("profile upsert:", e instanceof Error ? e.message : e); }
       res.cookie(sessionCookieName, created.token, cookieOptions());
-      res.json({ ...created.session.user, csrfToken: created.session.csrfToken, expiresAt: created.session.expiresAt.toISOString(), isReviewer: isReviewer(created.session.user, reviewers) });
+      const onboarding = await profiles.getOnboarding(created.session.user.id).catch(() => null);
+      res.json({ ...created.session.user, csrfToken: created.session.csrfToken, expiresAt: created.session.expiresAt.toISOString(), isReviewer: isReviewer(created.session.user, reviewers), onboarding });
     } catch (e) { sendErr(res, e); }
   });
-  app.get("/api/auth/me", attachUser, requireUser, (req, res) => {
+  app.get("/api/auth/me", attachUser, requireUser, async (req, res) => {
     if (!req.authSession) return void res.status(401).json({ error: "session required" });
-    res.json({ ...req.user!, csrfToken: req.authSession.csrfToken, expiresAt: req.authSession.expiresAt.toISOString(), isReviewer: isReviewer(req.user!, reviewers) });
+    const onboarding = await profiles.getOnboarding(req.user!.id).catch(() => null);
+    res.json({ ...req.user!, csrfToken: req.authSession.csrfToken, expiresAt: req.authSession.expiresAt.toISOString(), isReviewer: isReviewer(req.user!, reviewers), onboarding });
+  });
+  app.put("/api/users/me/onboarding", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    try { res.json(await profiles.saveOnboarding(req.user!.id, req.body)); } catch (e) { sendErr(res, e); }
   });
   app.post("/api/auth/logout", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     await auth.destroySession(req.cookies?.[sessionCookieName] as string | undefined);
