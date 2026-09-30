@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Pool } from "pg";
-import type { AuthenticatedIdentity, PublicProfile, SessionUser, UpdateProfileRequest } from "./types.js";
+import { BRAND_CATEGORIES, SOCIAL_PLATFORMS, type AuthenticatedIdentity, type BrandCategory, type Onboarding, type PublicProfile, type SocialPlatform, SessionUser, UpdateProfileRequest } from "./types.js";
 
 const SESSION_TTL_MS = Number(process.env.SESSION_TTL_HOURS ?? 168) * 60 * 60 * 1000;
 
@@ -19,6 +19,8 @@ export interface ProfileRepository {
   upsertFromSession(user: SessionUser): Promise<void>;
   getProfileByHandle(handle: string): Promise<PublicProfile | undefined>;
   updateProfile(userId: string, patch: UpdateProfileRequest): Promise<PublicProfile>;
+  getOnboarding(userId: string): Promise<Onboarding | null>;
+  saveOnboarding(userId: string, input: unknown): Promise<Onboarding>;
 }
 
 /** URL handle without @, lowercase: `@NotCodeSid` → `notcodesid`. */
@@ -57,9 +59,48 @@ export function parsePayoutWallet(value: unknown): string {
   return wallet;
 }
 
+/** Validates the creator/sponsor onboarding payload; throws a 400 on bad input. */
+export function parseOnboarding(value: unknown): Onboarding {
+  const bad = (message: string) => Object.assign(new Error(message), { status: 400 });
+  const body = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  if (body.accountType === "creator") {
+    const raw = (body.creator && typeof body.creator === "object" ? (body.creator as { socials?: unknown }).socials : undefined);
+    const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    const socials: Partial<Record<SocialPlatform, string>> = {};
+    for (const platform of SOCIAL_PLATFORMS) {
+      const entry = typeof input[platform] === "string" ? (input[platform] as string).trim() : "";
+      if (!entry) continue;
+      if (entry.length > 100) throw bad(`${platform} handle is too long`);
+      socials[platform] = entry;
+    }
+    if (Object.keys(socials).length === 0) throw bad("add at least one social account");
+    return { accountType: "creator", creator: { socials } };
+  }
+  if (body.accountType === "sponsor") {
+    const raw = (body.sponsor && typeof body.sponsor === "object" ? body.sponsor : {}) as Record<string, unknown>;
+    const brandName = typeof raw.brandName === "string" ? raw.brandName.trim() : "";
+    if (!brandName || brandName.length > 80) throw bad("brand name is required (max 80 characters)");
+    if (!BRAND_CATEGORIES.includes(raw.category as BrandCategory)) throw bad("pick a brand category");
+    const website = typeof raw.website === "string" ? raw.website.trim() : "";
+    if (website && (website.length > 200 || !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(website))) throw bad("website must be a valid http(s) URL");
+    return { accountType: "sponsor", sponsor: { brandName, category: raw.category as BrandCategory, ...(website ? { website } : {}) } };
+  }
+  throw bad("accountType must be creator or sponsor");
+}
+
 /** In-memory ProfileRepository for tests and the demo adapter. */
 export class MemoryProfileRepository implements ProfileRepository {
   private byUserId = new Map<string, { user: SessionUser; bio: string; payoutWallet: string }>();
+  private onboarding = new Map<string, Onboarding>();
+
+  async getOnboarding(userId: string): Promise<Onboarding | null> { return this.onboarding.get(userId) ?? null; }
+
+  async saveOnboarding(userId: string, input: unknown): Promise<Onboarding> {
+    if (!this.byUserId.has(userId)) throw Object.assign(new Error("profile not found"), { status: 404 });
+    const parsed = parseOnboarding(input);
+    this.onboarding.set(userId, parsed);
+    return parsed;
+  }
 
   async upsertFromSession(user: SessionUser): Promise<void> {
     const existing = this.byUserId.get(user.id);
@@ -166,6 +207,7 @@ export class PostgresAuthRepository implements AuthRepository, ProfileRepository
       ALTER TABLE users ALTER COLUMN x_user_id DROP NOT NULL;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS email text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS wallet_address text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding jsonb;
       ALTER TABLE users ENABLE ROW LEVEL SECURITY;
       ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
       DO $$ BEGIN
@@ -252,6 +294,17 @@ export class PostgresAuthRepository implements AuthRepository, ProfileRepository
     const row = result.rows[0];
     if (!row) throw Object.assign(new Error("profile not found"), { status: 404 });
     return mapProfileRow(row);
+  }
+  async getOnboarding(userId: string): Promise<Onboarding | null> {
+    const result = await this.pool.query<{ onboarding: Onboarding | null }>("SELECT onboarding FROM users WHERE id = $1", [userId]);
+    return result.rows[0]?.onboarding ?? null;
+  }
+
+  async saveOnboarding(userId: string, input: unknown): Promise<Onboarding> {
+    const parsed = parseOnboarding(input);
+    const result = await this.pool.query("UPDATE users SET onboarding = $2::jsonb, updated_at = now() WHERE id = $1 RETURNING id", [userId, JSON.stringify(parsed)]);
+    if (!result.rows[0]) throw Object.assign(new Error("profile not found"), { status: 404 });
+    return parsed;
   }
 }
 
