@@ -482,7 +482,7 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
 
   async submitProof(spotId: string, actorUserId: string, proof: { photos: unknown; postUrl?: unknown }): Promise<Spot> {
     const parsed = parseProof(proof);
-    const owned = await this.pool.query("SELECT seller_user_id, status, fulfilled_at FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.id=$1", [spotId]);
+    const owned = await this.pool.query("SELECT l.seller_user_id, s.status, s.fulfilled_at FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.id=$1", [spotId]);
     const row = owned.rows[0];
     if (!row) throw httpError("spot not found", 404);
     if (row.seller_user_id !== actorUserId) throw httpError("forbidden", 403);
