@@ -291,8 +291,10 @@ Warm off-white, Inter sans everywhere, one accent.
 | Body font | Inter (Apple stack fallback) |
 | Mono | Inter (Apple stack fallback — no monospace) |
 
-Hero is a dark radial gradient (teal/pink/blue) used only on `/`. Do not
-spread that treatment to browse/list/detail.
+Hero sits on the plain page bg (no gradient since 2026-09-30) with ink type
+and a deep-mint italic accent (`#059669` — the `#28e7b5` mint fails
+contrast on light). The dark gradient + grid treatment is retired, not
+resting — do not reintroduce it elsewhere.
 
 Copy voice: short, concrete, no marketplace jargon. Demo disclaimers stay
 visible until real money ships (FAQ, footer, claim modal).
