@@ -13,7 +13,7 @@ html {
 
 body {
   font-family: var(--font-body);
-  background: #fafaf7;
+  background: #f4f4f4;
   color: #020817;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -38,3 +38,5 @@ h1, h2, h3, h4 {
 .animate-fade-up {
   animation: fadeUp 0.5s ease both;
 }
+
+
