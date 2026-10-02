@@ -10,6 +10,7 @@ import PageShell from '@/components/PageShell'
 import ListingCard from '@/components/ListingCard'
 import { useStore } from '@/components/StoreProvider'
 import { isEnded, listingUrl, surfaceLabels } from '@/lib/listings'
+import { useSurfacePicker } from '@/components/SurfacePickerModal'
 
 export default function BrowsePage() {
   return (
@@ -21,6 +22,7 @@ export default function BrowsePage() {
 
 function BrowseInner() {
   const { listings } = useStore()
+  const { openPicker } = useSurfacePicker()
   const params = useSearchParams()
   const [query, setQuery] = useState(params.get('q') ?? '')
   const initialSurface = params.get('surface') ?? 'all'
@@ -86,9 +88,13 @@ function BrowseInner() {
             <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center">
               <h3 className="text-xl">No spaces match.</h3>
               <p className="mt-2 text-sm text-[#64748b]">Try a different search — or list your own surface.</p>
-              <Link href="/list" className="mt-6 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#0f1a33]">
+              <button
+                type="button"
+                onClick={openPicker}
+                className="mt-6 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#0f1a33]"
+              >
                 List your space
-              </Link>
+              </button>
             </div>
           ) : (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
