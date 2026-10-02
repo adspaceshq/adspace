@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import StoreProvider from "@/components/StoreProvider";
 import PrivyAppProvider from "@/components/PrivyAppProvider";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
+import { SurfacePickerProvider } from "@/components/SurfacePickerModal";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,7 +25,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="flex min-h-full flex-col">
         <PrivyAppProvider>
           <AuthSessionProvider>
-            <StoreProvider>{children}</StoreProvider>
+            <StoreProvider>
+              <SurfacePickerProvider>{children}</SurfacePickerProvider>
+            </StoreProvider>
           </AuthSessionProvider>
         </PrivyAppProvider>
       </body>
