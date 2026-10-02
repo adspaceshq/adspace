@@ -31,7 +31,7 @@ export interface AuthSession {
   accountType: AccountType | undefined;
   loggingIn: boolean;
   error: string | undefined;
-  login: () => void;
+  login: (options?: { method?: 'twitter' | 'google' | 'email' } | React.MouseEvent<any>) => void;
   linkEmail: () => void;
   linkX: () => void;
   delegateWallet: () => Promise<void>;
@@ -242,10 +242,10 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const value: AuthSession = {
     ready: ready && !exchanging,
     privyAuthenticated: authenticated,
-    authenticated: Boolean(authenticated && me?.hasX),
+    authenticated: Boolean(authenticated && hasX),
     userId: me?.id,
     isReviewer: me?.isReviewer ?? false,
-    handle: me?.handle,
+    handle: me?.handle ?? user?.twitter?.username ?? undefined,
     name: me?.name ?? user?.twitter?.name ?? undefined,
     avatar: me?.avatar ?? user?.twitter?.profilePictureUrl ?? undefined,
     email,
@@ -257,13 +257,23 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
     accountType: me?.onboarding?.accountType,
     loggingIn: exchanging,
     error,
-    login: () => {
+    login: (options?: { method?: 'twitter' | 'google' | 'email' } | React.MouseEvent<any>) => {
       setError(undefined);
+      const isEvent = Boolean(options && ('nativeEvent' in options || 'preventDefault' in options));
+      const method = !isEvent && options && 'method' in options ? options.method : undefined;
       if (authenticated) {
+        if (!user?.twitter && (method === 'twitter' || !hasX)) {
+          privyLinkTwitter();
+          return;
+        }
         exchangedFor.current = null;
         void exchange();
       } else {
-        privyLogin();
+        if (method === 'twitter') {
+          privyLogin({ loginMethods: ['twitter'] });
+        } else {
+          privyLogin();
+        }
       }
     },
     linkEmail: () => {
