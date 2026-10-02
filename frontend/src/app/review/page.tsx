@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import PageShell from '@/components/PageShell'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { approveReviewListing, fetchDisputeQueue, fetchPayableQueue, fetchReviewQueue, payApiSpot, reconcileChain, rejectReviewListing, resolveSpotDispute } from '@/lib/auth-api'
 import { cardPhoto, explorerTxUrl, sellerDisplay } from '@/lib/listings'
@@ -103,8 +104,9 @@ export default function ReviewPage() {
 
   return (
     <>
-      <Header />
-      <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
+      <PageShell>
+        <Header />
+        <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
         {!auth.ready ? (
           <p className="py-24 text-center text-[#64748b]">Loading…</p>
         ) : !auth.authenticated ? (
@@ -232,7 +234,8 @@ export default function ReviewPage() {
           </>
         )}
       </main>
-      <Footer />
-    </>
-  )
+    </PageShell>
+    <Footer />
+  </>
+)
 }

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ArrowLeft, Brush, Calendar, Trophy } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import PageShell from '@/components/PageShell'
 import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
@@ -129,14 +130,16 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   if (!listing) {
     return (
       <>
-        <Header />
-        <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
-          <h1 className="text-4xl">Space not found.</h1>
-          <p className="text-[#64748b]">This listing does not exist or was removed.</p>
-          <Link href="/browse" className="mt-2 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white">
-            Back to browse
-          </Link>
-        </main>
+        <PageShell>
+          <Header />
+          <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
+            <h1 className="text-4xl">Space not found.</h1>
+            <p className="text-[#64748b]">This listing does not exist or was removed.</p>
+            <Link href="/browse" className="mt-2 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white">
+              Back to browse
+            </Link>
+          </main>
+        </PageShell>
         <Footer />
       </>
     )
@@ -365,9 +368,10 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
 
   return (
     <>
-      <Header />
-      {PRIVY_ENABLED && <XProbe onChange={setX} />}
-      <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-8">
+      <PageShell>
+        <Header />
+        {PRIVY_ENABLED && <XProbe onChange={setX} />}
+        <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-8">
         <Link href={back} className="mb-6 inline-flex items-center gap-[6px] text-sm font-medium text-[#64748b] transition hover:text-[#020817]">
           <ArrowLeft size={15} /> {backLabel}
         </Link>
@@ -728,6 +732,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           </div>
         )}
       </main>
+      </PageShell>
 
       {(modal || success) && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-[#020817]/55 p-6 backdrop-blur-sm" onClick={() => { setModal(null); setSuccess(null); setPaying(false) }}>

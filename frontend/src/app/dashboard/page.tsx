@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { ArrowRight, CircleDollarSign, Clock3, LayoutGrid, Plus, Rows3, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import PageShell from '@/components/PageShell'
 import SponsorDashboardView from '@/components/SponsorDashboardView'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
@@ -31,7 +32,17 @@ export default function DashboardPage() {
 }
 
 function SponsorDashboardPage() {
-  return <><Header /><main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12"><SponsorDashboardView /></main><Footer /></>
+  return (
+    <>
+      <PageShell>
+        <Header />
+        <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
+          <SponsorDashboardView />
+        </main>
+      </PageShell>
+      <Footer />
+    </>
+  )
 }
 
 function SellerDashboardPage() {
@@ -167,9 +178,11 @@ function SellerDashboardPage() {
     }
   }
 
-  return <>
-    <Header />
-    <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
+  return (
+    <>
+      <PageShell>
+        <Header />
+        <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-20 pt-8 md:pt-12">
       {!auth.ready ? <DashboardSkeleton /> : !auth.authenticated ? (
         <section className="mx-auto max-w-xl py-24 text-center">
           <h1 className="text-[42px]">Seller dashboard</h1>
@@ -294,8 +307,11 @@ function SellerDashboardPage() {
           </>}
         </>
       )}
-    </main><Footer />
-  </>
+        </main>
+      </PageShell>
+      <Footer />
+    </>
+  )
 }
 
 function Metric({icon,label,value}:{icon:React.ReactNode;label:string;value:string}){return <div className="flex items-center gap-4 border-b border-[#e7e5e0] px-6 py-5 last:border-b-0 sm:[&:nth-child(odd)]:border-r lg:border-b-0 lg:border-r lg:last:border-r-0"><span className="text-[#405072] [&>svg]:h-6 [&>svg]:w-6 [&>svg]:stroke-[1.6]">{icon}</span><div><div className="text-xs text-[#64748b]">{label}</div><div className="mt-0.5 font-[family-name:var(--font-display)] text-2xl">{value}</div></div></div>}
