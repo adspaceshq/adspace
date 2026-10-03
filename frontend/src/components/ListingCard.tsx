@@ -1,43 +1,37 @@
 'use client'
 
-import { cardPhoto, formatMoney, isEnded, listingOversubscription, sellerDisplay, surfaceLabels, type Listing } from '@/lib/listings'
+import { Clock, Flame, Gavel } from 'lucide-react'
+import {
+  cardPhoto,
+  formatMoney,
+  isEnded,
+  listingOversubscription,
+  sellerDisplay,
+  surfaceLabels,
+  type Listing,
+} from '@/lib/listings'
 import SellerAvatar from '@/components/SellerAvatar'
-
-function SpotProgress({ spots, auction }: { spots: Listing['spots']; auction: boolean }) {
-  const claimed = spots.filter((s) => auction ? !!s.bidBy : !!s.claimedBy).length
-  const pct = spots.length ? Math.round((claimed / spots.length) * 100) : 0
-  return (
-    <div className="mt-auto flex items-center gap-3">
-      <div className="h-[6px] flex-1 overflow-hidden rounded-full bg-[#f1f0ec]">
-        <div className="h-full rounded-full bg-[#4166fb] transition-all" style={{ width: `${pct}%` }} />
-      </div>
-      <span className="whitespace-nowrap text-xs text-[#64748b]">
-        {claimed}/{spots.length} {auction ? 'with bids' : 'claimed'}
-      </span>
-    </div>
-  )
-}
-
-const badgeStyles: Record<string, string> = {
-  live: 'bg-[#d1fae5] text-[#065f46]',
-  auction: 'bg-[#e9edfe] text-[#4166fb]',
-  closed: 'bg-[#f1f0ec] text-[#64748b]',
-}
 
 export default function ListingCard({ listing }: { listing: Listing }) {
   const isAuction = listing.priceType === 'auction'
-  const claimedCount = listing.spots.filter((s) => isAuction ? !!s.bidBy : !!s.claimedBy).length
+  const claimedCount = listing.spots.filter((s) => (isAuction ? !!s.bidBy : !!s.claimedBy)).length
   const soldOut = claimedCount === listing.spots.length
   const minPrice = Math.min(...listing.spots.map((s) => s.price))
-  const badge = soldOut ? 'closed' : isAuction ? 'auction' : 'live'
   const photo = cardPhoto(listing)
   const demand = listingOversubscription(listing)
 
   return (
-    <article className="flex h-full flex-col overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white transition duration-200 hover:-translate-y-1 hover:border-[#c3cdfd] hover:shadow-[0_16px_40px_rgba(2,8,23,0.1)]">
-      <div className="relative aspect-[16/10] bg-[#f1f0ec]">
+    <article className="group flex h-full flex-col transition duration-200">
+      {/* Photo Preview Container (Unboxed) */}
+      <div className="relative aspect-[16/10] overflow-hidden rounded-xl bg-[#e7e6e1]">
         {photo ? (
-          <img src={photo} alt={listing.title} loading="lazy" className="h-full w-full object-cover" />
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={photo}
+            alt={listing.title}
+            loading="lazy"
+            className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
+          />
         ) : (
           <div
             aria-hidden="true"
@@ -49,36 +43,73 @@ export default function ListingCard({ listing }: { listing: Listing }) {
             </span>
           </div>
         )}
-        <span className={`absolute left-3 top-3 inline-flex items-center rounded-full px-3 py-[5px] font-mono text-[11px] font-medium uppercase tracking-wide shadow-sm ${badgeStyles[badge]}`}>
-          {soldOut ? 'Sold out' : isAuction ? 'Live auction' : 'Live'}
-        </span>
+
+        {/* Top Badges */}
+        <div className="absolute left-2.5 top-2.5 flex items-center gap-1.5">
+          {soldOut ? (
+            <span className="inline-flex items-center rounded-md bg-zinc-900/80 px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-white backdrop-blur">
+              Sold out
+            </span>
+          ) : isAuction ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-indigo-600/90 px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-white shadow-xs backdrop-blur">
+              <Gavel size={10} />
+              Auction
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded-md bg-white/95 px-2 py-0.5 font-mono text-[10px] font-medium uppercase tracking-wider text-emerald-700 shadow-xs backdrop-blur">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </span>
+              Live
+            </span>
+          )}
+        </div>
+
         {isAuction && demand.percent > 0 && (
-          <span className="absolute right-3 top-3 inline-flex items-center rounded-full bg-[#fff7ed] px-3 py-[5px] font-mono text-[11px] font-semibold uppercase tracking-wide text-[#9a3412] shadow-sm">
-            +{demand.percent}% oversubscribed
+          <span className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-md bg-[#fff7ed]/95 px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-[#9a3412] shadow-xs backdrop-blur">
+            <Flame size={10} className="text-orange-600" />
+            +{demand.percent}%
           </span>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-3 p-5">
-        <div className="flex items-center justify-between">
-          <span className="rounded-full bg-[#e9edfe] px-[10px] py-1 font-mono text-[11px] font-medium uppercase tracking-wide text-[#4166fb]">
+
+      {/* Content — Unboxed below photo */}
+      <div className="flex flex-1 flex-col pt-3 pb-1">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-mono text-[11px] font-medium uppercase tracking-wide text-[#64748b]">
             {surfaceLabels[listing.surface] ?? listing.surface}
           </span>
-          <span className="text-[15px] font-semibold">
-            {isAuction ? 'Bids from ' : 'From '}
+          <span className="font-mono text-[13px] font-medium text-[#020817]">
+            <span className="font-sans text-[11px] text-[#64748b]">
+              {isAuction ? 'Bids from ' : 'From '}
+            </span>
             {formatMoney(minPrice, listing.currency)}
           </span>
         </div>
-        <h3 className="font-display text-[22px] leading-tight">{listing.title}</h3>
-        <p className="text-sm text-[#64748b]">{listing.goal}</p>
-        <div className="flex items-center gap-2 text-sm">
-          <SellerAvatar seller={listing.seller} className="h-[26px] w-[26px] text-xs" />
-          <span className="truncate font-semibold">{sellerDisplay(listing.seller)}</span>
-        </div>
-        <SpotProgress spots={listing.spots} auction={isAuction} />
-        <div className="flex justify-between border-t border-[#e7e5e0] pt-3 text-[13px] text-[#64748b]">
-          <span>{isEnded(listing.endsAt) ? `Ended ${listing.deadline}` : `Ends ${listing.deadline}`}</span>
-          <span className="font-semibold text-[#16a34a]">
-            {soldOut ? (isAuction ? 'All have bids' : 'All claimed') : `${listing.spots.length - claimedCount} spots left`}
+
+        <h3 className="mt-1 font-medium text-[16px] leading-snug text-[#020817] group-hover:text-[#4166fb] transition-colors line-clamp-1">
+          {listing.title}
+        </h3>
+
+        <p className="mt-0.5 line-clamp-1 text-[13px] text-[#64748b]">{listing.goal}</p>
+
+        <div className="mt-2.5 flex items-center justify-between text-xs pt-2 border-t border-[#e5e4de]/60">
+          <div className="flex items-center gap-1.5">
+            <SellerAvatar seller={listing.seller} className="h-4 w-4 text-[10px]" />
+            <span className="truncate text-[12px] text-[#020817] font-medium">{sellerDisplay(listing.seller)}</span>
+          </div>
+
+          <span
+            className={`font-mono text-[11px] ${
+              soldOut ? 'text-zinc-400' : 'text-[#64748b]'
+            }`}
+          >
+            {soldOut
+              ? isAuction
+                ? 'All bids placed'
+                : 'All claimed'
+              : `${listing.spots.length - claimedCount} spots left`}
           </span>
         </div>
       </div>
