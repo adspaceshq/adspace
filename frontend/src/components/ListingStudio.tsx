@@ -627,25 +627,26 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
         <main className="bg-[#f4f4f4] pb-24 pt-6 sm:pt-10">
           {/* Hero Header */}
           <section className="relative mx-auto w-full max-w-[1340px] px-4 sm:px-6">
-            <div className="flex flex-col items-center pb-8 pt-4 text-center sm:pb-12 sm:pt-6">
-
+            <div className="flex flex-col items-center pb-6 pt-3 text-center sm:pb-8 sm:pt-4">
+              <span className="mb-2 font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-[#64748b]">
+                Surface Studio
+              </span>
               <motion.h1
-                initial={{ opacity: 0, y: 20 }}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.05 }}
-                className="font-extrabold lowercase text-[#020817]"
-                style={{ fontSize: 'clamp(38px, 6.5vw, 88px)', letterSpacing: '-0.04em', lineHeight: 0.95 }}
+                transition={{ duration: 0.4 }}
+                className="text-2xl sm:text-[32px] font-medium tracking-tight text-[#020817]"
               >
-                {isTee ? 'list your t-shirt.' : 'list your mac lid.'}
+                {isTee ? 'List your T-shirt' : 'List your Mac lid'}
               </motion.h1>
 
               <motion.p
-                initial={{ opacity: 0, y: 16 }}
+                initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.1 }}
-                className="mx-auto mt-4 max-w-[56ch] text-[16px] text-[#020817]/70 sm:text-[18px]"
+                transition={{ duration: 0.4, delay: 0.05 }}
+                className="mx-auto mt-2 max-w-[50ch] text-[14px] text-[#64748b]"
               >
-                Drop your sticker spots directly on the surface, set starting prices, and let brands claim or bid.
+                Drop your sponsor spots directly on the surface, set pricing, and let brands claim or bid.
               </motion.p>
             </div>
           </section>
