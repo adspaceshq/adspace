@@ -348,7 +348,10 @@ export function createApp({
     } catch (e) { sendErr(res, e); }
   });
   app.post("/api/spots/:id/withdraw", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
-    try { res.json(await repo.withdrawDispute(req.params.id, req.user!)); } catch (e) { sendErr(res, e); }
+    try {
+      if(disputeChainExecutor) await disputeChainExecutor.withdraw(req.params.id,req.user!);
+      res.json(await repo.withdrawDispute(req.params.id, req.user!));
+    } catch (e) { sendErr(res, e); }
   });
   app.get("/api/review/payable", attachUser, requireUser, requireReviewer, async (_req, res) => {
     try { res.json(await repo.payableQueue()); } catch (e) { sendErr(res, e); }
