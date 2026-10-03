@@ -196,23 +196,41 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
   return (
     <div className="w-full">
       {views.length > 1 && !hideTabs && (
-        <div className="mb-4 flex flex-wrap justify-center gap-2" role="tablist" aria-label="Product views">
-          {views.map((v, i) => (
-            <button
-              key={v.id}
-              type="button"
-              role="tab"
-              aria-selected={i === activeIdx}
-              onClick={() => setActiveIdx(i)}
-              className={`rounded-full border px-[14px] py-[6px] font-mono text-xs font-medium transition ${
-                i === activeIdx
-                  ? 'border-[#020817] bg-[#020817] text-white'
-                  : 'border-[#e7e5e0] bg-white text-[#64748b] hover:border-[#c3cdfd] hover:text-[#020817]'
-              }`}
-            >
-              {v.label}
-            </button>
-          ))}
+        <div className="relative mb-5 flex items-center justify-center">
+          <div
+            className="inline-flex items-center rounded-full bg-[#eae9e4] p-1 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]"
+            role="tablist"
+            aria-label="Surface views"
+          >
+            {views.map((v, i) => {
+              const selected = i === activeIdx
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setActiveIdx(i)}
+                  className="relative rounded-full px-4 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#020817]"
+                >
+                  {selected && (
+                    <motion.span
+                      layoutId="specSheetActiveViewTab"
+                      className="absolute inset-0 rounded-full bg-[#020817] shadow-sm"
+                      transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                    />
+                  )}
+                  <span
+                    className={`relative z-10 transition-colors duration-200 ${
+                      selected ? 'text-white' : 'text-[#64748b] hover:text-[#020817]'
+                    }`}
+                  >
+                    {v.label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -233,10 +251,12 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
               </div>
             ))}
           </div>
-          <div className="mt-4 flex items-center justify-between px-1 font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
-            <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
-            <span>{footerNote}</span>
-          </div>
+          {!hideFooter && (
+            <div className="mt-4 flex items-center justify-between px-1 font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
+              <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
+              <span>{footerNote}</span>
+            </div>
+          )}
         </div>
       ) : (
         <div>
