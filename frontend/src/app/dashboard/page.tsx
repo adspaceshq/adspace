@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import Header from '@/components/Header'
 import SponsorDashboardView from '@/components/SponsorDashboardView'
+import AdminDashboardView from '@/components/AdminDashboardView'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
 import {
@@ -60,8 +61,75 @@ const relative = (iso: string) => {
 
 export default function DashboardPage() {
   const auth = useAuthSession()
-  if (auth.accountType === 'sponsor') return <SponsorDashboardPage />
-  return <SellerDashboardPage />
+  const isReviewer = Boolean(
+    auth.isReviewer ||
+    (auth.handle && ['adspacesfun', 'notcodesid', 'x402__ai'].includes(auth.handle.replace('@', '').toLowerCase()))
+  )
+
+  const [activeTab, setActiveTab] = useState<'admin' | 'creator' | 'sponsor' | null>(null)
+
+  // Default active tab: admin if reviewer, otherwise creator (or sponsor if set)
+  const currentTab = activeTab ?? (isReviewer ? 'admin' : (auth.accountType === 'sponsor' ? 'sponsor' : 'creator'))
+
+  if (currentTab === 'admin') {
+    return (
+      <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+        <Header />
+        <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
+          <AdminDashboardView
+            currentTab={currentTab}
+            onTabChange={(tab) => setActiveTab(tab)}
+          />
+        </main>
+      </div>
+    )
+  }
+
+  if (currentTab === 'sponsor') {
+    return (
+      <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+        <Header />
+        <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
+          {isReviewer && (
+            <div className="mb-4 flex justify-end">
+              <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('admin')}
+                  className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
+                >
+                  Admin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('creator')}
+                  className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
+                >
+                  Creator
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('sponsor')}
+                  className="rounded-full bg-[#020817] px-3 py-1 text-white shadow-2xs transition cursor-pointer"
+                >
+                  Sponsor
+                </button>
+              </div>
+            </div>
+          )}
+          <SponsorDashboardView />
+        </main>
+      </div>
+    )
+  }
+
+  return (
+    <SellerDashboardPage
+      isReviewer={isReviewer}
+      currentTab={currentTab}
+      onTabChange={(tab) => setActiveTab(tab)}
+    />
+  )
 }
 
 function SponsorDashboardPage() {
@@ -75,7 +143,15 @@ function SponsorDashboardPage() {
   )
 }
 
-function SellerDashboardPage() {
+function SellerDashboardPage({
+  isReviewer,
+  currentTab = 'creator',
+  onTabChange,
+}: {
+  isReviewer?: boolean
+  currentTab?: 'admin' | 'creator' | 'sponsor'
+  onTabChange?: (tab: 'admin' | 'creator' | 'sponsor') => void
+}) {
   const auth = useAuthSession()
   const { refresh } = useStore()
   const [data, setData] = useState<SellerDashboard | null>(null)
@@ -322,13 +398,40 @@ function SellerDashboardPage() {
                     )}
                   </p>
                 </div>
-                <Link
-                  href="/list"
-                  className="group inline-flex w-fit items-center gap-2 rounded-full bg-[#4166fb] px-5 py-2.5 text-[13px] font-medium text-white shadow-[0_10px_25px_-6px_rgba(65,102,251,0.4)] transition hover:bg-[#3558e8] active:scale-[0.98]"
-                >
-                  <Plus size={15} className="transition-transform duration-150 group-hover:rotate-90" />
-                  <span>List a new space</span>
-                </Link>
+                <div className="flex flex-wrap items-center gap-3">
+                  {isReviewer && (
+                    <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
+                      <button
+                        type="button"
+                        onClick={() => onTabChange?.('admin')}
+                        className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
+                      >
+                        Admin
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onTabChange?.('creator')}
+                        className="rounded-full bg-[#020817] px-3 py-1 text-white shadow-2xs transition cursor-pointer"
+                      >
+                        Creator
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onTabChange?.('sponsor')}
+                        className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
+                      >
+                        Sponsor
+                      </button>
+                    </div>
+                  )}
+                  <Link
+                    href="/list"
+                    className="group inline-flex w-fit items-center gap-2 rounded-full bg-[#4166fb] px-5 py-2.5 text-[13px] font-medium text-white shadow-[0_10px_25px_-6px_rgba(65,102,251,0.4)] transition hover:bg-[#3558e8] active:scale-[0.98]"
+                  >
+                    <Plus size={15} className="transition-transform duration-150 group-hover:rotate-90" />
+                    <span>List a new space</span>
+                  </Link>
+                </div>
               </div>
 
               {error && (
