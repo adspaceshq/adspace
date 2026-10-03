@@ -52,7 +52,7 @@ export default function Header() {
   const cleanHandle = auth.handle ? (auth.handle.startsWith('@') ? auth.handle : `@${auth.handle}`) : null
 
   return (
-    <header className="relative bg-[#f4f4f4] border-b border-[#e9e9e6]">
+    <header className="relative bg-[#f4f4f4]">
       <div className="mx-auto flex h-[68px] max-w-[1400px] items-center gap-5 px-4 sm:px-6">
         <Link
           href={loggedIn ? '/dashboard' : '/'}
@@ -175,9 +175,10 @@ export default function Header() {
                 <button
                   type="button"
                   onClick={() => setUserMenuOpen((v) => !v)}
-                  className="flex items-center gap-2 rounded-full py-1 pl-1 pr-2.5 transition hover:bg-black/5 cursor-pointer"
+                  className="flex items-center justify-center rounded-full transition hover:opacity-85 active:scale-95 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                   aria-expanded={userMenuOpen}
                   aria-haspopup="true"
+                  aria-label="User menu"
                 >
                   {auth.avatar ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -192,13 +193,6 @@ export default function Header() {
                       {(auth.handle ?? 'U').replace('@', '').charAt(0).toUpperCase()}
                     </span>
                   )}
-                  {cleanHandle && (
-                    <span className="text-[13px] font-medium text-[#020817]">{cleanHandle}</span>
-                  )}
-                  <ChevronDown
-                    size={14}
-                    className={`text-[#64748b] transition-transform ${userMenuOpen ? 'rotate-180' : ''}`}
-                  />
                 </button>
 
                 {userMenuOpen && (
