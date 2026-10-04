@@ -140,7 +140,8 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
           Back to browse
         </Link>
 
-        <section className="mb-8 rounded-[28px] border border-[#e7e5e0] bg-white p-5 shadow-[0_18px_60px_rgba(2,8,23,0.06)] sm:p-7">
+        <section className="mb-8 overflow-hidden rounded-[28px] border border-[#e7e5e0] bg-white shadow-[0_18px_60px_rgba(2,8,23,0.06)]">
+        <div className="bg-gradient-to-br from-white to-[#f8fafc] p-5 sm:p-7">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
           {profile?.avatar ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -206,10 +207,11 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
             </span>
           )}
         </div>
-        <div className="mt-6 grid gap-3 border-t border-[#e7e5e0] pt-5 sm:grid-cols-3">
-          <ProfileStat label="Live spaces" value={hydrated ? String(mine.length) : '—'} />
-          <ProfileStat label="Available spots" value={hydrated ? String(availableSpots) : '—'} />
-          <ProfileStat label="Claimed or bid" value={hydrated ? String(soldSpots) : '—'} />
+        </div>
+        <div className="grid gap-3 border-t border-[#e7e5e0] bg-[#fafaf7] p-5 sm:grid-cols-3 sm:p-7">
+          <ProfileStat label="Live spaces" value={hydrated ? String(mine.length) : '-'} />
+          <ProfileStat label="Available spots" value={hydrated ? String(availableSpots) : '-'} />
+          <ProfileStat label="Claimed or bid" value={hydrated ? String(soldSpots) : '-'} />
         </div>
         </section>
 
