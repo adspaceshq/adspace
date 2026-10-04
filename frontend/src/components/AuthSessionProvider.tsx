@@ -351,7 +351,7 @@ function ProfileCompletionModal({ auth }: { auth: AuthSession }) {
         <div className="mt-6 space-y-3">
           <ProfileRequirement complete={auth.hasX} label="X account" actionLabel="Connect X" onAction={auth.linkX} />
           <ProfileRequirement complete={Boolean(auth.email)} label="Verified email" actionLabel="Add email" onAction={auth.linkEmail} />
-          <ProfileRequirement complete={Boolean(auth.walletAddress)} label="Privy Solana wallet" pendingLabel="Creating wallet…" />
+          <ProfileRequirement complete={Boolean(auth.walletAddress)} label="Privy Solana wallet" pendingLabel="Creating wallet..." />
           <ProfileRequirement complete={auth.walletDelegated} label="Gasless transactions" actionLabel="Enable" onAction={() => void auth.delegateWallet()} />
         </div>
         {auth.error && <p className="mt-4 text-sm text-red-600">{auth.error}</p>}
@@ -762,7 +762,7 @@ function RoleOnboardingModal({
                 {saving ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Setting up your account…</span>
+                    <span>Setting up your account...</span>
                   </>
                 ) : (
                   <>
