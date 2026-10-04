@@ -119,6 +119,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   }, [searchParams, initialSurface])
 
   const isTee = surface === 'apparel'
+  const surfaceLabel = isTee ? 'T-shirt' : 'Gear surface'
   const [goal, setGoal] = useState('')
   const [deadline, setDeadline] = useState(() => toDateInput(new Date(Date.now() + 14 * 86_400_000)))
   // Optional artwork due date: buyers must submit final art by then (empty = none).
@@ -832,7 +833,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                 </>
                               ) : (
                                 <>
-                                  <span className="font-mono text-xs font-bold">𝕏</span>
+                                  <span className="font-mono text-xs font-bold">X</span>
                                   <span>Authenticate with X</span>
                                 </>
                               )}
@@ -864,7 +865,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                   {x.handle.replace('@', '').charAt(0).toUpperCase()}
                                 </span>
                                 <span className="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-[#020817] font-mono text-[9px] font-bold text-white ring-2 ring-white">
-                                  𝕏
+                                  X
                                 </span>
                               </div>
                               <div>
@@ -1249,7 +1250,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                       />
                     ) : (
                       <span className="grid h-7 w-7 place-items-center rounded-full bg-[#020817] font-mono text-[11px] font-bold text-white shrink-0">
-                        𝕏
+                        X
                       </span>
                     )}
                     <span className="truncate text-[14px] font-semibold text-[#020817]">
@@ -1259,7 +1260,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     </span>
                   </div>
                   <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#64748b] shrink-0">
-                    {isTee ? 'T-Shirt' : 'MacBook Lid'} • {priceType === 'fixed' ? 'Fixed price' : 'Auction'}
+                    {surfaceLabel} � {priceType === 'fixed' ? 'Fixed price' : 'Auction'}
                   </span>
                 </div>
 

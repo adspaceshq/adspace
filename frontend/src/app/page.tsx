@@ -236,13 +236,13 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Live listings — Nominees-style: centered mega-heading, cards, footer link */}
+        {/* Live listings - centered heading, cards, footer link */}
         <section className="py-20">
           <div className="mx-auto w-full max-w-[1340px] px-6">
             <div className="mb-12 text-center">
               <p className="mb-4 text-sm font-medium uppercase tracking-[0.22em] text-[#020817]">Live now</p>
               <h2 className="font-extrabold uppercase text-[#020817]" style={{ fontSize: 'clamp(24px, 4vw, 56px)', letterSpacing: '-0.04em', lineHeight: 0.95 }}>Live spaces</h2>
-              <p className="mx-auto mt-6 max-w-[48ch] text-[17px] text-[#020817]/70">Suitcases, kits, lids, tattoos. Pick a spot — X login to claim or bid.</p>
+              <p className="mx-auto mt-6 max-w-[48ch] text-[17px] text-[#020817]/70">Suitcases, kits, lids, tattoos. Pick a spot - X login to claim or bid.</p>
             </div>
             {listings.length === 0 ? (
               <>
