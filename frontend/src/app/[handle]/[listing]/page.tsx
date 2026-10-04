@@ -4,7 +4,7 @@ import { use, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import Header from '@/components/Header'
-import Footer from '@/components/Footer'
+import PageShell from '@/components/PageShell'
 import ListingDetailView from '@/components/ListingDetailView'
 import { useStore } from '@/components/StoreProvider'
 import { listingShortKey, resolveNestedListing, sellerUrl } from '@/lib/listings'
@@ -36,18 +36,17 @@ export default function NestedListingPage({
 
   if (!hydrated) {
     return (
-      <>
+      <PageShell className="border-b-0 shadow-none">
         <Header />
         <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
           <p className="text-[#64748b]">Loading space…</p>
         </main>
-        <Footer />
-      </>
+      </PageShell>
     )
   }
 
   return (
-    <>
+    <PageShell className="border-b-0 shadow-none">
       <Header />
       <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
         <h1 className="text-4xl">Space not found.</h1>
@@ -56,7 +55,6 @@ export default function NestedListingPage({
           Back to @{clean}
         </Link>
       </main>
-      <Footer />
-    </>
+    </PageShell>
   )
 }

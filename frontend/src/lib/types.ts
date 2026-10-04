@@ -128,6 +128,19 @@ export interface ApiCreateSpotRequest {
   w?: number;
 }
 
+export type AccountType = "creator" | "sponsor";
+export const SOCIAL_PLATFORMS = ["x", "instagram", "youtube", "tiktok"] as const;
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+export const BRAND_CATEGORIES = ["crypto", "fintech", "gaming", "consumer", "saas", "fitness", "media", "other"] as const;
+export type BrandCategory = (typeof BRAND_CATEGORIES)[number];
+
+/** Chosen once after login; later decides which dashboard the user sees. */
+export interface Onboarding {
+  accountType: AccountType;
+  creator?: { socials: Partial<Record<SocialPlatform, string>> };
+  sponsor?: { brandName: string; category: BrandCategory; website?: string };
+}
+
 export interface SessionUser {
   id: string;
   did: string;
@@ -140,6 +153,7 @@ export interface SessionUser {
   csrfToken: string;
   expiresAt: string;
   isReviewer: boolean;
+  onboarding?: Onboarding | null;
 }
 
 /** Public seller profile at /{username}. payoutWallet is only ever returned to the owner. */
@@ -200,6 +214,42 @@ export interface SellerDashboard {
   listings: SellerDashboardListing[];
   attention: SellerAttentionItem[];
 }
+/** Buyer-side lifecycle. `refunded` also covers losing an auction takeover. */
+export type SponsorSpotStatus = "pending" | "sold" | "delivered" | "disputed" | "paid" | "refunded";
+
+/** One spot a sponsor holds, seen from the buyer side. */
+export interface SponsorSpot {
+  spotId: string;
+  listingId: string;
+  listingSlug: string;
+  listingTitle: string;
+  listingImage: string;
+  sellerHandle: string;
+  spotLabel: string;
+  location: string;
+  amount: number;
+  currency: string;
+  mode: ApiMode;
+  status: SponsorSpotStatus;
+  /** Sold, still mine, and artwork not submitted yet. */
+  artworkDue: boolean;
+  artworkSubmittedAt?: string;
+  proofPhotos: string[];
+  proofPost?: string;
+  claimedAt?: string;
+  fulfilledAt?: string;
+  confirmedAt?: string;
+  disputedAt?: string;
+  disputeReason?: string;
+  paidAt?: string;
+}
+
+export interface SponsorDashboard {
+  summary: { active: number; pendingApproval: number; awaitingArtwork: number; delivering: number; committed: number; currency: string };
+  campaigns: SponsorSpot[];
+}
+
+
 
 export interface PayoutItem {
   spotId: string;

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { motion, AnimatePresence } from 'motion/react'
 import { Apple, X } from 'lucide-react'
 import { formatMoney, clampStickerWidth, lidPointFromPointer, type GridCell, type Listing, type Spot } from '@/lib/listings'
 
@@ -78,10 +79,11 @@ function GridCellView({ cell, listing, onClaim, onBid }: {
 const dotBase =
   "absolute h-3 w-3 touch-none select-none rounded-full border border-[#020817] bg-white shadow-[0_1px_3px_rgba(2,8,23,0.3)] transition before:absolute before:-inset-2 before:content-[''] hover:scale-125"
 
-export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMoveSpot, onResizeSpot, onRemoveSpot, onSelectSpot, onDismissSpotPanel, selectedSpotId, spotPanel, activeViewId, onActiveViewChange, hideTabs }: {
+export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMoveSpot, onResizeSpot, onRemoveSpot, onSelectSpot, onDismissSpotPanel, selectedSpotId, spotPanel, activeViewId, onActiveViewChange, hideTabs, hideFooter }: {
   listing: Listing
   onClaim: (spot: Spot) => void
   onBid: (spot: Spot) => void
+  hideFooter?: boolean
   /** Seller editor: click bare photo to drop a spot where you clicked, on that view. */
   onPlaceSpot?: (x: number, y: number, viewId: string) => void
   /** Seller editor: drag a sticker, or nudge it with the arrow keys, to move it. */
@@ -194,23 +196,41 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
   return (
     <div className="w-full">
       {views.length > 1 && !hideTabs && (
-        <div className="mb-4 flex flex-wrap justify-center gap-2" role="tablist" aria-label="Product views">
-          {views.map((v, i) => (
-            <button
-              key={v.id}
-              type="button"
-              role="tab"
-              aria-selected={i === activeIdx}
-              onClick={() => setActiveIdx(i)}
-              className={`rounded-full border px-[14px] py-[6px] font-mono text-xs font-medium transition ${
-                i === activeIdx
-                  ? 'border-[#020817] bg-[#020817] text-white'
-                  : 'border-[#e7e5e0] bg-white text-[#64748b] hover:border-[#c3cdfd] hover:text-[#020817]'
-              }`}
-            >
-              {v.label}
-            </button>
-          ))}
+        <div className="relative mb-5 flex items-center justify-center">
+          <div
+            className="inline-flex items-center rounded-full bg-[#eae9e4] p-1 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]"
+            role="tablist"
+            aria-label="Surface views"
+          >
+            {views.map((v, i) => {
+              const selected = i === activeIdx
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  onClick={() => setActiveIdx(i)}
+                  className="relative rounded-full px-4 py-1.5 font-mono text-[11px] font-semibold uppercase tracking-wider transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#020817]"
+                >
+                  {selected && (
+                    <motion.span
+                      layoutId="specSheetActiveViewTab"
+                      className="absolute inset-0 rounded-full bg-[#020817] shadow-sm"
+                      transition={{ type: 'spring', stiffness: 450, damping: 35 }}
+                    />
+                  )}
+                  <span
+                    className={`relative z-10 transition-colors duration-200 ${
+                      selected ? 'text-white' : 'text-[#64748b] hover:text-[#020817]'
+                    }`}
+                  >
+                    {v.label}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
         </div>
       )}
 
@@ -231,10 +251,12 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
               </div>
             ))}
           </div>
-          <div className="mt-4 flex items-center justify-between px-1 font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
-            <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
-            <span>{footerNote}</span>
-          </div>
+          {!hideFooter && (
+            <div className="mt-4 flex items-center justify-between px-1 font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
+              <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
+              <span>{footerNote}</span>
+            </div>
+          )}
         </div>
       ) : (
         <div>
@@ -283,27 +305,32 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                   className="absolute inset-0 z-[1] cursor-crosshair rounded-2xl"
                 />
               )}
-              {spots.map((spot) => {
-                const isClaimed = !!spot.claimedBy
-                const isWinning = !isClaimed && !!spot.bidBy
-                const taken = isClaimed || isWinning
-                const who = isClaimed ? spot.claimedBy : spot.bidBy
-                const amount = spot.bid ?? spot.price
-                const price = spot.bid != null
-                  ? formatMoney(spot.bid, listing.currency)
-                  : listing.priceType === 'auction'
-                    ? `from ${formatMoney(amount, listing.currency)}`
-                    : formatMoney(amount, listing.currency)
-                // Center the *sticker* on its point — not the sticker-plus-caption column — so the
-                // top-row slots sit fully on the lid instead of hanging off the photo's top edge.
-                return (
-                  <div
-                    key={spot.id}
-                    className={`absolute -translate-x-1/2 -translate-y-1/2 ${
-                      editing && (draggingId === spot.id || resizingId === spot.id) ? 'z-[5]' : 'z-[2]'
-                    }`}
-                    style={{ left: `${spot.x}%`, top: `${spot.y}%`, width: `${spot.w}%` }}
-                  >
+              <AnimatePresence>
+                {spots.map((spot) => {
+                  const isClaimed = !!spot.claimedBy
+                  const isWinning = !isClaimed && !!spot.bidBy
+                  const taken = isClaimed || isWinning
+                  const who = isClaimed ? spot.claimedBy : spot.bidBy
+                  const amount = spot.bid ?? spot.price
+                  const price = spot.bid != null
+                    ? formatMoney(spot.bid, listing.currency)
+                    : listing.priceType === 'auction'
+                      ? `from ${formatMoney(amount, listing.currency)}`
+                      : formatMoney(amount, listing.currency)
+                  // Center the *sticker* on its point — not the sticker-plus-caption column — so the
+                  // top-row slots sit fully on the lid instead of hanging off the photo's top edge.
+                  return (
+                    <motion.div
+                      key={spot.id}
+                      initial={{ scale: 0, opacity: 0, x: '-50%', y: '-50%' }}
+                      animate={{ scale: 1, opacity: 1, x: '-50%', y: '-50%' }}
+                      exit={{ scale: 0, opacity: 0, x: '-50%', y: '-50%' }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+                      className={`absolute ${
+                        editing && (draggingId === spot.id || resizingId === spot.id) ? 'z-[5]' : 'z-[2]'
+                      }`}
+                      style={{ left: `${spot.x}%`, top: `${spot.y}%`, width: `${spot.w}%` }}
+                    >
                     {/* Wrapper exists so the handles can hug the sticker instead of the caption under it.
                         It is also the hover group that reveals the remove dot. */}
                     <div
@@ -457,41 +484,64 @@ export default function SpecSheet({ listing, onClaim, onBid, onPlaceSpot, onMove
                     {/* Caption hangs below the sticker out of flow, so it never shifts the sticker off its point. */}
                     <span className="absolute left-0 top-full mt-[6px] w-full text-center">
                       <span className="block truncate text-[13px] font-semibold leading-tight">{spot.label}</span>
-                      <span className="block truncate font-mono text-[12px] leading-tight text-[#64748b]">
-                        {amount > 0 ? price : 'No price yet'}
-                      </span>
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={amount > 0 ? `price-${amount}` : 'no-price'}
+                          initial={{ opacity: 0, y: -3, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 3, scale: 0.95 }}
+                          transition={{ duration: 0.15 }}
+                          className="block truncate font-mono text-[12px] leading-tight text-[#64748b]"
+                        >
+                          {amount > 0 ? (
+                            <span className="font-semibold text-[#020817]">{price}</span>
+                          ) : (
+                            'No price yet'
+                          )}
+                        </motion.span>
+                      </AnimatePresence>
                     </span>
-                  </div>
+                  </motion.div>
                 )
               })}
+              </AnimatePresence>
               {/* Seller editor: the price panel rides next to the sticker that opened it, so it
                   follows the sticker when it's dragged and lives on the same photo view. */}
-              {editing && spotPanel && selectedSpotId && (() => {
-                const sel = spots.find((s) => s.id === selectedSpotId)
-                if (!sel) return null
-                // Sit right of the sticker, flipped left when it's on the right half of the photo,
-                // and vertically clamped, so the panel never spills off the photo.
-                const flipX = sel.x > 55
-                return (
-                  <div
-                    className="absolute z-[6] w-[230px] leading-normal"
-                    ref={panelRef}
-                    style={{
-                      left: `${sel.x + (flipX ? -sel.w / 2 : sel.w / 2)}%`,
-                      top: `${Math.min(Math.max(sel.y, 18), 82)}%`,
-                      transform: `translate(${flipX ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
-                    }}
-                  >
-                    {spotPanel}
-                  </div>
-                )
-              })()}
+              <AnimatePresence>
+                {editing && spotPanel && selectedSpotId && (() => {
+                  const sel = spots.find((s) => s.id === selectedSpotId)
+                  if (!sel) return null
+                  // Sit right of the sticker, flipped left when it's on the right half of the photo,
+                  // and vertically clamped, so the panel never spills off the photo.
+                  const flipX = sel.x > 55
+                  return (
+                    <motion.div
+                      key={`panel-${selectedSpotId}`}
+                      initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.9, y: 4 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      className="absolute z-[6] w-[240px] leading-normal"
+                      ref={panelRef}
+                      style={{
+                        left: `${sel.x + (flipX ? -sel.w / 2 : sel.w / 2)}%`,
+                        top: `${Math.min(Math.max(sel.y, 18), 82)}%`,
+                        transform: `translate(${flipX ? 'calc(-100% - 12px)' : '12px'}, -50%)`,
+                      }}
+                    >
+                      {spotPanel}
+                    </motion.div>
+                  )
+                })()}
+              </AnimatePresence>
             </div>
           </div>
-          <div className="mt-3 flex items-center justify-between font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
-            <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
-            <span>{footerNote}</span>
-          </div>
+          {!hideFooter && (
+            <div className="mt-3 flex items-center justify-between font-mono text-[11px] tracking-[0.06em] text-[#64748b]">
+              <span className="font-semibold text-[#020817]">{active.label.toUpperCase()}</span>
+              <span>{footerNote}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

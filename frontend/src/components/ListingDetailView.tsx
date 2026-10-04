@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, Brush, Calendar, Trophy } from 'lucide-react'
+import { Brush, Calendar, ExternalLink, Sparkles, Trophy } from 'lucide-react'
 import Header from '@/components/Header'
-import Footer from '@/components/Footer'
+import PageShell from '@/components/PageShell'
 import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
-import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingOversubscription, listingUrl, minBidFor, payoutReleased, reviewDaysLeft, sellerDisplay, sellerUrl, surfaceLabels, type Spot } from '@/lib/listings'
+import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingOversubscription, listingUrl, minBidFor, sellerDisplay, sellerUrl, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 
 const field =
@@ -42,7 +42,7 @@ function ago(iso: string): string {
 }
 
 export default function ListingDetailView({ id, backHref }: { id: string; backHref?: string }) {
-  const { listings, getListing, claimSpot, placeBid, submitArtwork, submitProof, reviewSpot } = useStore()
+  const { listings, getListing, claimSpot, placeBid, submitProof } = useStore()
   const listing = getListing(id)
 
   const [modal, setModal] = useState<{ spot: Spot; mode: 'claim' | 'bid' } | null>(null)
@@ -55,13 +55,6 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const [amount, setAmount] = useState('')
   const [toast, setToast] = useState<string | null>(null)
   const [x, setX] = useState<XIdentity | null>(null)
-  // Post-purchase artwork intake: which sold spot the hidden file input serves.
-  const [artSpot, setArtSpot] = useState<string | null>(null)
-  const [artBusy, setArtBusy] = useState(false)
-  // Buyer review (Step 10 gate): dispute draft per own fulfilled spot.
-  const [disputingSpot, setDisputingSpot] = useState<string | null>(null)
-  const [disputeReason, setDisputeReason] = useState('')
-  const [reviewBusy, setReviewBusy] = useState(false)
   // Delivery proof (Step 9): seller-only form state per fulfilled spot.
   const [proofSpot, setProofSpot] = useState<string | null>(null)
   const [proofFiles, setProofFiles] = useState<string[]>([])
@@ -129,15 +122,16 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   if (!listing) {
     return (
       <>
-        <Header />
-        <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
-          <h1 className="text-4xl">Space not found.</h1>
-          <p className="text-[#64748b]">This listing does not exist or was removed.</p>
-          <Link href="/browse" className="mt-2 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white">
-            Back to browse
-          </Link>
-        </main>
-        <Footer />
+        <PageShell className="border-b-0 shadow-none">
+          <Header />
+          <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
+            <h1 className="text-4xl">Space not found.</h1>
+            <p className="text-[#64748b]">This listing does not exist or was removed.</p>
+            <Link href="/browse" className="mt-2 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white">
+              Back to browse
+            </Link>
+          </main>
+        </PageShell>
       </>
     )
   }
@@ -157,7 +151,8 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     spots: new Set(allBids.filter((b) => b.bidder === name).map((b) => b.spotLabel)).size,
   }))
   const takenCount = listing.spots.filter((s) => s.claimedBy || s.bidBy).length
-  const spotBidCount = (sp: Spot) => sp.bids?.length ?? (sp.bid != null ? 1 : 0)
+  const sponsoredSpots = listing.spots.filter((s) => Boolean(s.claimedBy || s.bidBy))
+  const openSpots = listing.spots.filter((s) => !s.claimedBy && !s.bidBy)
   const demand = listingOversubscription(listing)
   const expectedPayout = expectedListingPayout(listing)
 
@@ -194,55 +189,8 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     setModal({ spot, mode: 'bid' })
   }
 
-  const artClosed = !!listing.artworkClose && isEnded(listing.artworkClose)
-
-  // Final artwork uploads at full quality (no shrink), capped at the API's ~3 MB.
-  const onArtFile = (spotId: string, file: File | undefined) => {
-    if (!file || artBusy) return
-    if (!file.type.startsWith('image/')) {
-      showToast('Artwork must be an image file.')
-      return
-    }
-    if (file.size > 3 * 1024 * 1024) {
-      showToast('Artwork must be under 3 MB.')
-      return
-    }
-    setArtBusy(true)
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-      if (!dataUrl.startsWith('data:image/')) {
-        showToast('Could not read that file.')
-        setArtBusy(false)
-        return
-      }
-      submitArtwork(listing.id, spotId, { logoUrl: dataUrl }).then(
-        () => { setArtBusy(false); showToast('Artwork submitted.') },
-        (e) => { setArtBusy(false); showToast(e instanceof Error ? e.message : 'Could not submit artwork.') },
-      )
-    }
-    reader.onerror = () => {
-      showToast('Could not read that file.')
-      setArtBusy(false)
-    }
-    reader.readAsDataURL(file)
-  }
-
   const shareUrl = (text: string) =>
     `https://x.com/intent/post?text=${encodeURIComponent(text + ` ${window.location.origin}${listingUrl(listing, listings)}`)}`
-
-  const review = async (spotId: string, action: 'confirm' | 'withdraw' | { dispute: string }) => {
-    setReviewBusy(true)
-    try {
-      await reviewSpot(listing.id, spotId, action)
-      setDisputingSpot(null)
-      setDisputeReason('')
-    } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Review action failed.')
-    } finally {
-      setReviewBusy(false)
-    }
-  }
 
   const normHandle = (h: string) => h.trim().replace(/^@+/, '').toLowerCase()
   const isOwner = !!x?.handle && normHandle(x.handle) === normHandle(listing.seller.handle || listing.seller.name)
@@ -319,13 +267,13 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       ...(logo ? { logoUrl: logo } : {}),
       ...(normalizeWebsite(website) ? { website: normalizeWebsite(website) } : {}),
     }
-    // Mock checkout: visibly fake processing, then the same API-only mutation as before.
+    // On-chain when the backend is configured for chain (devnet USDC moves),
+    // spot-marking fallback otherwise — same API-only mutation either way.
     setPaying(true)
-    await new Promise((r) => setTimeout(r, 1200))
     try {
       if (modal.mode === 'claim') {
         await claimSpot(listing.id, modal.spot.id, actor, extras)
-        setSuccess({ spotLabel: modal.spot.label, text: `${modal.spot.label} claimed by ${actor} — mock, no charge.` })
+        setSuccess({ spotLabel: modal.spot.label, text: `${modal.spot.label} claimed by ${actor}.` })
       } else {
         const amt = Number(amount)
         const min = minBidFor(listing, modal.spot)
@@ -335,7 +283,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           return
         }
         await placeBid(listing.id, modal.spot.id, actor, amt, extras)
-        setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt, listing.currency)} on ${modal.spot.label} — mock.` })
+        setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt, listing.currency)} on ${modal.spot.label}.` })
       }
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Something went wrong.')
@@ -360,43 +308,28 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     setStep('pay')
   }
 
-  const back = backHref ?? '/browse'
-  const backLabel = back === '/browse' ? 'Back to browse' : `Back to ${listing.seller.handle || listing.seller.name}`
+  const cleanStory = (() => {
+    const desc = listing.description?.replace(/\s*\(Artwork due.*?\)\.?\s*$/i, '').trim()
+    if (desc && !desc.toLowerCase().startsWith('(artwork due')) return desc
+    if (listing.goal && !listing.goal.toLowerCase().startsWith('(artwork due') && listing.goal.trim() !== 'Fund my goal') {
+      return listing.goal.trim()
+    }
+    return null
+  })()
 
   return (
     <>
-      <Header />
-      {PRIVY_ENABLED && <XProbe onChange={setX} />}
-      <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-8">
-        <Link href={back} className="mb-6 inline-flex items-center gap-[6px] text-sm font-medium text-[#64748b] transition hover:text-[#020817]">
-          <ArrowLeft size={15} /> {backLabel}
-        </Link>
+      <PageShell className="border-b-0 shadow-none">
+        <Header />
+        {PRIVY_ENABLED && <XProbe onChange={setX} />}
+        <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-8">
 
         <div className="mx-auto max-w-3xl">
-          <div className="mb-5 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-[#e9edfe] px-[10px] py-1 font-mono text-[11px] font-medium uppercase tracking-wide text-[#4166fb]">
-              {surfaceLabels[listing.surface] ?? listing.surface}
-            </span>
-            <span className={`inline-flex items-center rounded-full px-3 py-[5px] font-mono text-[11px] font-medium uppercase tracking-wide ${isAuction ? 'bg-[#e9edfe] text-[#4166fb]' : 'bg-[#d1fae5] text-[#065f46]'}`}>
-              {isAuction ? 'Live auction' : 'Fixed price'}
-            </span>
-            {countdown && (
-              <span className="inline-flex items-center rounded-full bg-[#020817] px-3 py-[5px] font-mono text-[11px] font-medium uppercase tracking-wide text-white">
-                {countdown}
-              </span>
-            )}
-          </div>
-          <h1 style={{ fontSize: 'clamp(30px, 4vw, 46px)' }}>{listing.title}</h1>
-          <p className="mt-1 text-lg font-medium text-[#4166fb]">{listing.goal}</p>
-          <p className="mt-3 text-[16px] text-[#64748b]">{listing.description}</p>
-          <p className="mt-4 font-mono text-[13px] font-medium tracking-wide text-[#020817]">
-            {takenCount}/{listing.spots.length} spots taken <span className="mx-1 text-[#e7e5e0]">·</span>
-            <span className="text-[#64748b]">{allBids.length} bid{allBids.length === 1 ? '' : 's'}</span>
-            {isAuction && demand.percent > 0 && (
-              <><span className="mx-1 text-[#e7e5e0]">·</span><span className="text-[#9a3412]">{demand.bids} bids for {demand.capacity} spots · +{demand.percent}% oversubscribed</span></>
-            )}
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[#64748b]">
+          <h1 style={{ fontSize: 'clamp(30px, 4vw, 44px)' }} className="font-bold tracking-tight text-[#020817]">
+            {listing.title}
+          </h1>
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[#64748b]">
             <Link
               href={sellerUrl(listing.seller.handle || listing.seller.name)}
               className="inline-flex items-center gap-2 rounded-full transition hover:opacity-80"
@@ -404,21 +337,51 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
               <SellerAvatar seller={listing.seller} />
               <strong className="text-[#020817]">{sellerDisplay(listing.seller)}</strong>
             </Link>
-            <span className="inline-flex items-center gap-[6px]"><Calendar size={14} /> {ended ? `Ended ${listing.deadline}` : `Ends ${listing.deadline}`}</span>
+            <span className="text-[#cbd5e1]">·</span>
+            <span className="inline-flex items-center gap-[6px]">
+              <Calendar size={14} />
+              <span>{ended ? `Ended ${listing.deadline}` : `Ends ${listing.deadline}`}</span>
+            </span>
+            {countdown && !ended && (
+              <span className="inline-flex items-center rounded-full bg-[#020817] px-2.5 py-0.5 font-mono text-[11px] font-medium uppercase tracking-wide text-white">
+                {countdown}
+              </span>
+            )}
             {listing.artworkClose && (
-              <span className="inline-flex items-center gap-[6px]"><Brush size={14} /> Artwork due {deadlineLabel(listing.artworkClose)}</span>
+              <>
+                <span className="text-[#cbd5e1]">·</span>
+                <span className="inline-flex items-center gap-[6px]">
+                  <Brush size={14} />
+                  <span>Artwork due {deadlineLabel(listing.artworkClose)}</span>
+                </span>
+              </>
             )}
           </div>
+
+          {cleanStory && (
+            <p className="mt-3 text-[15px] leading-relaxed text-[#526079]">{cleanStory}</p>
+          )}
+
           <div className="mt-6">
-            <div className="flex items-baseline justify-between gap-4">
-              <p className="text-[28px] font-semibold tracking-tight">
+            <div className="flex flex-wrap items-baseline justify-between gap-4">
+              <p className="text-[28px] font-semibold tracking-tight text-[#020817]">
                 {formatMoney(raised, listing.currency)} <span className="text-[16px] font-normal text-[#64748b]">raised</span>
               </p>
-              <p className="font-mono text-[13px] text-[#64748b]">{takenCount}/{listing.spots.length} taken</p>
+              <div className="flex flex-wrap items-center gap-2 font-mono text-xs text-[#64748b]">
+                <span className="font-medium text-[#020817]">{takenCount}/{listing.spots.length} spots taken</span>
+                <span className="text-[#cbd5e1]">·</span>
+                <span>{allBids.length} bid{allBids.length === 1 ? '' : 's'}</span>
+                {isAuction && demand.percent > 0 && (
+                  <>
+                    <span className="text-[#cbd5e1]">·</span>
+                    <span className="font-semibold text-[#9a3412]">+{demand.percent}% oversubscribed</span>
+                  </>
+                )}
+              </div>
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f1f0ec]" role="progressbar" aria-valuenow={takenCount} aria-valuemin={0} aria-valuemax={listing.spots.length} aria-label="Spots taken">
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e7e5e0]" role="progressbar" aria-valuenow={takenCount} aria-valuemin={0} aria-valuemax={listing.spots.length} aria-label="Spots taken">
               <div
-                className={`h-full rounded-full transition-all ${takenCount === listing.spots.length && listing.spots.length > 0 ? 'bg-[#16a34a]' : 'bg-[#4166fb]'}`}
+                className={`h-full rounded-full transition-all duration-300 ${takenCount === listing.spots.length && listing.spots.length > 0 ? 'bg-[#16a34a]' : 'bg-[#4166fb]'}`}
                 style={{ width: `${listing.spots.length ? Math.round((takenCount / listing.spots.length) * 100) : 0}%` }}
               />
             </div>
@@ -442,167 +405,182 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
         </div>
 
         <div className="mx-auto mt-8 max-w-5xl">
-          <SpecSheet listing={listing} onClaim={ended ? () => showToast('This space has ended.') : openClaim} onBid={ended ? () => showToast('This space has ended.') : openBid} />
-          <p className="mt-4 text-center text-sm text-[#64748b]">
-            {ended ? 'This space has ended — no more claims or bids.' : <>Tap an open slot to {isAuction ? 'bid' : 'claim'} — your logo goes on the real thing.</>}
-          </p>
+          <SpecSheet
+            listing={listing}
+            hideFooter
+            onClaim={ended ? () => showToast('This space has ended.') : openClaim}
+            onBid={ended ? () => showToast('This space has ended.') : openBid}
+          />
         </div>
 
-        {leaderboard.length > 0 && (
-          <div className="mx-auto mt-10 max-w-5xl">
-            <h2 className="mb-1 flex items-center gap-2 text-2xl"><Trophy size={20} className="text-[#b89b00]" /> Top brands.</h2>
-            <p className="mb-4 text-sm text-[#64748b]">{allBids.length} bid{allBids.length === 1 ? '' : 's'} in total.</p>
-            <div className="flex flex-col gap-2">
-              {leaderboard.map((row, i) => (
-                <div key={row.name} className="flex items-center gap-4 rounded-xl border border-[#e7e5e0] bg-white px-5 py-3 text-sm">
-                  <span className="w-6 font-mono text-[13px] font-bold text-[#64748b]">{i + 1}</span>
-                  <span className="font-semibold">{row.name}</span>
-                  <span className="text-[#64748b]">{row.spots} spot{row.spots === 1 ? '' : 's'}</span>
-                  <span className="ml-auto font-mono text-[13px] font-semibold">{formatMoney(row.total, listing.currency)}</span>
-                </div>
-              ))}
+        <div className="mx-auto mt-12 max-w-5xl">
+          <div className="mb-4 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-2xl font-normal tracking-tight text-[#020817]">Participating brands.</h2>
+              <p className="text-sm text-[#64748b]">
+                {sponsoredSpots.length === 0
+                  ? 'No brands have placed their stickers yet.'
+                  : `${sponsoredSpots.length} spot${sponsoredSpots.length === 1 ? '' : 's'} claimed or active on this space.`}
+              </p>
             </div>
+            {listing.spots.length > 0 && (
+              <span className="font-mono text-xs text-[#64748b]">
+                {sponsoredSpots.length}/{listing.spots.length} SPOTS TAKEN
+              </span>
+            )}
           </div>
-        )}
 
-        <div className="mx-auto mt-10 max-w-5xl">
-          <h2 className="mb-1 text-2xl">All spots.</h2>
-          <p className="mb-4 text-sm text-[#64748b]">{takenCount} of {listing.spots.length} taken{ended ? ' — ended.' : <> — tap an open one to {isAuction ? 'bid' : 'claim'}.</>}</p>
-          <div className="overflow-hidden rounded-2xl border border-[#e7e5e0] bg-white">
-            {listing.spots.map((sp, i) => {
-              const held = sp.claimedBy ?? sp.bidBy
-              const open = isAuction ? !sp.sold : !held
-              return (
-                <div key={sp.id} className={`flex items-center gap-3 px-5 py-3 text-sm ${i > 0 ? 'border-t border-[#e7e5e0]' : ''}`}>
-                  <span className="w-6 shrink-0 font-mono text-[13px] text-[#64748b]">{i + 1}</span>
-                  <span className="min-w-0 flex-1 truncate font-semibold">{sp.label}</span>
-                  <span className="hidden shrink-0 rounded-full bg-[#f1f0ec] px-[10px] py-1 font-mono text-[11px] text-[#64748b] sm:inline">
-                    {sp.size}
-                  </span>
-                  {held ? (
-                    sp.website ? (
-                      <span className="truncate text-[13px] text-[#64748b]">
-                        <a href={normalizeWebsite(sp.website)} target="_blank" rel="noopener noreferrer" className="font-semibold text-[#4166fb] hover:underline" onClick={(e) => e.stopPropagation()}>{held} ↗</a>
-                        {' '}· {formatMoney(sp.bid ?? sp.price, listing.currency)}
-                      </span>
-                    ) : (
-                      <span className="truncate text-[13px] text-[#64748b]">{held} · {formatMoney(sp.bid ?? sp.price, listing.currency)}</span>
-                    )
-                  ) : (
-                    <span className="whitespace-nowrap font-mono text-[13px]">
-                      {isAuction ? `from ${formatMoney(sp.price, listing.currency)}` : formatMoney(sp.price, listing.currency)}
-                      {spotBidCount(sp) > 0 && <span className="text-[#64748b]"> · {spotBidCount(sp)} bid{spotBidCount(sp) === 1 ? '' : 's'}</span>}
-                    </span>
-                  )}
-                  {open && !ended && !isOwner && normHandle(sp.bidBy ?? '') !== normHandle(x?.handle ?? '') && (
-                    <button
-                      type="button"
-                      onClick={() => (isAuction ? openBid(sp) : openClaim(sp))}
-                      className="shrink-0 rounded-full bg-[#020817] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#0f1a33]"
-                    >
-                      {isAuction ? 'Bid' : 'Claim'}
-                    </button>
-                  )}
-                  {isAuction && sp.bidBy && normHandle(sp.bidBy) === normHandle(x?.handle ?? '') && (
-                    <span className="shrink-0 font-mono text-[11px] font-semibold text-[#16a34a]">TOP BIDDER</span>
-                  )}
-                  {sp.chainTransaction && <a href={explorerTxUrl(sp.chainTransaction)} target="_blank" rel="noopener" onClick={(event) => event.stopPropagation()} className="shrink-0 font-mono text-[11px] font-semibold text-[#4166fb] underline">ON-CHAIN ↗</a>}
-                  {sp.fulfilledAt && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
-                    <span className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                      <span className="font-mono text-[11px] font-semibold text-[#16a34a]">DELIVERED ✓</span>
-                      {sp.paidAt && (sp.payoutReference && isSignatureLike(sp.payoutReference)
-                        ? <a href={explorerTxUrl(sp.payoutReference)} target="_blank" rel="noopener" className="font-mono text-[11px] font-semibold text-[#4166fb] underline">PAID ↗</a>
-                        : <span className="font-mono text-[11px] font-semibold text-[#4166fb]">PAID ✓</span>)}
-                      {sp.disputedAt ? (
-                        <>
-                          <span className="max-w-[220px] truncate font-mono text-[11px] text-[#dc2626]" title={sp.disputeReason || 'Disputed'}>
-                            DISPUTED{sp.disputeReason ? `: ${sp.disputeReason}` : ''}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void review(sp.id, 'withdraw')}
-                            disabled={reviewBusy}
-                            className="rounded-full border border-[#e7e5e0] px-3 py-1 text-[12px] font-medium transition hover:border-[#4166fb] disabled:opacity-60"
-                          >
-                            Withdraw
-                          </button>
-                        </>
-                      ) : sp.confirmedAt ? (
-                        <span className="font-mono text-[11px] font-semibold text-[#4166fb]">CONFIRMED ✓</span>
-                      ) : payoutReleased(sp) ? (
-                        <span className="font-mono text-[11px] font-semibold text-[#64748b]">RELEASED ✓</span>
-                      ) : disputingSpot === sp.id ? (
-                        <span className="flex items-center gap-2">
-                          <input
-                            value={disputeReason}
-                            onChange={(e) => setDisputeReason(e.target.value)}
-                            placeholder="What's wrong? (optional)"
-                            maxLength={500}
-                            className="w-40 rounded-lg border border-[#e7e5e0] px-2 py-1 text-[12px] outline-none transition focus:border-[#4166fb]"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void review(sp.id, { dispute: disputeReason })}
-                            disabled={reviewBusy}
-                            className="rounded-full bg-[#dc2626] px-3 py-1 text-[12px] font-medium text-white disabled:opacity-60"
-                          >
-                            Send
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setDisputingSpot(null); setDisputeReason('') }}
-                            className="text-[12px] font-medium text-[#64748b] transition hover:text-[#020817]"
-                          >
-                            Cancel
-                          </button>
-                        </span>
+          {sponsoredSpots.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-[#d8d6d0] bg-white p-8 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[#f8fafc] text-[#4166fb]">
+                <Sparkles size={22} />
+              </div>
+              <h3 className="text-base font-semibold text-[#020817]">No brands on this canvas yet</h3>
+              <p className="mx-auto mt-1 max-w-md text-sm text-[#64748b]">
+                Be the first brand to place your sticker and reach {sellerDisplay(listing.seller)}&apos;s audience.
+              </p>
+              {!ended && listing.spots.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const first = listing.spots.find((s) => !s.claimedBy && !s.bidBy) ?? listing.spots[0]
+                    if (first) {
+                      if (isAuction) openBid(first)
+                      else openClaim(first)
+                    }
+                  }}
+                  className="mt-4 inline-flex items-center rounded-full bg-[#020817] px-5 py-2.5 text-xs font-medium text-white transition hover:bg-[#0f1a33]"
+                >
+                  {isAuction ? 'Place a bid' : 'Claim a spot'}
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              {sponsoredSpots.map((sp) => {
+                const brand = sp.claimedBy || sp.bidBy || 'Anonymous'
+                const isClaimed = Boolean(sp.claimedBy)
+                const amount = sp.bid ?? sp.price
+                const websiteClean = sp.website ? sp.website.replace(/^https?:\/\//i, '').replace(/\/$/, '') : null
+
+                return (
+                  <div
+                    key={sp.id}
+                    className="flex items-center gap-4 rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_2px_8px_rgba(0,0,0,0.03)] transition hover:border-[#cbd5e1]"
+                  >
+                    {/* Brand Sticker / Logo */}
+                    <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-[#e7e5e0] bg-[#fafaf7] p-1.5">
+                      {sp.logoImage ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={sp.logoImage}
+                          alt={`${brand} sticker`}
+                          className="h-full w-full object-contain"
+                        />
                       ) : (
-                        <>
-                          <span className="font-mono text-[11px] text-[#64748b]">
-                            {reviewDaysLeft(sp.fulfilledAt) === 0 ? 'Review closes soon' : `${reviewDaysLeft(sp.fulfilledAt)}d left to review`}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void review(sp.id, 'confirm')}
-                            disabled={reviewBusy}
-                            className="rounded-full bg-[#020817] px-3 py-1 text-[12px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
-                          >
-                            Confirm receipt
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => { setDisputingSpot(sp.id); setDisputeReason('') }}
-                            className="text-[12px] font-medium text-[#64748b] transition hover:text-[#dc2626]"
-                          >
-                            Dispute
-                          </button>
-                        </>
+                        <div
+                          className="flex h-full w-full items-center justify-center rounded-lg font-mono text-base font-bold text-white"
+                          style={{ background: sp.logoColor || '#3b82f6' }}
+                        >
+                          {brand.replace(/^@/, '').slice(0, 2).toUpperCase()}
+                        </div>
                       )}
+                    </div>
+
+                    {/* Brand details */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-semibold text-[#020817]">{brand}</span>
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            isClaimed
+                              ? 'bg-[#ecfdf5] text-[#16a34a]'
+                              : 'bg-[#eef2ff] text-[#4166fb]'
+                          }`}
+                        >
+                          {isClaimed ? 'Claimed' : 'Top bid'}
+                        </span>
+                      </div>
+
+                      <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-[#64748b]">
+                        <span>{sp.label}</span>
+                        {sp.size && <span>· {sp.size}</span>}
+                        {websiteClean && (
+                          <>
+                            <span>·</span>
+                            <a
+                              href={normalizeWebsite(sp.website!)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 font-medium text-[#4166fb] hover:underline"
+                            >
+                              {websiteClean}
+                              <ExternalLink size={11} className="shrink-0" />
+                            </a>
+                          </>
+                        )}
+                      </div>
+
+                      {sp.chainTransaction && (
+                        <div className="mt-1">
+                          <a
+                            href={explorerTxUrl(sp.chainTransaction)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-mono text-[11px] text-[#94a3b8] hover:text-[#4166fb]"
+                          >
+                            On-chain verified ↗
+                          </a>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Funding / Price */}
+                    <div className="shrink-0 text-right">
+                      <div className="font-mono text-base font-semibold text-[#020817]">
+                        {formatMoney(amount, listing.currency)}
+                      </div>
+                      <div className="text-[11px] text-[#64748b]">
+                        {isAuction ? 'current bid' : 'fixed'}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* If there are open spots and space is not ended, show an inviting spot card */}
+              {!ended && openSpots.length > 0 && (
+                <div
+                  onClick={() => {
+                    const first = openSpots[0]
+                    if (isAuction) openBid(first)
+                    else openClaim(first)
+                  }}
+                  className="flex cursor-pointer items-center gap-4 rounded-2xl border border-dashed border-[#d8d6d0] bg-[#fafaf7]/60 p-4 transition hover:border-[#4166fb] hover:bg-white"
+                >
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border border-dashed border-[#cbd5e1] bg-white text-[#94a3b8]">
+                    <Sparkles size={20} className="text-[#4166fb]" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-[#020817]">
+                      {openSpots.length} spot{openSpots.length === 1 ? '' : 's'} still open
+                    </p>
+                    <p className="mt-0.5 text-xs text-[#64748b]">
+                      Tap to put your brand sticker on this {listing.surface || 'item'}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className="inline-flex items-center rounded-full bg-[#020817] px-3.5 py-1.5 text-xs font-medium text-white transition hover:bg-[#0f1a33]">
+                      {isAuction ? 'Bid' : 'Claim'}
                     </span>
-                  )}
-                  {!sp.fulfilledAt && sp.sold && (sp.claimedBy ?? sp.bidBy) && (sp.claimedBy ?? sp.bidBy) === x?.handle && (
-                    sp.artworkSubmittedAt
-                      ? <span className="shrink-0 font-mono text-[11px] font-semibold text-[#16a34a]">ARTWORK IN ✓</span>
-                      : artClosed
-                        ? <span className="shrink-0 font-mono text-[11px] text-[#64748b]">ARTWORK CLOSED</span>
-                        : <label htmlFor="artwork-file" onClick={() => setArtSpot(sp.id)} className="shrink-0 cursor-pointer rounded-full border border-[#4166fb] px-4 py-2 text-[13px] font-medium text-[#4166fb] transition hover:bg-[#e9edfe]">
-                            {artBusy && artSpot === sp.id ? 'Sending…' : 'Submit artwork'}
-                          </label>
-                  )}
+                  </div>
                 </div>
-              )
-            })}
-          </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <input
-          id="artwork-file"
-          type="file"
-          accept="image/*"
-          className="sr-only"
-          aria-label="Upload final artwork"
-          onChange={(e) => { if (artSpot) onArtFile(artSpot, e.target.files?.[0]); e.target.value = '' }}
-        />
+
 
         {(() => {
           const proven = listing.spots.filter((s) => s.proofPhotos?.length)
@@ -728,6 +706,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           </div>
         )}
       </main>
+      </PageShell>
 
       {(modal || success) && (
         <div className="fixed inset-0 z-[100] grid place-items-center bg-[#020817]/55 p-6 backdrop-blur-sm" onClick={() => { setModal(null); setSuccess(null); setPaying(false) }}>
@@ -829,14 +808,14 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     </button>
                   </div>
                 </form>
-                <p className="mt-4 text-center text-xs text-[#64748b]">Demo only — nothing is charged.</p>
+                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC — no mainnet funds move.</p>
               </>
             )}
             {modal && step === 'pay' && !success && (
               <>
                 <h3 className="mb-1 text-2xl">Pay{modal.mode === 'claim' ? ` ${formatMoney(modal.spot.price, listing.currency)}` : ''}</h3>
                 <p className="mb-6 text-sm text-[#64748b]">
-                  {modal.spot.label} · {name || actor}{website.trim() ? ` · ${website.trim()}` : ''} — mock payment, no real charge.
+                  {modal.spot.label} · {name || actor}{website.trim() ? ` · ${website.trim()}` : ''} — devnet USDC payment.
                 </p>
                 <form onSubmit={submit}>
                   {modal.mode === 'bid' && (
@@ -863,11 +842,11 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       Back
                     </button>
                     <button type="submit" disabled={paying} className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8] disabled:opacity-60">
-                      {paying ? 'Paying (mock)…' : modal.mode === 'claim' ? 'Pay and claim' : 'Pay and bid'}
+                      {paying ? 'Paying…' : modal.mode === 'claim' ? 'Pay and claim' : 'Pay and bid'}
                     </button>
                   </div>
                 </form>
-                <p className="mt-4 text-center text-xs text-[#64748b]">Demo only — nothing is charged.</p>
+                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC — no mainnet funds move.</p>
               </>
             )}
           </div>
@@ -879,8 +858,6 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
           {toast}
         </div>
       )}
-
-      <Footer />
     </>
   )
 }

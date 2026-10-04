@@ -65,7 +65,7 @@ export interface Spot {
   /** Open buyer dispute (blocks payout until withdrawn). */
   disputedAt?: string;
   disputeReason?: string;
-  /** Platform-recorded mock payout (Step 10 ledger). */
+  /** Platform-recorded payout (devnet-USDC ledger). */
   paidAt?: string;
   payoutAmount?: number;
   payoutFee?: number;
@@ -90,7 +90,7 @@ export interface PayoutItem {
 /** Lazy 3-day review window from fulfillment (no scheduler). */
 export const REVIEW_WINDOW_MS = Number(process.env.REVIEW_WINDOW_MS ?? 3 * 86_400_000);
 
-/** Platform fee in basis points, shown on every payout record — not moved (mock). */
+/** Platform fee in basis points, shown on every payout record — accounted off-chain, not moved on-chain. */
 export function platformFeeBps(env: NodeJS.ProcessEnv = process.env): number {
   const parsed = Number(env.PLATFORM_FEE_BPS ?? 0);
   if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000) {
@@ -170,7 +170,7 @@ export interface CreateListingRequest {
   title: string;
   surface?: string;
   story?: string;
-  /** Seller's surface photo as a data:image/* URL (mock-grade until object storage). */
+  /** Seller's surface photo as a data:image/* URL (inline until object storage). */
   image?: string;
   fabric?: string;
   mode?: string;
@@ -224,6 +224,19 @@ export interface PublicProfile {
   verified: boolean;
 }
 
+export type AccountType = "creator" | "sponsor";
+export const SOCIAL_PLATFORMS = ["x", "instagram", "youtube", "tiktok"] as const;
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+export const BRAND_CATEGORIES = ["crypto", "fintech", "gaming", "consumer", "saas", "fitness", "media", "other"] as const;
+export type BrandCategory = (typeof BRAND_CATEGORIES)[number];
+
+/** Chosen once after login; decides which dashboard the user gets later. */
+export interface Onboarding {
+  accountType: AccountType;
+  creator?: { socials: Partial<Record<SocialPlatform, string>> };
+  sponsor?: { brandName: string; category: BrandCategory; website?: string };
+}
+
 export interface UpdateProfileRequest {
   bio?: string;
   payoutWallet?: string;
@@ -270,4 +283,39 @@ export interface SellerDashboard {
   summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; paidOut: number; currency: string };
   listings: SellerDashboardListing[];
   attention: SellerAttentionItem[];
+}
+
+/** Buyer-side lifecycle. `refunded` also covers losing an auction takeover. */
+export type SponsorSpotStatus = "pending" | "sold" | "delivered" | "disputed" | "paid" | "refunded";
+
+/** One spot a sponsor holds, seen from the buyer side. */
+export interface SponsorSpot {
+  spotId: string;
+  listingId: string;
+  listingSlug: string;
+  listingTitle: string;
+  listingImage: string;
+  sellerHandle: string;
+  spotLabel: string;
+  location: string;
+  amount: number;
+  currency: string;
+  mode: Mode;
+  status: SponsorSpotStatus;
+  /** Sold, still mine, and artwork not submitted yet. */
+  artworkDue: boolean;
+  artworkSubmittedAt?: string;
+  proofPhotos: string[];
+  proofPost?: string;
+  claimedAt?: string;
+  fulfilledAt?: string;
+  confirmedAt?: string;
+  disputedAt?: string;
+  disputeReason?: string;
+  paidAt?: string;
+}
+
+export interface SponsorDashboard {
+  summary: { active: number; pendingApproval: number; awaitingArtwork: number; delivering: number; committed: number; currency: string };
+  campaigns: SponsorSpot[];
 }

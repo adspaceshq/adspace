@@ -4,12 +4,14 @@ import type {
   ReviewPolicyRequest,
   ApiListing,
   ApiListingSummary,
+  Onboarding,
   ApiSpot,
   DisputeItem,
   PayoutItem,
   PublicProfile,
   SessionUser,
   SellerDashboard,
+  SponsorDashboard,
   TermsDoc,
   UpdateProfileRequest,
   WalletWithdrawal,
@@ -134,6 +136,23 @@ export function updateMyProfile(patch: UpdateProfileRequest): Promise<PublicProf
   return apiPatch<PublicProfile>("/api/users/me", patch);
 }
 
+export async function saveOnboarding(input: Onboarding): Promise<Onboarding> {
+  let token: string | null = null;
+  try {
+    token = await getAccessToken();
+  } catch {
+    token = null;
+  }
+  return request<Onboarding>("/api/users/me/onboarding", {
+    method: "PUT",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+    },
+    body: JSON.stringify(input),
+  });
+}
+
 export function fetchWalletWithdrawals(): Promise<WalletWithdrawal[]> {
   return apiGet<WalletWithdrawal[]>("/api/wallet/withdrawals");
 }
@@ -208,6 +227,10 @@ export function withdrawSpotDispute(spotId: string): Promise<ApiSpot> {
 
 export function fetchSellerDashboard(): Promise<SellerDashboard> {
   return apiGet<SellerDashboard>("/api/seller/dashboard");
+}
+
+export function fetchSponsorDashboard(): Promise<SponsorDashboard> {
+  return apiGet<SponsorDashboard>("/api/sponsor/dashboard");
 }
 
 export function fetchReviewQueue(): Promise<ApiListing[]> {

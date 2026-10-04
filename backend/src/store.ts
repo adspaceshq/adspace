@@ -1,6 +1,6 @@
 import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, ReviewPolicy, SellerDashboard, SessionUser, SponsorDashboard, SponsorSpotStatus, Spot } from "./types.js";
 import type { ChainPublication } from "./listing-chain.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
@@ -549,5 +549,48 @@ export class Store {
     const attention = this.order.flatMap(slug => { const l=this.listings.get(slug)!; if(l.sellerUserId!==actorUserId)return []; return l.spots.filter(s=>s.buyer&&(s.status==="claimed"||(s.status==="sold"&&(!s.fulfilledAt||!(s.proofPhotos?.length)))||!!s.disputedAt)).map(s=>({spotId:s.id,listingId:l.id,listingSlug:l.slug,listingTitle:l.title,spotLabel:s.label,buyer:s.buyer!,amount:s.currentBid??s.price,currency:s.currency,submittedAt:new Date().toISOString(),status:(s.disputedAt?"disputed":s.status==="claimed"?"pending":s.fulfilledAt?"delivered":"approved") as "pending" | "approved" | "delivered" | "disputed",artworkReceived:!!s.artworkSubmittedAt,disputeReason:s.disputeReason})); });
     const paidOut = mine.flatMap(l => l.spots).filter(s=>s.paidAt).reduce((a,s)=>a+((s.payoutAmount ?? 0) - (s.payoutFee ?? 0)),0);
     return {summary:{activeListings:listings.filter(l=>l.status==="active" && !hasEnded(l.deadline)).length,openSpots:listings.reduce((a,l)=>a+l.open,0),pendingApproval:attention.filter(a=>a.status==="pending").length,revenue:listings.reduce((a,l)=>a+l.revenue,0),paidOut,currency:listings[0]?.currency??"USD"},listings,attention};
+  }
+
+  /** Sponsor view (memory adapter): spots this user claimed or still leads. */
+  buyerSpots(actor: SessionUser): SponsorDashboard {
+    const campaigns = this.order.flatMap(slug => {
+      const listing = this.listings.get(slug)!;
+      return listing.spots.flatMap(spot => {
+        const mine = spot.buyer === actor.handle;
+        const myBid = (spot.bids ?? []).filter(b => b.bidder === actor.handle).at(-1);
+        // A bid that is no longer the top bid means the sponsor lost the takeover.
+        if (!mine && !myBid) return [];
+        // An outbid sponsor is refunded their own highest bid, not the current price.
+        const amount = myBid?.amount ?? (mine ? spot.currentBid ?? spot.price : spot.price);
+        const status: SponsorSpotStatus = !mine ? "refunded"
+          : spot.paidAt ? "paid"
+          : spot.disputedAt ? "disputed"
+          : spot.status === "claimed" ? "pending"
+          : spot.fulfilledAt ? "delivered" : "sold";
+        return [{
+          spotId: spot.id, listingId: listing.id, listingSlug: listing.slug, listingTitle: listing.title, listingImage: listing.image,
+          sellerHandle: listing.sellerHandle, spotLabel: spot.label, location: spot.location, amount,
+          currency: spot.currency, mode: listing.mode, status,
+          artworkDue: status === "sold" && !spot.artworkSubmittedAt,
+          artworkSubmittedAt: spot.artworkSubmittedAt,
+          proofPhotos: spot.proofPhotos ? [...spot.proofPhotos] : [],
+          proofPost: spot.proofPost,
+          claimedAt: myBid?.at, fulfilledAt: spot.fulfilledAt, confirmedAt: spot.confirmedAt,
+          disputedAt: spot.disputedAt, disputeReason: spot.disputeReason, paidAt: spot.paidAt,
+        }];
+      });
+    });
+    const live = campaigns.filter(c => c.status === "pending" || c.status === "sold" || c.status === "delivered" || c.status === "disputed");
+    return {
+      summary: {
+        active: live.length,
+        pendingApproval: campaigns.filter(c => c.status === "pending").length,
+        awaitingArtwork: campaigns.filter(c => c.artworkDue).length,
+        delivering: campaigns.filter(c => c.status === "delivered" || c.status === "disputed").length,
+        committed: live.reduce((sum, c) => sum + c.amount, 0),
+        currency: campaigns[0]?.currency ?? "USD",
+      },
+      campaigns,
+    };
   }
 }

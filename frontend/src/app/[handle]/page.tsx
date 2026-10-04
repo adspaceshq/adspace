@@ -4,6 +4,7 @@ import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
+import PageShell from '@/components/PageShell'
 import ListingCard from '@/components/ListingCard'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { isEnded, listingUrl } from '@/lib/listings'
@@ -58,13 +59,15 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
   if (reserved) {
     return (
       <>
-        <Header />
-        <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
-          <h1 className="text-4xl">Space not found.</h1>
-          <Link href="/browse" className="mt-2 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white">
-            Back to browse
-          </Link>
-        </main>
+        <PageShell>
+          <Header />
+          <main className="mx-auto flex w-full max-w-[1340px] flex-col items-center gap-4 px-6 py-20 text-center">
+            <h1 className="text-4xl">Space not found.</h1>
+            <Link href="/browse" className="mt-2 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white">
+              Back to browse
+            </Link>
+          </main>
+        </PageShell>
         <Footer />
       </>
     )
@@ -110,8 +113,9 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
 
   return (
     <>
-      <Header />
-      <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-8">
+      <PageShell>
+        <Header />
+        <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-8">
         <Link href="/browse" className="mb-6 inline-block text-sm font-medium text-[#64748b] transition hover:text-[#020817]">
           ← Back to browse
         </Link>
@@ -277,7 +281,8 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
           </div>
         )}
       </main>
-      <Footer />
-    </>
-  )
+    </PageShell>
+    <Footer />
+  </>
+)
 }
