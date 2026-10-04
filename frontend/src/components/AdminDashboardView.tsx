@@ -3,24 +3,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  AlertTriangle,
-  ArrowRight,
   Check,
   CheckCircle2,
   Clock3,
-  ExternalLink,
   Laptop,
   Layers,
   RefreshCw,
-  Search,
-  Shield,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
-  Tag,
   Wallet,
   X,
-  XCircle,
 } from 'lucide-react'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import {
@@ -371,139 +363,27 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[780px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-[#ecebe6] text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
-                  <th className="pb-2.5 pr-4">Space & Surface</th>
-                  <th className="pb-2.5 px-3">Creator</th>
-                  <th className="pb-2.5 px-3">Mode</th>
-                  <th className="pb-2.5 px-3">Spots & Pricing</th>
-                  <th className="pb-2.5 px-3">Rejection reason (optional)</th>
-                  <th className="pb-2.5 pl-3 text-right">Review action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#ecebe6]/60">
-                {queue.map((l) => {
-                  const surfaceName = (l.surface && surfaceLabels[l.surface]) || l.surface || 'MacBook Lid'
-                  const spotCount = l.spots.length
-                  const minPrice = l.spots.reduce((min, s) => Math.min(min, s.price), Infinity)
-                  const hasPrice = Number.isFinite(minPrice)
-                  const thumb = l.image || cardPhoto(l)
-
-                  return (
-                    <tr key={l.id} className="transition hover:bg-black/[0.015]">
-                      {/* Space & Surface */}
-                      <td className="py-3.5 pr-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-11 w-16 shrink-0 overflow-hidden rounded-lg bg-[#ecebe6] shadow-2xs">
-                            {thumb ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={thumb} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
-                                <Laptop size={16} />
-                              </div>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <span className="block truncate font-medium text-[#020817] text-[13px]">
-                              {l.title}
-                            </span>
-                            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#64748b]">
-                              <span className="inline-flex items-center gap-1 rounded bg-[#ecebe6] px-1.5 py-0.5 text-[10px] font-medium text-[#020817]">
-                                {surfaceName}
-                              </span>
-                              <span>·</span>
-                              <span>{relative(l.deadline)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Creator */}
-                      <td className="py-3.5 px-3 whitespace-nowrap">
-                        <div className="text-[12px] font-medium text-[#020817]">
-                          {sellerDisplay({ name: l.seller, handle: l.sellerHandle })}
-                        </div>
-                        {l.sellerHandle && (
-                          <div className="text-[11px] text-[#64748b]">
-                            @{l.sellerHandle.replace(/^@+/, '')}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Mode */}
-                      <td className="py-3.5 px-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-normal ${
-                            l.mode === 'auction'
-                              ? 'bg-[#e9edfe] text-[#3154e8]'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}
-                        >
-                          {l.mode === 'auction' ? 'Auction' : 'Fixed price'}
-                        </span>
-                      </td>
-
-                      {/* Spots & Pricing */}
-                      <td className="py-3.5 px-3 whitespace-nowrap">
-                        <div className="font-mono text-[12px] font-normal text-[#020817]">
-                          {spotCount} {spotCount === 1 ? 'spot' : 'spots'}
-                        </div>
-                        <div className="text-[11px] text-[#64748b]">
-                          {hasPrice ? `From ${money(minPrice, l.currency)}` : 'Custom'}
-                        </div>
-                      </td>
-
-                      {/* Rejection Note */}
-                      <td className="py-3.5 px-3">
-                        <input
-                          type="text"
-                          value={reasons[l.slug] ?? ''}
-                          onChange={(e) => setReasons((prev) => ({ ...prev, [l.slug]: e.target.value }))}
-                          placeholder="Feedback if rejecting..."
-                          maxLength={500}
-                          className="w-full min-w-[170px] rounded-lg border border-[#d8d6d0] bg-white px-2.5 py-1.5 text-xs text-[#020817] outline-none transition focus:border-[#4166fb]"
-                        />
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3.5 pl-3 whitespace-nowrap text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            disabled={busy === l.slug}
-                            onClick={() => {
-                              setApproval(l)
-                              setPolicy({
-                                platformFeeBps: 250,
-                                upliftFeeBps: l.mode === 'auction' ? 1000 : 0,
-                                maxFeeBps: l.mode === 'auction' ? 1000 : 250,
-                                settlementWindowHours: 48,
-                                deliveryDeadline: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 16),
-                              })
-                            }}
-                            className="inline-flex items-center gap-1 rounded-full bg-[#4166fb] px-3.5 py-1 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                          >
-                            <span>Review & approve</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={busy === l.slug}
-                            onClick={() => void act(l.slug, 'reject')}
-                            className="inline-flex items-center gap-1 rounded-full border border-[#d8d6d0] bg-white px-3 py-1 text-xs font-normal text-[#dc2626] transition hover:border-[#dc2626] hover:bg-red-50/50 disabled:opacity-50 cursor-pointer"
-                          >
-                            <span>Reject</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="grid gap-3">
+            {queue.map((listing) => (
+              <ReviewSubmissionCard
+                key={listing.id}
+                listing={listing}
+                busy={busy === listing.slug}
+                reason={reasons[listing.slug] ?? ''}
+                onReasonChange={(value) => setReasons((prev) => ({ ...prev, [listing.slug]: value }))}
+                onApprove={() => {
+                  setApproval(listing)
+                  setPolicy({
+                    platformFeeBps: 250,
+                    upliftFeeBps: listing.mode === 'auction' ? 1000 : 0,
+                    maxFeeBps: listing.mode === 'auction' ? 1000 : 250,
+                    settlementWindowHours: 48,
+                    deliveryDeadline: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 16),
+                  })
+                }}
+                onReject={() => void act(listing.slug, 'reject')}
+              />
+            ))}
           </div>
         )}
       </section>
@@ -836,5 +716,113 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         </section>
       </div>
     </div>
+  )
+}
+
+function ReviewSubmissionCard({
+  listing,
+  busy,
+  reason,
+  onReasonChange,
+  onApprove,
+  onReject,
+}: {
+  listing: ApiListing
+  busy: boolean
+  reason: string
+  onReasonChange: (value: string) => void
+  onApprove: () => void
+  onReject: () => void
+}) {
+  const surfaceName = (listing.surface && surfaceLabels[listing.surface]) || listing.surface || 'Surface'
+  const spotCount = listing.spots.length
+  const minPrice = listing.spots.reduce((min, spot) => Math.min(min, spot.price), Infinity)
+  const hasPrice = Number.isFinite(minPrice)
+  const thumb = listing.image || cardPhoto(listing)
+  const seller = sellerDisplay({ name: listing.seller, handle: listing.sellerHandle })
+
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="flex min-w-0 gap-3">
+          <div className="h-20 w-28 shrink-0 overflow-hidden rounded-xl bg-[#ecebe6] shadow-2xs">
+            {thumb ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={thumb} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
+                <Laptop size={18} />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-[15px] font-semibold text-[#020817]">{listing.title}</h3>
+              <span
+                className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                  listing.mode === 'auction'
+                    ? 'bg-[#e9edfe] text-[#3154e8]'
+                    : 'bg-emerald-50 text-emerald-700'
+                }`}
+              >
+                {listing.mode === 'auction' ? 'Auction' : 'Fixed price'}
+              </span>
+            </div>
+            <div className="mt-2 grid gap-2 text-[12px] text-[#64748b] sm:grid-cols-2">
+              <span>
+                Creator <span className="font-medium text-[#020817]">{seller}</span>
+              </span>
+              <span>
+                Surface <span className="font-medium text-[#020817]">{surfaceName}</span>
+              </span>
+              <span>
+                Spots <span className="font-mono text-[#020817]">{spotCount}</span>
+              </span>
+              <span>
+                Pricing{' '}
+                <span className="font-mono text-[#020817]">
+                  {hasPrice ? `from ${money(minPrice, listing.currency)}` : 'custom'}
+                </span>
+              </span>
+            </div>
+            <div className="mt-3 rounded-xl bg-[#f8fafc] px-3 py-2 text-[12px] text-[#64748b]">
+              Approval sends commercial terms to the creator. The listing is only created on-chain after the creator accepts.
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+            Rejection feedback
+            <input
+              type="text"
+              value={reason}
+              onChange={(event) => onReasonChange(event.target.value)}
+              placeholder="Add a reason before rejecting"
+              maxLength={500}
+              className="mt-1 w-full rounded-xl border border-[#d8d6d0] bg-white px-3 py-2 text-xs normal-case tracking-normal text-[#020817] outline-none transition focus:border-[#4166fb]"
+            />
+          </label>
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onReject}
+              className="inline-flex cursor-pointer items-center rounded-full border border-[#d8d6d0] bg-white px-3.5 py-1.5 text-xs font-normal text-[#dc2626] transition hover:border-[#dc2626] hover:bg-red-50/50 disabled:opacity-50"
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onApprove}
+              className="inline-flex cursor-pointer items-center rounded-full bg-[#4166fb] px-4 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50"
+            >
+              Review terms
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
   )
 }
