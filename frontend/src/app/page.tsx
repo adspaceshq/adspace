@@ -250,7 +250,7 @@ export default function Home() {
                   {[
                     { src: HERO_IMAGES[0], title: 'Suitcase to TOKEN2049', seller: '@coinempress' },
                     { src: HERO_IMAGES[1], title: 'Ironman kit + frame', seller: '@winternet' },
-                    { src: HERO_IMAGES[2], title: 'MacBook lid auction', seller: '@VynseDev' },
+                    { src: HERO_IMAGES[2], title: 'Laptop lid auction', seller: '@VynseDev' },
                   ].map((ex) => (
                     <div key={ex.title} className="block">
                       <div className="relative overflow-hidden rounded-2xl bg-[#e9edfe]">

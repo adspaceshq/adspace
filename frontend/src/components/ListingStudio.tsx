@@ -58,7 +58,7 @@ interface SpotDraft {
   label: string
   size: string
   price: string
-  /* View the sticker lives on — the deck when set to 'inside'. Absent = the lid, where every spot starts. */
+  /* View the sticker lives on - the deck when set to 'inside'. Absent = the lid, where every spot starts. */
   view?: string
   /* Sticker position in % of that view's photo, set by clicking or dragging. Absent = auto-laid out. */
   x?: number
@@ -96,7 +96,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
 
   const [sellerName, setSellerName] = useState('')
   const [title, setTitle] = useState('')
-  // Second surface alongside the Mac: 'gear' is the MacBook lid,
+  // Surface families: 'gear' covers laptop lids and similar hardware,
   // 'apparel' is the T-shirt (model-photo editor and buyer view).
   const [surface, setSurface] = useState<'gear' | 'apparel'>(() => {
     const s = searchParams.get('surface')
@@ -127,12 +127,12 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   const [priceType, setPriceType] = useState<'fixed' | 'auction' | null>(null)
   const [minIncrement, setMinIncrement] = useState('1')
   const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
-  // Id of the spot whose price panel is open — set by dropping or tapping a sticker.
+  // Id of the spot whose price panel is open - set by dropping or tapping a sticker.
   const [editingSpot, setEditingSpot] = useState<string | null>(null)
   // Which Mac view is on screen. Row clicks drive it so the Mac jumps to the tapped sticker's view.
   const [activeView, setActiveView] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Review gate: submitting the form (button or Enter) only opens the confirm dialog —
+  // Review gate: submitting the form (button or Enter) only opens the confirm dialog -
   // nothing is submitted until "Submit for review" is clicked there.
   const [reviewing, setReviewing] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -201,7 +201,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   const updateSpot = (i: number, patch: Partial<SpotDraft>) =>
     setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)))
 
-  // Live view of what buyers will see — rebuilt from the form on every keystroke.
+  // Live view of what buyers will see - rebuilt from the form on every keystroke.
   const preview: Listing = useMemo(() => {
     const pid = 'preview'
     const pspots = spots.map((s, i) => ({
@@ -211,7 +211,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
       price: Number(s.price) || 0,
     }))
     // Tee branch first: each spot lives on the model shot it was dropped on
-    // (front, back, either side) — unlabeled drafts start on the front.
+    // (front, back, either side) - unlabeled drafts start on the front.
     if (isTee) {
       const teeIds: Record<string, string[]> = {
         [TEE_FRONT_VIEW_ID]: [],
@@ -280,8 +280,8 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     }
   }, [spots, title, surface, isTee, priceType])
 
-  // A click on bare photo drops a spot exactly where clicked — on the view that was
-  // clicked — and opens the side panel so the price is the next thing typed.
+  // A click on bare photo drops a spot exactly where clicked - on the view that was
+  // clicked - and opens the side panel so the price is the next thing typed.
   const placeSpot = (x: number, y: number, viewId: string) => {
     setSpots((prev) => [
       ...pinDraftPositions(prev, isTee ? TEE_FRONT_VIEW_ID : LID_VIEW_ID),
@@ -748,9 +748,9 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                           className="text-[14px] text-[#64748b]"
                         >
                           {priceType === 'fixed'
-                            ? 'Instant claim — first sponsor to pay your asking price secures the spot immediately.'
+                            ? 'Instant claim - first sponsor to pay your asking price secures the spot immediately.'
                             : priceType === 'auction'
-                            ? 'Competitive bidding — brands place bids on your spots and outbid each other until your listing closes.'
+                            ? 'Competitive bidding - brands place bids on your spots and outbid each other until your listing closes.'
                             : 'Choose how sponsors will buy your spots. This controls the pricing fields and review terms.'}
                         </motion.p>
                       </AnimatePresence>
@@ -829,7 +829,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                               {x?.loggingIn ? (
                                 <>
                                   <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                  <span>Connecting to X…</span>
+                                  <span>Connecting to X...</span>
                                 </>
                               ) : (
                                 <>
@@ -925,7 +925,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         </label>
                         <input
                           id="listing-title"
-                          placeholder={isTee ? 'Put your brand on my T-shirt at TOKEN2049' : 'Put your brand on my MacBook lid'}
+                          placeholder={isTee ? 'Put your brand on my T-shirt at TOKEN2049' : 'Put your brand on my laptop lid'}
                           value={title}
                           onChange={(e) => {
                             setTitle(e.target.value)
@@ -1094,7 +1094,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                           exit={{ opacity: 0 }}
                                           className="inline-block text-[#dc2626] font-medium"
                                         >
-                                          Unpriced — click to price
+                                          Unpriced - click to price
                                         </motion.span>
                                       )}
                                     </AnimatePresence>
@@ -1145,7 +1145,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                             transition={{ duration: 0.15 }}
                             className="block font-mono text-xl font-bold text-[#020817]"
                           >
-                            {total > 0 ? formatMoney(total, currency) : '—'}
+                            {total > 0 ? formatMoney(total, currency) : '-'}
                           </motion.span>
                         </AnimatePresence>
                         {priced.length < spots.length && (
@@ -1260,7 +1260,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     </span>
                   </div>
                   <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#64748b] shrink-0">
-                    {surfaceLabel} � {priceType === 'fixed' ? 'Fixed price' : 'Auction'}
+                    {surfaceLabel} · {priceType === 'fixed' ? 'Fixed price' : 'Auction'}
                   </span>
                 </div>
 
@@ -1364,7 +1364,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   {publishing ? (
                     <>
                       <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      <span>Submitting…</span>
+                      <span>Submitting...</span>
                     </>
                   ) : (
                     <>
