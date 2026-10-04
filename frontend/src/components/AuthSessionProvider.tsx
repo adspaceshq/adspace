@@ -17,7 +17,9 @@ import {
   Globe,
   Loader2,
   LogOut,
+  ShieldCheck,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 
 export interface AuthSession {
@@ -469,7 +471,8 @@ function RoleOnboardingModal({
           <div>
             <div className="flex items-center justify-between gap-3">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4166fb]">
-                ✨ Welcome to Adspaces
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                Welcome to Adspaces
               </span>
               <span className="text-xs font-medium text-[#64748b]">Step 1 of 2</span>
             </div>
@@ -517,8 +520,9 @@ function RoleOnboardingModal({
                 </div>
 
                 <div className="mt-4 border-t border-[#f1f0ec] pt-3">
-                  <span className="inline-flex items-center text-[11px] font-medium text-[#526079]">
-                    ⚡ Instant USDC wallet payouts
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#526079]">
+                    <Zap className="h-3.5 w-3.5 text-[#4166fb]" aria-hidden />
+                    Instant USDC wallet payouts
                   </span>
                 </div>
               </button>
@@ -557,8 +561,9 @@ function RoleOnboardingModal({
                 </div>
 
                 <div className="mt-4 border-t border-[#f1f0ec] pt-3">
-                  <span className="inline-flex items-center text-[11px] font-medium text-[#526079]">
-                    🛡️ Escrow-protected campaigns
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#526079]">
+                    <ShieldCheck className="h-3.5 w-3.5 text-[#4166fb]" aria-hidden />
+                    Escrow-protected campaigns
                   </span>
                 </div>
               </button>
