@@ -6,6 +6,7 @@ import type { PrivyErrorCode } from '@privy-io/react-auth';
 import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
 import { ApiError, createApiSession, fetchApiMe, logoutApiSession, saveOnboarding } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
+import { useToast } from '@/components/ToastProvider';
 import { BRAND_CATEGORIES, SOCIAL_PLATFORMS } from '@/lib/types';
 import type { AccountType, BrandCategory, Onboarding, SessionUser, SocialPlatform } from '@/lib/types';
 import {
@@ -422,6 +423,7 @@ function RoleOnboardingModal({
   onSaved: (onboarding: Onboarding) => void;
   onLogout: () => void;
 }) {
+  const toast = useToast();
   const [step, setStep] = useState<'role' | 'details'>('role');
   const [role, setRole] = useState<AccountType | null>(null);
   const [socials, setSocials] = useState<Partial<Record<SocialPlatform, string>>>(() => {
@@ -446,13 +448,25 @@ function RoleOnboardingModal({
     if (!role || !canSubmit) return;
     setError(undefined);
     setSaving(true);
+    const toastId = toast.loading('Saving your profile', 'Setting up your Adspaces dashboard.');
     try {
       const payload: Onboarding = role === 'creator'
         ? { accountType: 'creator', creator: { socials } }
         : { accountType: 'sponsor', sponsor: { brandName: brandName.trim(), category: category as BrandCategory, ...(website.trim() ? { website: website.trim() } : {}) } };
       onSaved(await saveOnboarding(payload));
+      toast.update(toastId, {
+        title: 'Profile saved',
+        description: role === 'creator' ? 'Your creator dashboard is ready.' : 'Your sponsor dashboard is ready.',
+        tone: 'success',
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save profile. Try again.');
+      const message = e instanceof Error ? e.message : 'Could not save profile. Try again.';
+      setError(message);
+      toast.update(toastId, {
+        title: 'Could not save profile',
+        description: message,
+        tone: 'error',
+      });
     } finally {
       setSaving(false);
     }
