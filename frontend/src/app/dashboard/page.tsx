@@ -674,6 +674,13 @@ function SellerDashboardPage({
                         </div>
                       </div>
 
+                      <PayoutLedger
+                        currency={data.summary.currency}
+                        gross={data.summary.revenue}
+                        paidOut={data.summary.paidOut ?? 0}
+                        listings={data.listings}
+                      />
+
                       <button
                         type="button"
                         onClick={() => {
@@ -1204,6 +1211,74 @@ function AttentionCard({
         </div>
       </div>
     </article>
+  )
+}
+
+function PayoutLedger({
+  currency,
+  gross,
+  paidOut,
+  listings,
+}: {
+  currency: string
+  gross: number
+  paidOut: number
+  listings: SellerDashboard['listings']
+}) {
+  const pending = Math.max(0, gross - paidOut)
+  const earningListings = listings
+    .filter((listing) => listing.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 4)
+
+  return (
+    <section className="rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[14px] font-semibold text-[#020817]">Payout ledger</h3>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-[#64748b]">
+            Gross sponsor commitments, released payouts, and unsettled escrow.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <LedgerMetric label="Gross" value={money(gross, currency)} />
+        <LedgerMetric label="Paid" value={money(paidOut, currency)} />
+        <LedgerMetric label="Pending" value={money(pending, currency)} />
+      </div>
+
+      <div className="mt-4 border-t border-[#ecebe6] pt-3">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+          Top earning spaces
+        </p>
+        {earningListings.length === 0 ? (
+          <p className="rounded-xl bg-[#fafaf7] px-3 py-2 text-[12px] text-[#64748b]">
+            No settled sponsor commitments yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {earningListings.map((listing) => (
+              <div key={listing.id} className="flex items-center justify-between gap-3 text-[12px]">
+                <span className="truncate text-[#020817]">{listing.title}</span>
+                <span className="shrink-0 font-mono font-semibold text-[#020817]">
+                  {money(listing.revenue, listing.currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function LedgerMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-[#fafaf7] px-3 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-[#64748b]">{label}</p>
+      <p className="mt-1 truncate font-mono text-[13px] font-semibold text-[#020817]">{value}</p>
+    </div>
   )
 }
 
