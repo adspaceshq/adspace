@@ -189,7 +189,7 @@ function BrowseInner() {
                 >
                   All
                 </button>
-                <span className="text-[#cbd5e1]">•</span>
+                <span className="text-[#cbd5e1]">·</span>
                 <button
                   type="button"
                   onClick={() => setFormatFilter('auction')}
@@ -197,7 +197,7 @@ function BrowseInner() {
                 >
                   Auctions
                 </button>
-                <span className="text-[#cbd5e1]">•</span>
+                <span className="text-[#cbd5e1]">·</span>
                 <button
                   type="button"
                   onClick={() => setFormatFilter('fixed')}
