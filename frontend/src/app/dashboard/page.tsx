@@ -374,7 +374,7 @@ function SellerDashboardPage({
           ) : !auth.authenticated ? (
             <section className="mx-auto max-w-lg py-16 text-center">
               <div className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full bg-[#020817] font-mono text-lg font-medium text-white shadow-sm">
-                𝕏
+                X
               </div>
               <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-[#020817]">Creator Dashboard</h1>
               <p className="mt-2 text-[15px] leading-relaxed text-[#64748b]">
@@ -417,7 +417,7 @@ function SellerDashboardPage({
                     {auth.isReviewer && (
                       <>
                         {' '}
-                        •{' '}
+                        ·{' '}
                         <Link href="/review" className="font-normal text-[#4166fb] hover:underline">
                           Review queue →
                         </Link>
