@@ -22,6 +22,7 @@ import {
 import Header from '@/components/Header'
 import SponsorDashboardView from '@/components/SponsorDashboardView'
 import AdminDashboardView from '@/components/AdminDashboardView'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
 import {
@@ -170,6 +171,8 @@ function SellerDashboardPage({
   const [walletUsdc, setWalletUsdc] = useState<number>()
   const [withdrawals, setWithdrawals] = useState<WalletWithdrawal[]>([])
   const [copiedWallet, setCopiedWallet] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<{ kind: 'refund'; spotId: string } | { kind: 'delete'; slug: string } | null>(null)
+  const confirming = Boolean(confirmAction && busy === (confirmAction.kind === 'refund' ? confirmAction.spotId : confirmAction.slug))
   const termsListing = termsFor ? data?.listings.find((listing) => listing.slug === termsFor) : undefined
 
   const load = useCallback(async () => {
@@ -218,16 +221,16 @@ function SellerDashboardPage({
   }, [auth.ready, auth.authenticated, auth.userId])
 
   const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill' | 'refund') => {
+    if (action === 'refund') {
+      setConfirmAction({ kind: 'refund', spotId })
+      return
+    }
     setBusy(spotId)
     setError(undefined)
     try {
       if (action === 'approve') await approveApiSpot(spotId)
       else if (action === 'reject') await rejectApiSpot(spotId)
       else if (action === 'fulfill') await fulfillApiSpot(spotId)
-      else {
-        if (!window.confirm('Refund this buyer from on-chain escrow?')) return
-        await refundApiSpot(spotId)
-      }
       await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed.')
@@ -237,7 +240,10 @@ function SellerDashboardPage({
   }
 
   const actListing = async (slug: string, action: 'close' | 'reopen' | 'delete') => {
-    if (action === 'delete' && !window.confirm('Delete this listing forever? Spots and bids go with it.')) return
+    if (action === 'delete') {
+      setConfirmAction({ kind: 'delete', slug })
+      return
+    }
     setBusy(slug)
     setError(undefined)
     try {
@@ -246,6 +252,27 @@ function SellerDashboardPage({
       else await deleteApiListing(slug)
       await load()
       await refresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Action failed.')
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
+  const runConfirmedAction = async () => {
+    if (!confirmAction) return
+    const busyId = confirmAction.kind === 'refund' ? confirmAction.spotId : confirmAction.slug
+    setBusy(busyId)
+    setError(undefined)
+    try {
+      if (confirmAction.kind === 'refund') {
+        await refundApiSpot(confirmAction.spotId)
+      } else {
+        await deleteApiListing(confirmAction.slug)
+        await refresh()
+      }
+      setConfirmAction(null)
+      await load()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Action failed.')
     } finally {
@@ -1074,6 +1101,22 @@ function SellerDashboardPage({
             </>
           )}
         </main>
+        <ConfirmDialog
+          open={Boolean(confirmAction)}
+          title={confirmAction?.kind === 'refund' ? 'Refund this buyer?' : 'Delete this listing?'}
+          description={
+            confirmAction?.kind === 'refund'
+              ? 'This sends an on-chain refund from escrow. The buyer will lose the spot and the action cannot be undone.'
+              : 'This permanently removes the listing and its spots from your dashboard. This action cannot be undone.'
+          }
+          confirmLabel={confirmAction?.kind === 'refund' ? 'Refund buyer' : 'Delete listing'}
+          tone="danger"
+          busy={confirming}
+          onConfirm={() => void runConfirmedAction()}
+          onClose={() => {
+            if (!confirming) setConfirmAction(null)
+          }}
+        />
     </div>
   )
 }
