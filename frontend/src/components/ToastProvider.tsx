@@ -150,7 +150,7 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="pointer-events-none fixed right-4 top-4 z-[100] flex w-[calc(100vw-2rem)] max-w-sm flex-col gap-2 sm:right-5 sm:top-5"
+        className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[calc(100vw-2rem)] max-w-sm flex-col-reverse gap-2 sm:bottom-5 sm:right-5"
       >
         {toasts.map((toast) => (
           <div
