@@ -588,100 +588,18 @@ function SellerDashboardPage({
                             </p>
                           </div>
 
-                          <div className="overflow-x-auto">
-                            <table className="w-full min-w-[700px] text-left text-sm">
-                              <thead>
-                                <tr className="border-b border-[#ecebe6] text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
-                                  <th className="pb-2.5 pr-4">Buyer</th>
-                                  <th className="pb-2.5 px-3">Space & Spot</th>
-                                  <th className="pb-2.5 px-3">Amount</th>
-                                  <th className="pb-2.5 px-3">Submitted</th>
-                                  <th className="pb-2.5 px-3">Status</th>
-                                  <th className="pb-2.5 pl-3 text-right">Action</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[#ecebe6]/60">
-                                {data.attention.map((item) => (
-                                  <tr key={item.spotId} className="transition hover:bg-black/[0.015]">
-                                    <td className="py-2.5 pr-4 font-mono text-[13px] font-normal text-[#020817]">
-                                      {item.buyer}
-                                    </td>
-                                    <td className="py-2.5 px-3">
-                                      <span className="block font-medium text-[#020817] text-[13px]">
-                                        {item.listingTitle}
-                                      </span>
-                                      <span className="block text-[11px] text-[#64748b]">{item.spotLabel}</span>
-                                    </td>
-                                    <td className="py-2.5 px-3 font-mono text-[13px] font-normal text-[#020817]">
-                                      {money(item.amount, item.currency)}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-[12px] text-[#64748b]">
-                                      {relative(item.submittedAt)}
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                      <AttentionStatusBadge
-                                        status={item.status}
-                                        artworkReceived={item.artworkReceived}
-                                        disputeReason={item.disputeReason}
-                                      />
-                                    </td>
-                                    <td className="py-2.5 pl-3 whitespace-nowrap text-right">
-                                      <div className="flex items-center justify-end gap-1.5">
-                                        {item.status === 'pending' ? (
-                                          <>
-                                            <button
-                                              disabled={busy === item.spotId}
-                                              onClick={() => void act(item.spotId, 'approve')}
-                                              className="rounded-full bg-[#4166fb] px-3.5 py-0.5 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                                            >
-                                              Approve
-                                            </button>
-                                            <button
-                                              disabled={busy === item.spotId}
-                                              onClick={() => void act(item.spotId, 'reject')}
-                                              className="rounded-full border border-[#d8d6d0] px-3.5 py-0.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
-                                            >
-                                              Reject
-                                            </button>
-                                          </>
-                                        ) : item.status === 'delivered' ? (
-                                          <Link
-                                            href={`/listings/${item.listingSlug}`}
-                                            className="inline-flex rounded-full bg-[#4166fb] px-3.5 py-0.5 text-xs font-medium text-white transition hover:bg-[#3558e8]"
-                                          >
-                                            Upload proof
-                                          </Link>
-                                        ) : item.status === 'disputed' ? (
-                                          <Link
-                                            href={`/listings/${item.listingSlug}`}
-                                            className="inline-flex rounded-full border border-[#d8d6d0] px-3.5 py-0.5 text-xs font-normal text-[#020817] hover:border-[#4166fb]"
-                                          >
-                                            View dispute
-                                          </Link>
-                                        ) : (
-                                          <button
-                                            disabled={busy === item.spotId}
-                                            onClick={() => void act(item.spotId, 'fulfill')}
-                                            className="rounded-full border border-[#d8d6d0] px-3.5 py-0.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Mark fulfilled
-                                          </button>
-                                        )}
-                                        {item.status !== 'pending' && (
-                                          <button
-                                            disabled={busy === item.spotId}
-                                            onClick={() => void act(item.spotId, 'refund')}
-                                            className="rounded-full border border-red-200 px-3 py-0.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Refund
-                                          </button>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          <div className="grid gap-3">
+                            {data.attention.map((item) => (
+                              <AttentionCard
+                                key={item.spotId}
+                                item={item}
+                                busy={busy === item.spotId}
+                                onApprove={() => void act(item.spotId, 'approve')}
+                                onReject={() => void act(item.spotId, 'reject')}
+                                onFulfill={() => void act(item.spotId, 'fulfill')}
+                                onRefund={() => void act(item.spotId, 'refund')}
+                              />
+                            ))}
                           </div>
                         </section>
                       )}
@@ -1184,6 +1102,105 @@ function SellerListingCard({
           >
             <Trash2 size={14} />
           </button>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function AttentionCard({
+  item,
+  busy,
+  onApprove,
+  onReject,
+  onFulfill,
+  onRefund,
+}: {
+  item: SellerDashboard['attention'][number]
+  busy: boolean
+  onApprove: () => void
+  onReject: () => void
+  onFulfill: () => void
+  onRefund: () => void
+}) {
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[14px] font-semibold text-[#020817]">{item.listingTitle}</h3>
+            <span className="rounded-full bg-[#f4f4f2] px-2 py-0.5 text-[11px] font-medium text-[#64748b]">
+              {item.spotLabel}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#64748b]">
+            <span>Buyer <span className="font-mono text-[#020817]">{item.buyer}</span></span>
+            <span className="font-mono text-[#020817]">{money(item.amount, item.currency)}</span>
+            <span>{relative(item.submittedAt)}</span>
+          </div>
+          <div className="mt-2">
+            <AttentionStatusBadge
+              status={item.status}
+              artworkReceived={item.artworkReceived}
+              disputeReason={item.disputeReason}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {item.status === 'pending' ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onApprove}
+                className="rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onReject}
+                className="rounded-full border border-[#d8d6d0] px-3.5 py-1.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
+              >
+                Reject
+              </button>
+            </>
+          ) : item.status === 'delivered' ? (
+            <Link
+              href={`/listings/${item.listingSlug}`}
+              className="inline-flex rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#3558e8]"
+            >
+              Upload proof
+            </Link>
+          ) : item.status === 'disputed' ? (
+            <Link
+              href={`/listings/${item.listingSlug}`}
+              className="inline-flex rounded-full border border-[#d8d6d0] px-3.5 py-1.5 text-xs font-normal text-[#020817] hover:border-[#4166fb]"
+            >
+              View dispute
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onFulfill}
+              className="rounded-full border border-[#d8d6d0] px-3.5 py-1.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] disabled:opacity-50 cursor-pointer"
+            >
+              Mark fulfilled
+            </button>
+          )}
+          {item.status !== 'pending' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRefund}
+              className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50 cursor-pointer"
+            >
+              Refund
+            </button>
+          )}
         </div>
       </div>
     </article>
