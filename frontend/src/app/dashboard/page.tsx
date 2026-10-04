@@ -46,6 +46,7 @@ import {
 import { cardPhoto, isEnded } from '@/lib/listings'
 import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
 import { embeddedUsdcBalance } from '@/lib/adspaces-program'
+import { userErrorMessage } from '@/lib/errors'
 
 const money = (amount: number, currency: string) =>
   new Intl.NumberFormat('en-US', {
@@ -183,7 +184,7 @@ function SellerDashboardPage({
       setData(await fetchSellerDashboard())
       setError(undefined)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your dashboard.')
+      setError(userErrorMessage(e, 'Could not load your dashboard.'))
     }
   }, [auth.ready, auth.authenticated, auth.userId])
 
@@ -198,7 +199,7 @@ function SellerDashboardPage({
         }
       },
       (e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load your dashboard.')
+        if (!cancelled) setError(userErrorMessage(e, 'Could not load your dashboard.'))
       },
     )
     return () => {
@@ -242,7 +243,7 @@ function SellerDashboardPage({
       )
       await load()
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Action failed.'
+      const message = userErrorMessage(e, 'Action failed.')
       setError(message)
       toast.error('Action failed', message)
     } finally {
@@ -265,7 +266,7 @@ function SellerDashboardPage({
       await load()
       await refresh()
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Action failed.'
+      const message = userErrorMessage(e, 'Action failed.')
       setError(message)
       toast.error('Action failed', message)
     } finally {
@@ -290,7 +291,7 @@ function SellerDashboardPage({
       setConfirmAction(null)
       await load()
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Action failed.'
+      const message = userErrorMessage(e, 'Action failed.')
       setError(message)
       toast.error('Action failed', message)
     } finally {
@@ -305,7 +306,7 @@ function SellerDashboardPage({
     try {
       setTerms(await fetchTerms())
     } catch (e) {
-      setTermsError(e instanceof Error ? e.message : 'Could not load the terms.')
+      setTermsError(userErrorMessage(e, 'Could not load the terms.'))
     }
   }
 

@@ -32,6 +32,7 @@ import { useStore } from '@/components/StoreProvider'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
 import { useToast } from '@/components/ToastProvider'
 import { dataUrlToBlob, uploadToCloudinary } from '@/lib/cloudinary'
+import { userErrorMessage } from '@/lib/errors'
 import {
   INSIDE_VIEW_ID,
   LID_VIEW_ID,
@@ -190,8 +191,8 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
         setImage(url)
         setImageBusy(false)
       })
-      .catch(() => {
-        setImageError('Could not read that file.')
+      .catch((err) => {
+        setImageError(userErrorMessage(err, 'Could not upload that photo. Try a different image.'))
         setImageBusy(false)
       })
   }
@@ -452,7 +453,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     try {
       await addListing(listing)
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Could not submit. Try again.'
+      const message = userErrorMessage(err, 'Could not submit. Try again.')
       setError(message)
       toast.update(toastId, {
         title: 'Could not submit listing',
