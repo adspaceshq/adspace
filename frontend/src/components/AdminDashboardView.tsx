@@ -587,64 +587,35 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           ) : (
             <div className="space-y-3">
               {disputes.map((d) => (
-                <div key={d.spotId} className="rounded-xl border border-[#ecebe6] bg-white p-3.5 space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-[#020817]">
-                      {d.listingTitle} · {d.spotLabel}
-                    </span>
-                    <span className="font-mono text-[#64748b]">{money(d.amount, d.currency)}</span>
-                  </div>
-                  <p className="text-[11px] text-[#dc2626]">
-                    Reason: {d.reason || 'No reason provided'}
-                  </p>
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="number"
-                      min={0}
-                      max={10000}
-                      value={resolutionShares[d.spotId] ?? 5000}
-                      onChange={(e) =>
-                        setResolutionShares((prev) => ({ ...prev, [d.spotId]: Number(e.target.value) }))
+                <DisputeCard
+                  key={d.spotId}
+                  dispute={d}
+                  sellerShareBps={resolutionShares[d.spotId] ?? 5000}
+                  decision={decisions[d.spotId] ?? ''}
+                  busy={resolutionBusy === d.spotId}
+                  onSellerShareChange={(value) =>
+                    setResolutionShares((prev) => ({ ...prev, [d.spotId]: value }))
+                  }
+                  onDecisionChange={(value) => setDecisions((prev) => ({ ...prev, [d.spotId]: value }))}
+                  onResolve={() =>
+                    void (async () => {
+                      setResolutionBusy(d.spotId)
+                      setResolutionError(undefined)
+                      try {
+                        await resolveSpotDispute(
+                          d.spotId,
+                          resolutionShares[d.spotId] ?? 5000,
+                          decisions[d.spotId].trim(),
+                        )
+                        await load()
+                      } catch (e) {
+                        setResolutionError(e instanceof Error ? e.message : 'Resolution failed.')
+                      } finally {
+                        setResolutionBusy(undefined)
                       }
-                      placeholder="Seller share bps"
-                      className="w-24 rounded-lg border border-[#d8d6d0] px-2 py-1 text-xs"
-                    />
-                    <input
-                      type="text"
-                      value={decisions[d.spotId] ?? ''}
-                      onChange={(e) =>
-                        setDecisions((prev) => ({ ...prev, [d.spotId]: e.target.value }))
-                      }
-                      placeholder="Resolution rationale..."
-                      className="flex-1 rounded-lg border border-[#d8d6d0] px-2.5 py-1 text-xs"
-                    />
-                    <button
-                      type="button"
-                      disabled={resolutionBusy === d.spotId || !(decisions[d.spotId] ?? '').trim()}
-                      onClick={() =>
-                        void (async () => {
-                          setResolutionBusy(d.spotId)
-                          setResolutionError(undefined)
-                          try {
-                            await resolveSpotDispute(
-                              d.spotId,
-                              resolutionShares[d.spotId] ?? 5000,
-                              decisions[d.spotId].trim(),
-                            )
-                            await load()
-                          } catch (e) {
-                            setResolutionError(e instanceof Error ? e.message : 'Resolution failed.')
-                          } finally {
-                            setResolutionBusy(undefined)
-                          }
-                        })()
-                      }
-                      className="rounded-full bg-[#4166fb] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
-                    >
-                      Resolve
-                    </button>
-                  </div>
-                </div>
+                    })()
+                  }
+                />
               ))}
             </div>
           )}
@@ -674,42 +645,25 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           ) : (
             <div className="space-y-2.5">
               {payouts.map((p) => (
-                <div key={p.spotId} className="flex items-center justify-between rounded-xl border border-[#ecebe6] bg-white p-3 text-xs">
-                  <div>
-                    <span className="font-medium text-[#020817]">
-                      {p.listingTitle} · {p.spotLabel}
-                    </span>
-                    <div className="text-[11px] text-[#64748b]">
-                      Seller: {p.seller}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-medium text-[#020817]">
-                      {money(p.amount, p.currency)}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={payBusy === p.spotId}
-                      onClick={() =>
-                        void (async () => {
-                          setPayBusy(p.spotId)
-                          setPayError(undefined)
-                          try {
-                            await payApiSpot(p.spotId, `auto-release-${Date.now()}`)
-                            await load()
-                          } catch (e) {
-                            setPayError(e instanceof Error ? e.message : 'Payout failed.')
-                          } finally {
-                            setPayBusy(undefined)
-                          }
-                        })()
+                <PayoutCard
+                  key={p.spotId}
+                  payout={p}
+                  busy={payBusy === p.spotId}
+                  onPay={() =>
+                    void (async () => {
+                      setPayBusy(p.spotId)
+                      setPayError(undefined)
+                      try {
+                        await payApiSpot(p.spotId, `auto-release-${Date.now()}`)
+                        await load()
+                      } catch (e) {
+                        setPayError(e instanceof Error ? e.message : 'Payout failed.')
+                      } finally {
+                        setPayBusy(undefined)
                       }
-                      className="rounded-full bg-[#020817] px-3 py-1 text-xs font-normal text-white disabled:opacity-50"
-                    >
-                      Pay out
-                    </button>
-                  </div>
-                </div>
+                    })()
+                  }
+                />
               ))}
             </div>
           )}
@@ -821,6 +775,114 @@ function ReviewSubmissionCard({
               Review terms
             </button>
           </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function DisputeCard({
+  dispute,
+  sellerShareBps,
+  decision,
+  busy,
+  onSellerShareChange,
+  onDecisionChange,
+  onResolve,
+}: {
+  dispute: DisputeItem
+  sellerShareBps: number
+  decision: string
+  busy: boolean
+  onSellerShareChange: (value: number) => void
+  onDecisionChange: (value: string) => void
+  onResolve: () => void
+}) {
+  const sellerShare = Math.max(0, Math.min(10000, sellerShareBps))
+  const sellerPercent = sellerShare / 100
+  const buyerPercent = 100 - sellerPercent
+
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3.5 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-[13px] font-semibold text-[#020817]">{dispute.listingTitle}</h4>
+          <p className="mt-0.5 text-[12px] text-[#64748b]">
+            {dispute.spotLabel} · {money(dispute.amount, dispute.currency)}
+          </p>
+        </div>
+        <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-medium text-red-700">
+          Disputed
+        </span>
+      </div>
+      <p className="mt-3 rounded-xl bg-red-50/70 px-3 py-2 text-[12px] leading-relaxed text-red-700">
+        {dispute.reason || 'No dispute reason provided.'}
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)_auto] sm:items-end">
+        <label className="text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+          Seller share
+          <input
+            type="number"
+            min={0}
+            max={10000}
+            value={sellerShare}
+            onChange={(event) => onSellerShareChange(Number(event.target.value))}
+            className="mt-1 w-full rounded-xl border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+          />
+        </label>
+        <label className="text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+          Decision note
+          <input
+            type="text"
+            value={decision}
+            onChange={(event) => onDecisionChange(event.target.value)}
+            placeholder={`Seller ${sellerPercent.toFixed(0)}%, buyer ${buyerPercent.toFixed(0)}%`}
+            className="mt-1 w-full rounded-xl border border-[#d8d6d0] px-3 py-2 text-xs normal-case tracking-normal text-[#020817] outline-none focus:border-[#4166fb]"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy || !decision.trim()}
+          onClick={onResolve}
+          className="inline-flex cursor-pointer justify-center rounded-full bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#3558e8] disabled:opacity-50"
+        >
+          {busy ? 'Resolving...' : 'Resolve'}
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function PayoutCard({
+  payout,
+  busy,
+  onPay,
+}: {
+  payout: PayoutItem
+  busy: boolean
+  onPay: () => void
+}) {
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3.5 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-[13px] font-semibold text-[#020817]">{payout.listingTitle}</h4>
+          <p className="mt-0.5 text-[12px] text-[#64748b]">
+            {payout.spotLabel} · Seller {payout.seller}
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-3 sm:justify-end">
+          <span className="font-mono text-sm font-semibold text-[#020817]">
+            {money(payout.amount, payout.currency)}
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onPay}
+            className="inline-flex cursor-pointer rounded-full bg-[#020817] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1a2436] disabled:opacity-50"
+          >
+            {busy ? 'Paying...' : 'Pay out'}
+          </button>
         </div>
       </div>
     </article>
