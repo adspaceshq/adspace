@@ -245,7 +245,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             className="inline-flex items-center gap-1.5 rounded-full border border-[#d8d6d0] bg-white px-3.5 py-1.5 text-xs font-normal text-[#020817] transition hover:border-[#020817] disabled:opacity-50 cursor-pointer shadow-2xs"
           >
             <RefreshCw size={13} className={reconciling ? 'animate-spin text-[#4166fb]' : 'text-[#64748b]'} />
-            <span>{reconciling ? 'Syncing…' : 'Sync devnet'}</span>
+            <span>{reconciling ? 'Syncing...' : 'Sync devnet'}</span>
           </button>
         </div>
       </div>
@@ -331,7 +331,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           </div>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-sm font-mono font-medium text-[#020817]">
-              6ft49…LMSW
+              6ft49...LMSW
             </span>
             <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </div>
@@ -359,7 +359,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         </div>
 
         {queue === null ? (
-          <p className="py-12 text-center text-sm text-[#64748b]">Loading review queue…</p>
+          <p className="py-12 text-center text-sm text-[#64748b]">Loading review queue...</p>
         ) : queue.length === 0 ? (
           <div className="py-14 text-center">
             <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-full bg-[#ecebe6] text-[#64748b]">
@@ -414,7 +414,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                               <span className="inline-flex items-center gap-1 rounded bg-[#ecebe6] px-1.5 py-0.5 text-[10px] font-medium text-[#020817]">
                                 {surfaceName}
                               </span>
-                              <span>•</span>
+                              <span>·</span>
                               <span>{relative(l.deadline)}</span>
                             </div>
                           </div>
@@ -486,7 +486,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                             }}
                             className="inline-flex items-center gap-1 rounded-full bg-[#4166fb] px-3.5 py-1 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
                           >
-                            <span>Approve</span>
+                            <span>Review & approve</span>
                           </button>
 
                           <button
@@ -674,7 +674,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                 }
                 className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-5 py-1.5 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
               >
-                <span>{busy === approval.slug ? 'Approving…' : 'Confirm & Approve'}</span>
+                <span>{busy === approval.slug ? 'Approving...' : 'Confirm & approve'}</span>
               </button>
             </div>
           </div>
@@ -699,7 +699,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           )}
 
           {disputes === null ? (
-            <p className="py-6 text-center text-xs text-[#64748b]">Loading disputes…</p>
+            <p className="py-6 text-center text-xs text-[#64748b]">Loading disputes...</p>
           ) : disputes.length === 0 ? (
             <div className="py-6 text-center text-xs text-[#64748b]">
               No active disputes in escrow.
@@ -710,7 +710,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                 <div key={d.spotId} className="rounded-xl border border-[#ecebe6] bg-white p-3.5 space-y-2.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-medium text-[#020817]">
-                      {d.listingTitle} • {d.spotLabel}
+                      {d.listingTitle} · {d.spotLabel}
                     </span>
                     <span className="font-mono text-[#64748b]">{money(d.amount, d.currency)}</span>
                   </div>
@@ -786,7 +786,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           )}
 
           {payouts === null ? (
-            <p className="py-6 text-center text-xs text-[#64748b]">Loading payouts…</p>
+            <p className="py-6 text-center text-xs text-[#64748b]">Loading payouts...</p>
           ) : payouts.length === 0 ? (
             <div className="py-6 text-center text-xs text-[#64748b]">
               No spots awaiting payout release.
