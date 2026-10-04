@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
+import { ArrowLeft, BadgeCheck, ShieldCheck, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import PageShell from '@/components/PageShell'
@@ -11,6 +12,8 @@ import { isEnded, listingUrl } from '@/lib/listings'
 import { fetchProfile, updateMyProfile } from '@/lib/auth-api'
 import type { PublicProfile } from '@/lib/types'
 import { useStore } from '@/components/StoreProvider'
+import { useToast } from '@/components/ToastProvider'
+import { userErrorMessage } from '@/lib/errors'
 
 const RESERVED = new Set(['browse', 'list', 'listings', 'dashboard', 'review', 'api', 'favicon.ico'])
 
@@ -18,6 +21,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
   const { handle: raw } = use(params)
   const { listings, hydrated } = useStore()
   const { userId, walletAddress, mfaEnabled, setupMfa, logout } = useAuthSession()
+  const toast = useToast()
 
   const clean = decodeURIComponent(raw ?? '').trim().replace(/^@+/, '').toLowerCase()
   const reserved = RESERVED.has(clean)
@@ -86,6 +90,9 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
   const initial = (displayName || display || clean || 'S').replace(/^@+/, '').charAt(0).toUpperCase()
   const color = mine[0]?.seller.color ?? '#4166fb'
   const incomplete = isOwner && (!profile.bio || !walletAddress)
+  const totalSpots = mine.reduce((sum, listing) => sum + listing.spots.length, 0)
+  const soldSpots = mine.reduce((sum, listing) => sum + listing.spots.filter((spot) => spot.sold || spot.claimedBy || spot.bidBy).length, 0)
+  const availableSpots = Math.max(0, totalSpots - soldSpots)
 
   const startEditing = () => {
     if (!profile) return
@@ -97,6 +104,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
   const save = async () => {
     setSaving(true)
     setSaveError(null)
+    const toastId = toast.loading('Saving profile', 'Updating your public creator page.')
     try {
       const updated = await updateMyProfile({
         bio: bioDraft,
@@ -104,8 +112,19 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
       })
       setProfile(updated)
       setEditing(false)
+      toast.update(toastId, {
+        title: 'Profile saved',
+        description: 'Your creator profile is up to date.',
+        tone: 'success',
+      })
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : 'Could not save profile.')
+      const message = userErrorMessage(e, 'Could not save profile.')
+      setSaveError(message)
+      toast.update(toastId, {
+        title: 'Could not save profile',
+        description: message,
+        tone: 'error',
+      })
     } finally {
       setSaving(false)
     }
@@ -116,17 +135,19 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
       <PageShell>
         <Header />
         <main className="mx-auto w-full max-w-[1340px] px-6 pb-16 pt-8">
-        <Link href="/browse" className="mb-6 inline-block text-sm font-medium text-[#64748b] transition hover:text-[#020817]">
-          ← Back to browse
+        <Link href="/browse" className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-[#64748b] transition hover:text-[#020817]">
+          <ArrowLeft className="h-4 w-4" aria-hidden />
+          Back to browse
         </Link>
 
-        <div className="mb-8 flex items-center gap-4">
+        <section className="mb-8 rounded-[28px] border border-[#e7e5e0] bg-white p-5 shadow-[0_18px_60px_rgba(2,8,23,0.06)] sm:p-7">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
           {profile?.avatar ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={profile.avatar} alt="" width={56} height={56} className="h-14 w-14 shrink-0 rounded-full object-cover" />
+            <img src={profile.avatar} alt="" width={80} height={80} className="h-20 w-20 shrink-0 rounded-3xl object-cover" />
           ) : (
             <span
-              className="grid h-14 w-14 shrink-0 place-items-center rounded-full text-xl font-semibold text-white"
+              className="grid h-20 w-20 shrink-0 place-items-center rounded-3xl text-2xl font-semibold text-white"
               style={{ background: color }}
             >
               {initial}
@@ -137,7 +158,8 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
               {display}
               {profile?.verified && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#eef2ff] px-2.5 py-1 text-xs font-semibold text-[#4166fb]">
-                  ✓ X-verified
+                  <BadgeCheck className="h-3.5 w-3.5" aria-hidden />
+                  X verified
                 </span>
               )}
             </h1>
@@ -153,9 +175,9 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
             ) : (
               <p className="mt-1 text-[15px] text-[#64748b]">
                 {!hydrated && !profileMissing
-                  ? 'Loading spaces…'
+                  ? 'Loading spaces...'
                   : mine.length === 0
-                    ? profileMissing ? 'No live spaces yet.' : 'Loading profile…'
+                    ? profileMissing ? 'No live spaces yet.' : 'Loading profile...'
                     : `${mine.length} live space${mine.length === 1 ? '' : 's'}`}
               </p>
             )}
@@ -166,7 +188,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
             )}
           </div>
           {isOwner && !editing && (
-            <span className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="flex shrink-0 items-center gap-2 sm:ml-auto">
               <button
                 type="button"
                 onClick={startEditing}
@@ -184,6 +206,12 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
             </span>
           )}
         </div>
+        <div className="mt-6 grid gap-3 border-t border-[#e7e5e0] pt-5 sm:grid-cols-3">
+          <ProfileStat label="Live spaces" value={hydrated ? String(mine.length) : '—'} />
+          <ProfileStat label="Available spots" value={hydrated ? String(availableSpots) : '—'} />
+          <ProfileStat label="Claimed or bid" value={hydrated ? String(soldSpots) : '—'} />
+        </div>
+        </section>
 
         {incomplete && !editing && (
           <div className="mb-8 rounded-2xl border border-[#f5d98b] bg-[#fffaeb] p-5">
@@ -234,7 +262,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
                 disabled={saving}
                 className="inline-flex items-center rounded-full bg-[#020817] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
               >
-                {saving ? 'Saving…' : 'Save profile'}
+                {saving ? 'Saving...' : 'Save profile'}
               </button>
               <button
                 type="button"
@@ -249,11 +277,21 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
         )}
 
         {isOwner && walletAddress && !editing && (
-          <div className="mb-8 rounded-xl border border-[#e7e5e0] bg-white p-4">
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">Privy Solana wallet</p>
-            <p className="mt-1 break-all font-mono text-sm text-[#020817]">{walletAddress}</p>
+          <div className="mb-8 rounded-2xl border border-[#e7e5e0] bg-white p-5">
+            <div className="flex items-start gap-3">
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-[#f3f6ff] text-[#4166fb]">
+                <Wallet className="h-5 w-5" aria-hidden />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">Privy Solana wallet</p>
+                <p className="mt-1 break-all font-mono text-sm text-[#020817]">{walletAddress}</p>
+              </div>
+            </div>
             <div className="mt-4 flex items-center justify-between border-t border-[#e7e5e0] pt-4">
-              <div><p className="text-sm font-medium text-[#020817]">Two-factor authentication</p><p className="text-xs text-[#64748b]">Required for withdrawals</p></div>
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 h-4 w-4 text-[#4166fb]" aria-hidden />
+                <div><p className="text-sm font-medium text-[#020817]">Two-factor authentication</p><p className="text-xs text-[#64748b]">Required for withdrawals</p></div>
+              </div>
               {mfaEnabled ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={setupMfa} className="rounded-full bg-[#020817] px-4 py-2 text-sm font-medium text-white">Set up MFA</button>}
             </div>
           </div>
@@ -261,12 +299,12 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
 
         {!hydrated ? (
           <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center text-sm text-[#64748b]">
-            Loading spaces…
+            Loading spaces...
           </div>
         ) : mine.length === 0 ? (
           <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center">
             <h3 className="text-xl">No spaces from {display} yet.</h3>
-            <p className="mt-2 text-sm text-[#64748b]">Try another seller — or list your own surface.</p>
+            <p className="mt-2 text-sm text-[#64748b]">Try another seller or list your own surface.</p>
             <Link href="/browse" className="mt-6 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#0f1a33]">
               Browse all spaces
             </Link>
@@ -285,4 +323,13 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
     <Footer />
   </>
 )
+}
+
+function ProfileStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl border border-[#e7e5e0] bg-[#fafaf7] px-4 py-3">
+      <p className="text-xs font-medium uppercase tracking-[0.12em] text-[#64748b]">{label}</p>
+      <p className="mt-1 text-2xl font-semibold tracking-tight text-[#020817]">{value}</p>
+    </div>
+  )
 }
