@@ -93,33 +93,13 @@ export default function DashboardPage() {
       <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
         <Header />
         <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
-          {isReviewer && (
-            <div className="mb-4 flex justify-end">
-              <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('admin')}
-                  className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                >
-                  Admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('creator')}
-                  className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                >
-                  Creator
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('sponsor')}
-                  className="rounded-full bg-[#020817] px-3 py-1 text-white shadow-2xs transition cursor-pointer"
-                >
-                  Sponsor
-                </button>
-              </div>
-            </div>
-          )}
+          <div className="mb-4">
+            <DashboardModeSwitch
+              isReviewer={isReviewer}
+              currentTab="sponsor"
+              onTabChange={(tab) => setActiveTab(tab)}
+            />
+          </div>
           <SponsorDashboardView />
         </main>
       </div>
@@ -142,6 +122,58 @@ function SponsorDashboardPage() {
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
         <SponsorDashboardView />
       </main>
+    </div>
+  )
+}
+
+function DashboardModeSwitch({
+  isReviewer,
+  currentTab,
+  onTabChange,
+}: {
+  isReviewer?: boolean
+  currentTab: 'admin' | 'creator' | 'sponsor'
+  onTabChange: (tab: 'admin' | 'creator' | 'sponsor') => void
+}) {
+  return (
+    <div className="flex justify-end">
+      <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
+        {isReviewer && (
+          <button
+            type="button"
+            onClick={() => onTabChange('admin')}
+            className={`rounded-full px-3 py-1 transition cursor-pointer ${
+              currentTab === 'admin'
+                ? 'bg-[#020817] text-white shadow-2xs'
+                : 'text-[#64748b] hover:text-[#020817]'
+            }`}
+          >
+            Admin
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onTabChange('creator')}
+          className={`rounded-full px-3 py-1 transition cursor-pointer ${
+            currentTab === 'creator'
+              ? 'bg-[#020817] text-white shadow-2xs'
+              : 'text-[#64748b] hover:text-[#020817]'
+          }`}
+        >
+          Creator
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange('sponsor')}
+          className={`rounded-full px-3 py-1 transition cursor-pointer ${
+            currentTab === 'sponsor'
+              ? 'bg-[#020817] text-white shadow-2xs'
+              : 'text-[#64748b] hover:text-[#020817]'
+          }`}
+        >
+          Sponsor
+        </button>
+      </div>
     </div>
   )
 }
@@ -445,30 +477,12 @@ function SellerDashboardPage({
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  {isReviewer && (
-                    <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
-                      <button
-                        type="button"
-                        onClick={() => onTabChange?.('admin')}
-                        className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                      >
-                        Admin
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onTabChange?.('creator')}
-                        className="rounded-full bg-[#020817] px-3 py-1 text-white shadow-2xs transition cursor-pointer"
-                      >
-                        Creator
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onTabChange?.('sponsor')}
-                        className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                      >
-                        Sponsor
-                      </button>
-                    </div>
+                  {onTabChange && (
+                    <DashboardModeSwitch
+                      isReviewer={isReviewer}
+                      currentTab={currentTab}
+                      onTabChange={onTabChange}
+                    />
                   )}
                   <Link
                     href="/list"
@@ -1462,4 +1476,5 @@ function DashboardSkeleton() {
     </div>
   )
 }
+
 
