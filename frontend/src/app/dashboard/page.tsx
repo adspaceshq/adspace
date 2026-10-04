@@ -25,6 +25,7 @@ import AdminDashboardView from '@/components/AdminDashboardView'
 import ConfirmDialog from '@/components/ConfirmDialog'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
+import { useToast } from '@/components/ToastProvider'
 import {
   acceptListingTerms,
   approveApiSpot,
@@ -154,6 +155,7 @@ function SellerDashboardPage({
   onTabChange?: (tab: 'admin' | 'creator' | 'sponsor') => void
 }) {
   const auth = useAuthSession()
+  const toast = useToast()
   const { refresh } = useStore()
   const [data, setData] = useState<SellerDashboard | null>(null)
   const [error, setError] = useState<string>()
@@ -231,9 +233,18 @@ function SellerDashboardPage({
       if (action === 'approve') await approveApiSpot(spotId)
       else if (action === 'reject') await rejectApiSpot(spotId)
       else if (action === 'fulfill') await fulfillApiSpot(spotId)
+      toast.success(
+        action === 'approve'
+          ? 'Spot approved'
+          : action === 'reject'
+          ? 'Spot rejected'
+          : 'Spot marked fulfilled',
+      )
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed.')
+      const message = e instanceof Error ? e.message : 'Action failed.'
+      setError(message)
+      toast.error('Action failed', message)
     } finally {
       setBusy(undefined)
     }
@@ -250,10 +261,13 @@ function SellerDashboardPage({
       if (action === 'close') await closeApiListing(slug)
       else if (action === 'reopen') await reopenApiListing(slug)
       else await deleteApiListing(slug)
+      toast.success(action === 'close' ? 'Listing closed' : action === 'reopen' ? 'Listing reopened' : 'Listing deleted')
       await load()
       await refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed.')
+      const message = e instanceof Error ? e.message : 'Action failed.'
+      setError(message)
+      toast.error('Action failed', message)
     } finally {
       setBusy(undefined)
     }
@@ -267,14 +281,18 @@ function SellerDashboardPage({
     try {
       if (confirmAction.kind === 'refund') {
         await refundApiSpot(confirmAction.spotId)
+        toast.success('Refund started', 'The on-chain refund was submitted.')
       } else {
         await deleteApiListing(confirmAction.slug)
         await refresh()
+        toast.success('Listing deleted')
       }
       setConfirmAction(null)
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed.')
+      const message = e instanceof Error ? e.message : 'Action failed.'
+      setError(message)
+      toast.error('Action failed', message)
     } finally {
       setBusy(undefined)
     }
