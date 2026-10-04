@@ -672,8 +672,9 @@ function RoleOnboardingModal({
                 </div>
 
                 <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className={`font-medium ${hasAtLeastOneSocial ? 'text-emerald-700' : 'text-[#64748b]'}`}>
-                    {hasAtLeastOneSocial ? '✓ At least one social link provided' : '• Please fill in at least one profile'}
+                  <span className={`inline-flex items-center gap-1.5 font-medium ${hasAtLeastOneSocial ? 'text-emerald-700' : 'text-[#64748b]'}`}>
+                    {hasAtLeastOneSocial && <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />}
+                    {hasAtLeastOneSocial ? 'At least one social link provided' : 'Please fill in at least one profile'}
                   </span>
                 </div>
               </div>

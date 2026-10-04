@@ -773,7 +773,7 @@ function SellerDashboardPage({
                               Solana Settlements
                             </h2>
                             <span className="font-mono text-[11px] font-normal text-emerald-600">
-                              • Devnet
+                              Devnet
                             </span>
                           </div>
                           <p className="mt-0.5 text-[12px] text-[#64748b]">
@@ -1240,7 +1240,7 @@ function AttentionStatusBadge({
           : 'Approved'}
       </span>
       {status === 'approved' && artworkReceived && (
-        <span className="mt-0.5 block text-[11px] font-medium text-emerald-600">Artwork in ✓</span>
+        <span className="mt-0.5 block text-[11px] font-medium text-emerald-600">Artwork received</span>
       )}
       {status === 'disputed' && disputeReason && (
         <span className="mt-0.5 block max-w-[220px] text-[11px] text-red-600 truncate" title={disputeReason}>
