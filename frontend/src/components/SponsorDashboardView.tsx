@@ -37,10 +37,10 @@ const money = (amount: number, currency: string) =>
 const STATUS_LABEL: Record<SponsorSpotStatus, string> = {
   pending: 'Awaiting approval',
   sold: 'In production',
-  delivered: 'Delivered — review proof',
+  delivered: 'Delivered - review proof',
   disputed: 'Reported',
   paid: 'Complete & paid',
-  refunded: 'Outbid — refunded',
+  refunded: 'Outbid - refunded',
 }
 
 const STATUS_TONE: Record<SponsorSpotStatus, string> = {
@@ -253,7 +253,7 @@ export default function SponsorDashboardView() {
               </Link>
             </div>
           ) : (
-            <ul className="divide-y divide-[#ecebe6]/60">
+            <ul className="grid gap-3">
               {data.campaigns.map((campaign) => (
                 <CampaignRow
                   key={campaign.spotId}
@@ -353,7 +353,7 @@ function CampaignRow({
   const handle = campaign.sellerHandle.replace(/^@+/, '')
 
   return (
-    <li className="flex flex-col gap-5 py-5 sm:py-6 lg:flex-row lg:items-center lg:justify-between transition hover:bg-black/[0.015] px-2 -mx-2 rounded-2xl">
+    <li className="flex flex-col gap-5 rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_10px_30px_rgba(2,8,23,0.04)] transition hover:border-[#cfd6fb] sm:p-5 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex min-w-0 items-start gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
