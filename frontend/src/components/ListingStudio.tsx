@@ -30,6 +30,7 @@ import SpecSheet from '@/components/SpecSheet'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
+import { useToast } from '@/components/ToastProvider'
 import { dataUrlToBlob, uploadToCloudinary } from '@/lib/cloudinary'
 import {
   INSIDE_VIEW_ID,
@@ -87,6 +88,7 @@ export default function ListingStudio({ surface: initialSurface = 'gear' }: List
 
 function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'apparel' }) {
   const { addListing } = useStore()
+  const toast = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { openPicker } = useSurfacePicker()
@@ -402,6 +404,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
       return
     }
     setPublishing(true)
+    const toastId = toast.loading('Submitting listing', 'Sending your space to the review queue.')
     const seller = PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()
     const id = `user-${Date.now()}`
     const spotIds = spots.map((_, i) => `${id}-s${i + 1}`)
@@ -449,11 +452,22 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     try {
       await addListing(listing)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not submit. Try again.')
+      const message = err instanceof Error ? err.message : 'Could not submit. Try again.'
+      setError(message)
+      toast.update(toastId, {
+        title: 'Could not submit listing',
+        description: message,
+        tone: 'error',
+      })
       setReviewing(false)
       setPublishing(false)
       return
     }
+    toast.update(toastId, {
+      title: 'Listing submitted',
+      description: 'A reviewer will check the terms before it goes live.',
+      tone: 'success',
+    })
     router.push('/dashboard')
   }
 
