@@ -1058,6 +1058,9 @@ function SellerListingCard({
               <span className="font-mono text-[#020817]">{listing.sold} sold / {listing.open} open</span>
               <span className="font-mono text-[#020817]">{money(listing.revenue, listing.currency)} revenue</span>
             </div>
+            {(listing.status === 'approved' || listing.status === 'active') && (
+              <ReviewTermsStrip listing={listing} />
+            )}
           </div>
         </div>
 
@@ -1112,6 +1115,34 @@ function SellerListingCard({
         </div>
       </div>
     </article>
+  )
+}
+
+function ReviewTermsStrip({ listing }: { listing: SellerDashboard['listings'][number] }) {
+  const fee = ((listing.platformFeeBps ?? listing.feeBps ?? 0) / 100).toFixed(2)
+  const settlementHours =
+    listing.settlementWindowHours ??
+    (listing.reviewWindowSeconds != null ? Math.round(listing.reviewWindowSeconds / 3600) : undefined)
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-2 rounded-xl bg-[#f8fafc] px-3 py-2 text-[11px] text-[#64748b]">
+      <span>
+        Reviewer terms: <span className="font-mono font-semibold text-[#020817]">{fee}% platform fee</span>
+      </span>
+      {listing.mode === 'auction' && (
+        <span>
+          Uplift/max{' '}
+          <span className="font-mono font-semibold text-[#020817]">
+            {((listing.upliftFeeBps ?? 0) / 100).toFixed(2)}% / {((listing.maxFeeBps ?? 0) / 100).toFixed(2)}%
+          </span>
+        </span>
+      )}
+      {settlementHours != null && (
+        <span>
+          Settlement <span className="font-mono font-semibold text-[#020817]">{settlementHours}h</span>
+        </span>
+      )}
+    </div>
   )
 }
 
