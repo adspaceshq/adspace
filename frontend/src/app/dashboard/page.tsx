@@ -76,7 +76,7 @@ export default function DashboardPage() {
 
   if (currentTab === 'admin') {
     return (
-      <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+      <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
         <Header />
         <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
           <AdminDashboardView
@@ -90,7 +90,7 @@ export default function DashboardPage() {
 
   if (currentTab === 'sponsor') {
     return (
-      <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+      <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
         <Header />
         <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
           {isReviewer && (
@@ -137,7 +137,7 @@ export default function DashboardPage() {
 
 function SponsorDashboardPage() {
   return (
-    <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+    <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
       <Header />
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
         <SponsorDashboardView />
@@ -385,7 +385,7 @@ function SellerDashboardPage({
   const cleanHandle = auth.handle ? (auth.handle.startsWith('@') ? auth.handle : `@${auth.handle}`) : null
 
   return (
-    <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+    <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
       <Header />
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
           {!auth.ready ? (
@@ -1356,3 +1356,4 @@ function DashboardSkeleton() {
     </div>
   )
 }
+

@@ -9,7 +9,7 @@ export default function ReviewPage() {
   const auth = useAuthSession()
 
   return (
-    <div className="flex min-h-screen lg:h-screen flex-col overflow-y-auto bg-[#f4f4f4]">
+    <div className="flex min-h-screen flex-col overflow-y-auto bg-[#f4f4f4]">
       <Header />
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-12 pt-4 md:pt-6">
         {!auth.ready ? (
@@ -41,3 +41,4 @@ export default function ReviewPage() {
     </div>
   )
 }
+

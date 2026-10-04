@@ -543,7 +543,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 4 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                  className="w-68 rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_20px_48px_rgba(2,8,23,0.22)]"
+                  className="w-[min(17rem,calc(100vw-2rem))] rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_20px_48px_rgba(2,8,23,0.22)]"
                 >
                   <div className="mb-3 flex items-center justify-between gap-2 border-b border-[#f1f0ec] pb-2">
                     <span className="font-mono text-[12px] font-bold text-[#020817]">
@@ -1410,3 +1410,4 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     </>
   )
 }
+
