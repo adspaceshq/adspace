@@ -558,7 +558,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   />
 
                   <label className="mb-1 block text-[12px] font-semibold text-[#020817]" htmlFor="spot-price">
-                    {priceType === 'auction' ? 'Starting bid ($)' : 'Fixed price ($)'}
+                    {priceType === 'auction' ? 'Starting bid ($)' : priceType === 'fixed' ? 'Fixed price ($)' : 'Spot price ($)'}
                   </label>
                   <div className="relative mb-2">
                     <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-[#64748b]">
@@ -600,7 +600,9 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   <p className="text-[11px] leading-snug text-[#64748b]">
                     {priceType === 'auction'
                       ? 'First bid must meet or exceed this amount.'
-                      : 'First buyer pays this amount to claim.'}
+                      : priceType === 'fixed'
+                      ? 'First buyer pays this amount to claim.'
+                      : 'Choose Fixed price or Auction below before submitting.'}
                   </p>
 
                   {spots.length > 1 && (
@@ -731,7 +733,9 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         >
                           {priceType === 'fixed'
                             ? 'Instant claim — first sponsor to pay your asking price secures the spot immediately.'
-                            : 'Competitive bidding — brands place bids on your spots and outbid each other until your listing closes.'}
+                            : priceType === 'auction'
+                            ? 'Competitive bidding — brands place bids on your spots and outbid each other until your listing closes.'
+                            : 'Choose how sponsors will buy your spots. This controls the pricing fields and review terms.'}
                         </motion.p>
                       </AnimatePresence>
 
