@@ -11,6 +11,7 @@ import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
 import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingOversubscription, listingUrl, minBidFor, sellerDisplay, sellerUrl, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
+import { dataUrlToBlob, uploadToCloudinary } from '@/lib/cloudinary'
 
 const field =
   'w-full rounded-lg border border-[#e7e5e0] bg-white px-[14px] py-3 font-[family-name:var(--font-body)] text-[15px] text-[#020817] transition focus:border-[#4166fb] focus:shadow-[0_0_0_3px_#e9edfe] focus:outline-none'
@@ -114,7 +115,12 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       showToast('Logo must be under 2 MB.')
       return
     }
-    logoDataUrl(file).then(setLogo, () => showToast('Could not read that file.'))
+    logoDataUrl(file)
+      .then(async (dataUrl) => {
+        const blob = await dataUrlToBlob(dataUrl)
+        setLogo(await uploadToCloudinary(blob, 'logos', file.name))
+      })
+      .catch(() => showToast('Could not upload that logo.'))
   }
 
   const countdown = useCountdown(listing?.endsAt ?? '')
@@ -205,22 +211,13 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     }
     setProofBusy(true)
     setProofError(null)
-    Promise.all(picked.map((file) => new Promise<string>((resolve, reject) => {
-      if (!file.type.startsWith('image/')) reject(new Error('Proof photos must be image files.'))
-      else if (file.size > 3 * 1024 * 1024) reject(new Error('Proof photos must be under 3 MB each.'))
-      else {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-          if (dataUrl.startsWith('data:image/')) resolve(dataUrl)
-          else reject(new Error('Could not read that file.'))
-        }
-        reader.onerror = () => reject(new Error('Could not read that file.'))
-        reader.readAsDataURL(file)
-      }
-    }))).then(
-      (dataUrls) => { setProofFiles((prev) => [...prev, ...dataUrls].slice(0, 5)); setProofBusy(false) },
-      (e) => { setProofBusy(false); setProofError(e instanceof Error ? e.message : 'Could not read those files.') },
+    Promise.all(picked.map(async (file) => {
+      if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) throw new Error('Proof uploads must be images or videos.')
+      if (file.size > 20 * 1024 * 1024) throw new Error('Proof photos must be under 20 MB each.')
+      return uploadToCloudinary(file, file.type.startsWith('video/') ? 'videos' : 'proofs', file.name)
+    })).then(
+      (urls) => { setProofFiles((prev) => [...prev, ...urls].slice(0, 5)); setProofBusy(false) },
+      (e) => { setProofBusy(false); setProofError(e instanceof Error ? e.message : 'Could not upload those files.') },
     )
   }
 
@@ -619,7 +616,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                 <input
                   id={`proof-file-${sp.id}`}
                   type="file"
-                  accept="image/*"
+                  accept="image/*,video/*"
                   multiple
                   className="sr-only"
                   onChange={(e) => { onProofFiles(e.target.files); e.target.value = '' }}

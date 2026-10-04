@@ -3,7 +3,8 @@ import type { Pool, PoolClient } from "pg";
 import type { ChainPublication } from "./listing-chain.js";
 import { REVIEW_WINDOW_MS, TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, ReviewPolicy, SellerDashboard, SessionUser, SponsorDashboard, Spot, SponsorSpotStatus } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, SponsorDashboard, Spot, SponsorSpotStatus } from "./types.js";
+import { isHostedAssetUrl } from "./cloudinary.js";
 
 export interface MarketplaceRepository {
   migrate(): Promise<void>;
@@ -71,6 +72,8 @@ const slugify = (title: string) => title.toLowerCase().trim().replace(/[^a-z0-9]
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
 
 const MAX_LOGO_URL_LENGTH = 3_000_000;
+const validImageUpload = (url: string) => url.startsWith("data:image/") || isHostedAssetUrl(url);
+const validProofUpload = (url: string) => url.startsWith("data:image/") || isHostedAssetUrl(url);
 
 /** Tee base color. Strict #rrggbb — anything else falls back to the default white. */
 const parseFabric = (value: unknown): string =>
@@ -80,7 +83,7 @@ const parseFabric = (value: unknown): string =>
 function parseListingImage(value: unknown): string {
   const image = typeof value === "string" ? value.trim() : "";
   if (!image) return "";
-  if (!image.startsWith("data:image/")) throw httpError("image must be an image upload", 400);
+  if (!validImageUpload(image)) throw httpError("image must be an image upload", 400);
   if (image.length > MAX_LOGO_URL_LENGTH) throw httpError("image is too large", 400);
   return image;
 }
@@ -111,7 +114,7 @@ function parseProof(proof: { photos: unknown; postUrl?: unknown }): { photos: st
   }
   const clean = photos.map((p) => {
     const url = typeof p === "string" ? p.trim() : "";
-    if (!url.startsWith("data:image/")) throw httpError("proof photos must be image uploads", 400);
+    if (!validProofUpload(url)) throw httpError("proof uploads must be image or video uploads", 400);
     if (url.length > MAX_LOGO_URL_LENGTH) throw httpError("proof photo is too large", 400);
     return url;
   });
@@ -143,7 +146,7 @@ function parseBrandAssets(assets?: PurchaseAssets, opts: { requireLogo?: boolean
   const logoUrl = assets?.logoUrl?.trim() ?? "";
   if (!logoUrl && opts.requireLogo) throw httpError("logo is required", 400);
   if (logoUrl) {
-    if (!logoUrl.startsWith("data:image/")) throw httpError("logo must be an image upload", 400);
+    if (!validImageUpload(logoUrl)) throw httpError("logo must be an image upload", 400);
     if (logoUrl.length > MAX_LOGO_URL_LENGTH) throw httpError("logo is too large", 400);
     out.logoUrl = logoUrl;
   }

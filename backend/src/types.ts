@@ -257,10 +257,12 @@ export interface SellerDashboardListing {
   open: number;
   total: number;
   revenue: number;
+  platformFeeBps?: number;
   feeBps?: number;
   upliftFeeBps?: number;
   maxFeeBps?: number;
   reviewWindowSeconds?: number;
+  settlementWindowHours?: number;
   deliveryDeadline?: string;
 }
 

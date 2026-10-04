@@ -30,6 +30,7 @@ import SpecSheet from '@/components/SpecSheet'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
+import { dataUrlToBlob, uploadToCloudinary } from '@/lib/cloudinary'
 import {
   INSIDE_VIEW_ID,
   LID_VIEW_ID,
@@ -180,16 +181,17 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     }
     setImageBusy(true)
     setImageError(null)
-    photoDataUrl(file).then(
-      (dataUrl) => {
-        setImage(dataUrl)
+    photoDataUrl(file)
+      .then(async (dataUrl) => {
+        const blob = await dataUrlToBlob(dataUrl)
+        const url = await uploadToCloudinary(blob, 'listings', file.name.replace(/\.[^.]+$/, '.jpg'))
+        setImage(url)
         setImageBusy(false)
-      },
-      () => {
+      })
+      .catch(() => {
         setImageError('Could not read that file.')
         setImageBusy(false)
-      },
-    )
+      })
   }
 
   const updateSpot = (i: number, patch: Partial<SpotDraft>) =>

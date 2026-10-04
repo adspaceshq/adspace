@@ -23,6 +23,7 @@ import {
   submitSpotArtwork,
   withdrawSpotDispute,
 } from '@/lib/auth-api'
+import { uploadToCloudinary } from '@/lib/cloudinary'
 import type { SponsorDashboard, SponsorSpot, SponsorSpotStatus } from '@/lib/types'
 
 const money = (amount: number, currency: string) =>
@@ -50,7 +51,7 @@ const STATUS_TONE: Record<SponsorSpotStatus, string> = {
   refunded: 'text-[#64748b]',
 }
 
-const MAX_ARTWORK_BYTES = 3 * 1024 * 1024
+const MAX_ARTWORK_BYTES = 8 * 1024 * 1024
 
 export default function SponsorDashboardView() {
   const auth = useAuthSession()
@@ -62,16 +63,17 @@ export default function SponsorDashboardView() {
   const [disputeReason, setDisputeReason] = useState('')
 
   const load = useCallback(async () => {
+    if (!auth.ready || !auth.authenticated || !auth.userId) return
     try {
       setData(await fetchSponsorDashboard())
       setError(undefined)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your sponsorships.')
     }
-  }, [])
+  }, [auth.ready, auth.authenticated, auth.userId])
 
   useEffect(() => {
-    if (!auth.authenticated) return
+    if (!auth.ready || !auth.authenticated || !auth.userId) return
     let cancelled = false
     fetchSponsorDashboard().then(
       (loaded) => {
@@ -87,38 +89,25 @@ export default function SponsorDashboardView() {
     return () => {
       cancelled = true
     }
-  }, [auth.authenticated])
+  }, [auth.ready, auth.authenticated, auth.userId])
 
   const uploadArtwork = (spotId: string, file: File | undefined) => {
     if (!file || busy) return
     if (!file.type.startsWith('image/')) return setToast('Artwork must be an image file.')
-    if (file.size > MAX_ARTWORK_BYTES) return setToast('Artwork must be under 3 MB.')
+    if (file.size > MAX_ARTWORK_BYTES) return setToast('Artwork must be under 8 MB.')
     setBusy(spotId)
     setToast(undefined)
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = typeof reader.result === 'string' ? reader.result : ''
-      if (!dataUrl.startsWith('data:image/')) {
+    uploadToCloudinary(file, 'logos', file.name)
+      .then((url) => submitSpotArtwork(spotId, { logoUrl: url }))
+      .then(async () => {
+        await load()
         setBusy(undefined)
-        return setToast('Could not read that file.')
-      }
-      submitSpotArtwork(spotId, { logoUrl: dataUrl }).then(
-        async () => {
-          await load()
-          setBusy(undefined)
-          setToast('Artwork submitted successfully.')
-        },
-        (e) => {
-          setBusy(undefined)
-          setToast(e instanceof Error ? e.message : 'Could not submit artwork.')
-        },
-      )
-    }
-    reader.onerror = () => {
-      setBusy(undefined)
-      setToast('Could not read that file.')
-    }
-    reader.readAsDataURL(file)
+        setToast('Artwork submitted successfully.')
+      })
+      .catch((e) => {
+        setBusy(undefined)
+        setToast(e instanceof Error ? e.message : 'Could not submit artwork.')
+      })
   }
 
   const review = async (spotId: string, action: 'confirm' | 'withdraw' | { dispute: string }) => {

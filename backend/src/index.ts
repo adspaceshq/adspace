@@ -21,6 +21,7 @@ import type { DisputeResolutionExecutor } from "./dispute-resolution-chain.js";
 import type { RefundChainExecutor } from "./refund-chain.js";
 import type { CloseSpotsChainExecutor } from "./close-spots-chain.js";
 import type { ChainReconciler } from "./chain-reconciliation.js";
+import { isHostedAssetUrl, signedUploadPayload } from "./cloudinary.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
 
@@ -64,6 +65,8 @@ const purchaseAssets = (body: unknown): PurchaseAssets => {
     ...(typeof b.logoUrl === "string" ? { logoUrl: b.logoUrl } : {}),
   };
 };
+
+const validUploadedImage = (url: string | undefined) => Boolean(url && (url.startsWith("data:image/") || isHostedAssetUrl(url)));
 
 export function createApp({
   auth,
@@ -128,23 +131,18 @@ export function createApp({
   });
   const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 10, standardHeaders: "draft-7", legacyHeaders: false });
   const mutationLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-7", legacyHeaders: false });
-  const attachUser = async (req: Request, _res: Response, next: NextFunction) => {
+  const attachUser = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const session = await auth.readSession(req.cookies?.[sessionCookieName] as string | undefined);
       if (session) { req.authSession = session; req.user = session.user; return next(); }
       const token = req.headers.authorization?.replace(/^Bearer\s+/i, "");
       if (token) {
-        const identity = await verifyToken(token);
-        req.user = {
-          id: identity.did,
-          did: identity.did,
-          handle: identity.handle,
-          name: identity.name,
-          avatar: identity.avatar,
-          email: identity.email,
-          walletAddress: identity.walletAddress,
-          hasX: identity.hasX,
-        };
+        const identityToken = typeof req.headers["privy-id-token"] === "string" ? req.headers["privy-id-token"] : undefined;
+        const created = await auth.createSession(await verifyToken(token, identityToken));
+        try { await profiles.upsertFromSession(created.session.user); } catch (e) { console.warn("profile upsert:", e instanceof Error ? e.message : e); }
+        res.cookie(sessionCookieName, created.token, cookieOptions());
+        req.authSession = created.session;
+        req.user = created.session.user;
       }
       next();
     } catch { next(); }
@@ -217,6 +215,9 @@ export function createApp({
       ...(typeof body.payoutWallet === "string" ? { payoutWallet: body.payoutWallet } : {}),
     };
     try { res.json(await profiles.updateProfile(req.user!.id, patch)); } catch (e) { sendErr(res, e); }
+  });
+  app.post("/api/uploads/sign", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
+    try { res.json(signedUploadPayload((req.body as { kind?: unknown } | null)?.kind)); } catch (e) { sendErr(res, e); }
   });
   app.get("/api/wallet/withdrawals", attachUser, requireUser, async (req, res) => {
     try { res.json(await withdrawals.list(req.user!.id)); } catch (e) { sendErr(res, e); }
@@ -308,7 +309,7 @@ export function createApp({
     const assets = purchaseAssets(req.body);
     try {
       if (fixedClaimExecutor) {
-        if (!assets.logoUrl?.startsWith("data:image/") || assets.logoUrl.length > 3_000_000) {
+        if (!validUploadedImage(assets.logoUrl) || assets.logoUrl!.length > 3_000_000) {
           return void res.status(400).json({ error: "a valid logo is required" });
         }
         if (assets.website && !/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(assets.website)) {
@@ -325,7 +326,7 @@ export function createApp({
     const assets = purchaseAssets(req.body);
     try {
       if (auctionBidExecutor) {
-        if (!assets.logoUrl?.startsWith("data:image/") || assets.logoUrl.length > 3_000_000) {
+        if (!validUploadedImage(assets.logoUrl) || assets.logoUrl!.length > 3_000_000) {
           return void res.status(400).json({ error: "a valid logo is required" });
         }
         await auctionBidExecutor.bid(req.params.id, req.user!, amount);

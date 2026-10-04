@@ -106,7 +106,24 @@ export async function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
-  return request<T>(path);
+  let token: string | null = null;
+  let identityToken: string | null = null;
+  try {
+    token = await getAccessToken();
+  } catch {
+    token = null;
+  }
+  try {
+    identityToken = await getIdentityToken();
+  } catch {
+    identityToken = null;
+  }
+  return request<T>(path, {
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(identityToken ? { "privy-id-token": identityToken } : {}),
+    },
+  });
 }
 
 /** Authenticated PATCH: session cookie + Privy Bearer + CSRF. */
@@ -238,7 +255,11 @@ export function fetchReviewQueue(): Promise<ApiListing[]> {
 }
 
 export function approveReviewListing(slug: string, policy: ReviewPolicyRequest): Promise<ApiListing> {
-  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`, policy);
+  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`, {
+    ...policy,
+    feeBps: policy.feeBps ?? policy.platformFeeBps ?? 250,
+    reviewWindowSeconds: policy.reviewWindowSeconds ?? Math.max(1, Math.round(policy.settlementWindowHours ?? 48)) * 3600,
+  });
 }
 
 export function rejectReviewListing(slug: string, reason: string): Promise<ApiListing> {

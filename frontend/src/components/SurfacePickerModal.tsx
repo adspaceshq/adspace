@@ -5,6 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { ArrowRight, X } from 'lucide-react'
+import { MAC_LID_PHOTO } from '@/lib/listings'
+
+const TSHIRT_PREVIEW_IMAGE = 'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124086/adspaces/static/landing/hero-2.png'
 
 interface SurfacePickerContextType {
   isOpen: boolean
@@ -91,7 +94,7 @@ export function SurfacePickerProvider({ children }: { children: ReactNode }) {
                   <div className="relative mb-5 flex h-48 w-full items-center justify-center overflow-hidden rounded-2xl bg-[#ecebe6] p-4 transition-colors group-hover:bg-[#e6e4df]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src="/mac/macbook.png"
+                      src={MAC_LID_PHOTO}
                       alt="MacBook Lid preview"
                       className="max-h-full w-auto object-contain drop-shadow-md transition-transform duration-300 group-hover:scale-105"
                     />
@@ -124,7 +127,7 @@ export function SurfacePickerProvider({ children }: { children: ReactNode }) {
                   <div className="relative mb-5 flex h-48 w-full items-center justify-center overflow-hidden rounded-2xl bg-[#0a1730] p-0 transition-colors">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src="/hero-2.png"
+                      src={TSHIRT_PREVIEW_IMAGE}
                       alt="T-shirt model preview"
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />

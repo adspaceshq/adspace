@@ -173,17 +173,17 @@ function SellerDashboardPage({
   const termsListing = termsFor ? data?.listings.find((listing) => listing.slug === termsFor) : undefined
 
   const load = useCallback(async () => {
-    if (!auth.authenticated) return
+    if (!auth.ready || !auth.authenticated || !auth.userId) return
     try {
       setData(await fetchSellerDashboard())
       setError(undefined)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load your dashboard.')
     }
-  }, [auth.authenticated])
+  }, [auth.ready, auth.authenticated, auth.userId])
 
   useEffect(() => {
-    if (!auth.authenticated) return
+    if (!auth.ready || !auth.authenticated || !auth.userId) return
     let cancelled = false
     fetchSellerDashboard().then(
       (d) => {
@@ -199,7 +199,7 @@ function SellerDashboardPage({
     return () => {
       cancelled = true
     }
-  }, [auth.authenticated])
+  }, [auth.ready, auth.authenticated, auth.userId])
 
   useEffect(() => {
     if (!auth.walletAddress) return
@@ -213,9 +213,9 @@ function SellerDashboardPage({
   }, [auth.walletAddress])
 
   useEffect(() => {
-    if (!auth.authenticated) return
+    if (!auth.ready || !auth.authenticated || !auth.userId) return
     void fetchWalletWithdrawals().then(setWithdrawals).catch(() => setWithdrawals([]))
-  }, [auth.authenticated])
+  }, [auth.ready, auth.authenticated, auth.userId])
 
   const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill' | 'refund') => {
     setBusy(spotId)

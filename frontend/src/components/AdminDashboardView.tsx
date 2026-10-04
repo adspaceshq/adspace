@@ -34,7 +34,7 @@ import {
   resolveSpotDispute,
 } from '@/lib/auth-api'
 import { cardPhoto, sellerDisplay, surfaceLabels } from '@/lib/listings'
-import type { ApiListing, DisputeItem, PayoutItem, ReviewPolicy, ReviewPolicyRequest } from '@/lib/types'
+import type { ApiListing, DisputeItem, PayoutItem, ReviewPolicyRequest } from '@/lib/types'
 
 const defaultPolicy = (listing: ApiListing): ReviewPolicyRequest => ({
   feeBps: 250,
@@ -81,10 +81,10 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
   const [reconciling, setReconciling] = useState(false)
   const [reconcileNote, setReconcileNote] = useState<string>()
   const [approval, setApproval] = useState<ApiListing | null>(null)
-  const [policy, setPolicy] = useState<ReviewPolicy | null>(null)
+  const [policy, setPolicy] = useState<ReviewPolicyRequest | null>(null)
 
   const load = useCallback(async () => {
-    if (!auth.authenticated) return
+    if (!auth.ready || !auth.authenticated || !auth.userId) return
     try {
       setQueue(await fetchReviewQueue())
       setError(undefined)
@@ -106,10 +106,10 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
       setDisputes(null)
       setResolutionError(e instanceof Error ? e.message : 'Could not load disputes.')
     }
-  }, [auth.authenticated])
+  }, [auth.ready, auth.authenticated, auth.userId])
 
   useEffect(() => {
-    if (!auth.authenticated) return
+    if (!auth.ready || !auth.authenticated || !auth.userId) return
     let cancelled = false
     fetchReviewQueue().then(
       (q) => { if (!cancelled) { setQueue(q); setError(undefined) } },
@@ -124,9 +124,9 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
       (e) => { if (!cancelled) { setDisputes(null); setResolutionError(e instanceof Error ? e.message : 'Could not load disputes.') } },
     )
     return () => { cancelled = true }
-  }, [auth.authenticated])
+  }, [auth.ready, auth.authenticated, auth.userId])
 
-  const act = async (slug: string, action: 'approve' | 'reject', customPolicy?: ReviewPolicy | ReviewPolicyRequest) => {
+  const act = async (slug: string, action: 'approve' | 'reject', customPolicy?: ReviewPolicyRequest) => {
     let succeeded = false
     setBusy(slug)
     setError(undefined)
@@ -582,7 +582,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                   min="0"
                   max="100"
                   step="0.01"
-                  value={policy.platformFeeBps / 100}
+                  value={(policy.platformFeeBps ?? policy.feeBps ?? 0) / 100}
                   onChange={(e) =>
                     setPolicy({ ...policy, platformFeeBps: Math.round(Number(e.target.value) * 100) })
                   }
@@ -668,7 +668,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                 type="button"
                 disabled={busy === approval.slug}
                 onClick={() =>
-                  void act(approval.slug, 'approve').then((ok) => {
+                  void act(approval.slug, 'approve', policy).then((ok) => {
                     if (ok) setApproval(null)
                   })
                 }

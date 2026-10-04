@@ -112,7 +112,7 @@ export default function StoreProvider({ children }: { children: React.ReactNode 
         title: listing.title,
         surface: listing.surface,
         story: listing.description,
-        ...(listing.image.startsWith("data:image/") ? { image: listing.image } : {}),
+        ...(listing.image ? { image: listing.image } : {}),
         fabric: listing.fabric,
         mode: listing.priceType,
         minIncrement: listing.minIncrement,

@@ -195,11 +195,11 @@ export function normalizeFabric(value: unknown): string {
   return /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : DEFAULT_FABRIC;
 }
 
-/* Mac photos (public/mac/). The lid and the top-down deck shot are both sticker surfaces on the gear
+/* Mac photos. The lid and the top-down deck shot are both sticker surfaces on the gear
  * spec sheet; the open shot is only the card hero. */
-export const MAC_LID_PHOTO = "/mac/macbook.png";
-export const MAC_HERO_PHOTO = "/mac/macbook-open.png";
-export const MAC_INSIDE_PHOTO = "/mac/mac-inside.png";
+export const MAC_LID_PHOTO = "https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124550/adspaces/static/mac/macbook.png";
+export const MAC_HERO_PHOTO = "https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124551/adspaces/static/mac/macbook-open.webp";
+export const MAC_INSIDE_PHOTO = "https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124556/adspaces/static/mac/mac-inside.png";
 
 /**
  * Spec-sheet view ids. A sticker lives on exactly one view — the lid (`LID_VIEW_ID`) or the deck

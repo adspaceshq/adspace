@@ -19,7 +19,17 @@ import { cardPhoto, listingUrl, sellerDisplay } from '@/lib/listings'
 import { useStore } from '@/components/StoreProvider'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
 
-const HERO_IMAGES = ['/hero-1.png', '/hero-2.png', '/hero-3.png']
+const HERO_IMAGES = [
+  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124082/adspaces/static/landing/hero-1.png',
+  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124086/adspaces/static/landing/hero-2.png',
+  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124090/adspaces/static/landing/hero-3.png',
+]
+const STEP_IMAGES = [
+  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124092/adspaces/static/landing/step-1.jpg',
+  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124094/adspaces/static/landing/step-2.jpg',
+  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124096/adspaces/static/landing/step-3.jpg',
+]
+const CTA_GRADIENT_IMAGE = 'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124097/adspaces/static/landing/cta-gradient.jpg'
 
 /**
  * Step panel visual. Cover-crops its image so the BOX can resize freely.
@@ -210,7 +220,7 @@ export default function Home() {
                       aria-current={active}
                       className="relative h-full min-h-[300px] overflow-hidden rounded-3xl bg-[#0a1730] md:min-h-[440px]"
                     >
-                      <StepImage src={`/hero-${i + 1}.png`} label={s.title} icon={<s.icon size={24} />} />
+                      <StepImage src={STEP_IMAGES[i] ?? HERO_IMAGES[i] ?? HERO_IMAGES[0]} label={s.title} icon={<s.icon size={24} />} />
                     </article>
                     <div className="px-1 pt-6">
                       <h3 className="text-2xl lowercase tracking-tight text-[#020817]">{s.title}</h3>
@@ -238,9 +248,9 @@ export default function Home() {
               <>
                 <div className="grid gap-x-6 gap-y-10 md:grid-cols-2 lg:grid-cols-3" aria-label="Example spaces">
                   {[
-                    { src: '/hero-1.png', title: 'Suitcase to TOKEN2049', seller: '@coinempress' },
-                    { src: '/hero-2.png', title: 'Ironman kit + frame', seller: '@winternet' },
-                    { src: '/hero-3.png', title: 'MacBook lid auction', seller: '@VynseDev' },
+                    { src: HERO_IMAGES[0], title: 'Suitcase to TOKEN2049', seller: '@coinempress' },
+                    { src: HERO_IMAGES[1], title: 'Ironman kit + frame', seller: '@winternet' },
+                    { src: HERO_IMAGES[2], title: 'MacBook lid auction', seller: '@VynseDev' },
                   ].map((ex) => (
                     <div key={ex.title} className="block">
                       <div className="relative overflow-hidden rounded-2xl bg-[#e9edfe]">
@@ -435,7 +445,7 @@ export default function Home() {
               <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src="/cta-gradient.jpg"
+                  src={CTA_GRADIENT_IMAGE}
                   alt=""
                   className="h-full w-full object-cover object-center opacity-90"
                 />

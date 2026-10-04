@@ -187,10 +187,12 @@ export interface SellerDashboardListing {
   total: number;
   paid: number;
   revenue: number;
+  platformFeeBps?: number;
   feeBps?: number;
   upliftFeeBps?: number;
   maxFeeBps?: number;
   reviewWindowSeconds?: number;
+  settlementWindowHours?: number;
   deliveryDeadline?: string;
 }
 
@@ -267,10 +269,12 @@ export interface PayoutItem {
 export interface DisputeItem extends Omit<PayoutItem, 'releasedAt'> { reason?: string }
 
 export interface ReviewPolicyRequest {
-  feeBps: number;
+  feeBps?: number;
+  platformFeeBps?: number;
   upliftFeeBps: number;
   maxFeeBps: number;
-  reviewWindowSeconds: number;
+  reviewWindowSeconds?: number;
+  settlementWindowHours?: number;
   deliveryDeadline: string;
 }
 

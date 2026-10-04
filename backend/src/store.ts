@@ -1,6 +1,6 @@
 import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, ReviewPolicy, SellerDashboard, SessionUser, SponsorDashboard, SponsorSpotStatus, Spot } from "./types.js";
+import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, SponsorDashboard, SponsorSpotStatus, Spot } from "./types.js";
 import type { ChainPublication } from "./listing-chain.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
