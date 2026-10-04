@@ -25,13 +25,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="flex min-h-full flex-col">
         <PrivyAppProvider>
-          <AuthSessionProvider>
-            <StoreProvider>
-              <ToastProvider>
+          <ToastProvider>
+            <AuthSessionProvider>
+              <StoreProvider>
                 <SurfacePickerProvider>{children}</SurfacePickerProvider>
-              </ToastProvider>
-            </StoreProvider>
-          </AuthSessionProvider>
+              </StoreProvider>
+            </AuthSessionProvider>
+          </ToastProvider>
         </PrivyAppProvider>
       </body>
     </html>
