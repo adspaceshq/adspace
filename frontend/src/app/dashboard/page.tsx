@@ -545,6 +545,20 @@ function SellerDashboardPage({
                           </Link>
                         </div>
 
+                        <div className="mb-4 grid gap-2 rounded-2xl border border-[#e7e5e0] bg-white p-3 sm:grid-cols-4">
+                          {[
+                            ['Submitted', 'Reviewer checks terms'],
+                            ['Terms ready', 'Creator accepts offer'],
+                            ['Live', 'Created on-chain'],
+                            ['Settlement', 'Proof and payout'],
+                          ].map(([label, description]) => (
+                            <div key={label} className="rounded-xl bg-[#fafaf7] px-3 py-2">
+                              <p className="text-[12px] font-semibold text-[#020817]">{label}</p>
+                              <p className="mt-0.5 text-[11px] leading-snug text-[#64748b]">{description}</p>
+                            </div>
+                          ))}
+                        </div>
+
                         {data.listings.length === 0 ? (
                           <Empty text="You haven’t listed a space yet." action="List your first space" href="/list" />
                         ) : (
@@ -1164,37 +1178,57 @@ function MetricItem({
 
 function ListingStatusBadge({ status, deadline }: { status: string; deadline: string }) {
   const ended = isEnded(deadline)
-  if (status === 'active') {
-    return (
-      <span className={`inline-flex items-center gap-1.5 font-medium text-xs ${
-        ended ? 'text-[#64748b]' : 'text-emerald-700'
-      }`}>
-        <span className={`h-1.5 w-1.5 rounded-full ${ended ? 'bg-slate-400' : 'bg-emerald-500'}`} />
-        {ended ? 'Ended' : 'Active'}
-      </span>
-    )
-  }
-  if (status === 'approved') {
-    return (
-      <span className="inline-flex items-center gap-1.5 font-medium text-xs text-[#4166fb]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#4166fb]" />
-        Approved
-      </span>
-    )
-  }
-  if (status === 'submitted') {
-    return (
-      <span className="inline-flex items-center gap-1.5 font-medium text-xs text-amber-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-        Under review
-      </span>
-    )
-  }
+  const statusText =
+    status === 'active'
+      ? ended
+        ? 'Ended'
+        : 'Live'
+      : status === 'approved'
+      ? 'Terms ready'
+      : status === 'submitted'
+      ? 'In review'
+      : 'Closed'
+  const helper =
+    status === 'active'
+      ? ended
+        ? 'Campaign ended'
+        : 'Visible in marketplace'
+      : status === 'approved'
+      ? 'Accept to publish on-chain'
+      : status === 'submitted'
+      ? 'Waiting for reviewer'
+      : 'Not accepting spots'
+  const dotClass =
+    status === 'active'
+      ? ended
+        ? 'bg-slate-400'
+        : 'bg-emerald-500'
+      : status === 'approved'
+      ? 'bg-[#4166fb]'
+      : status === 'submitted'
+      ? 'bg-amber-500'
+      : 'bg-slate-400'
+  const textClass =
+    status === 'active'
+      ? ended
+        ? 'text-[#64748b]'
+        : 'text-emerald-700'
+      : status === 'approved'
+      ? 'text-[#4166fb]'
+      : status === 'submitted'
+      ? 'text-amber-700'
+      : 'text-[#64748b]'
+
   return (
-    <span className="inline-flex items-center gap-1.5 font-medium text-xs text-[#64748b]">
-      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-      Closed
-    </span>
+    <div>
+      <span className={`inline-flex items-center gap-1.5 font-medium text-xs ${textClass}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+        {statusText}
+      </span>
+      <span className="mt-0.5 block max-w-[150px] text-[11px] leading-snug text-[#64748b]">
+        {helper}
+      </span>
+    </div>
   )
 }
 
