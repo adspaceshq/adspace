@@ -562,109 +562,18 @@ function SellerDashboardPage({
                         {data.listings.length === 0 ? (
                           <Empty text="You haven’t listed a space yet." action="List your first space" href="/list" />
                         ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full min-w-[640px] text-left text-sm">
-                              <thead>
-                                <tr className="border-b border-[#ecebe6] text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
-                                  <th className="pb-2.5 pr-4">Space</th>
-                                  <th className="pb-2.5 px-3">Status</th>
-                                  <th className="pb-2.5 px-3">Spots</th>
-                                  <th className="pb-2.5 px-3">Pricing</th>
-                                  <th className="pb-2.5 px-3">Revenue</th>
-                                  <th className="pb-2.5 pl-3 text-right">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[#ecebe6]/60">
-                                {data.listings.map((l) => (
-                                  <tr key={l.id} className="transition hover:bg-black/[0.015]">
-                                    <td className="py-2.5 pr-4">
-                                      <div className="flex items-center gap-3">
-                                        <div className="h-10 w-14 shrink-0 overflow-hidden rounded-lg bg-[#f1f0ec] shadow-2xs">
-                                          {cardPhoto(l) ? (
-                                            // eslint-disable-next-line @next/next/no-img-element
-                                            <img src={cardPhoto(l)} alt="" className="h-full w-full object-cover" />
-                                          ) : (
-                                            <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
-                                              Space
-                                            </div>
-                                          )}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <span className="block truncate font-medium text-[#020817] text-[13px]">
-                                            {l.title}
-                                          </span>
-                                          {l.reviewNote && (
-                                            <span className="mt-0.5 block max-w-[240px] text-[11px] font-normal text-[#dc2626]">
-                                              Note: {l.reviewNote}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                      <ListingStatusBadge status={l.status} deadline={l.deadline} />
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f2] px-2.5 py-0.5 font-mono text-[11px] font-normal text-[#020817]">
-                                        {l.sold} / {l.open} sold
-                                      </span>
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap text-[12px] font-normal text-[#64748b]">
-                                      {l.mode === 'fixed' ? 'Fixed' : 'Auction'}
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap font-mono text-[13px] font-normal text-[#020817]">
-                                      {money(l.revenue, l.currency)}
-                                    </td>
-                                    <td className="py-2.5 pl-3 whitespace-nowrap text-right">
-                                      <div className="flex items-center justify-end gap-1.5">
-                                        {l.status === 'active' && (
-                                          <Link
-                                            href={`/listings/${l.slug}`}
-                                            className="inline-flex rounded-full border border-[#d8d6d0] px-3 py-0.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] hover:text-[#4166fb]"
-                                          >
-                                            View
-                                          </Link>
-                                        )}
-                                        {l.status === 'approved' && (
-                                          <button
-                                            disabled={busy === l.slug}
-                                            onClick={() => void openTerms(l.slug)}
-                                            className="rounded-full bg-[#4166fb] px-3 py-0.5 text-xs font-normal text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Accept terms
-                                          </button>
-                                        )}
-                                        {l.status !== 'closed' ? (
-                                          <button
-                                            disabled={busy === l.slug}
-                                            onClick={() => void actListing(l.slug, 'close')}
-                                            className="rounded-full border border-[#d8d6d0] px-3 py-0.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Close
-                                          </button>
-                                        ) : (
-                                          <button
-                                            disabled={busy === l.slug}
-                                            onClick={() => void actListing(l.slug, 'reopen')}
-                                            className="rounded-full bg-[#4166fb] px-3 py-0.5 text-xs font-normal text-white transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Resubmit
-                                          </button>
-                                        )}
-                                        <button
-                                          disabled={busy === l.slug}
-                                          onClick={() => void actListing(l.slug, 'delete')}
-                                          className="rounded-full p-1 text-[#a1a1aa] transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 cursor-pointer"
-                                          title="Delete space"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          <div className="grid gap-3">
+                            {data.listings.map((listing) => (
+                              <SellerListingCard
+                                key={listing.id}
+                                listing={listing}
+                                busy={busy === listing.slug}
+                                onAcceptTerms={() => void openTerms(listing.slug)}
+                                onClose={() => void actListing(listing.slug, 'close')}
+                                onReopen={() => void actListing(listing.slug, 'reopen')}
+                                onDelete={() => void actListing(listing.slug, 'delete')}
+                              />
+                            ))}
                           </div>
                         )}
                       </section>
@@ -1173,6 +1082,111 @@ function MetricItem({
         {value}
       </div>
     </div>
+  )
+}
+
+function SellerListingCard({
+  listing,
+  busy,
+  onAcceptTerms,
+  onClose,
+  onReopen,
+  onDelete,
+}: {
+  listing: SellerDashboard['listings'][number]
+  busy: boolean
+  onAcceptTerms: () => void
+  onClose: () => void
+  onReopen: () => void
+  onDelete: () => void
+}) {
+  const photo = cardPhoto(listing)
+
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="h-16 w-24 shrink-0 overflow-hidden rounded-xl bg-[#f1f0ec] shadow-2xs">
+            {photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
+                Space
+              </div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-[14px] font-semibold text-[#020817]">{listing.title}</h3>
+              <span className="rounded-full bg-[#f4f4f2] px-2 py-0.5 text-[11px] font-medium text-[#64748b]">
+                {listing.mode === 'fixed' ? 'Fixed price' : 'Auction'}
+              </span>
+            </div>
+            {listing.reviewNote && (
+              <p className="mt-1 max-w-[520px] text-[12px] text-[#dc2626]">
+                Reviewer note: {listing.reviewNote}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#64748b]">
+              <ListingStatusBadge status={listing.status} deadline={listing.deadline} />
+              <span className="font-mono text-[#020817]">{listing.sold} sold / {listing.open} open</span>
+              <span className="font-mono text-[#020817]">{money(listing.revenue, listing.currency)} revenue</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {listing.status === 'active' && (
+            <Link
+              href={`/listings/${listing.slug}`}
+              className="inline-flex rounded-full border border-[#d8d6d0] px-3 py-1.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] hover:text-[#4166fb]"
+            >
+              View
+            </Link>
+          )}
+          {listing.status === 'approved' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onAcceptTerms}
+              className="rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+            >
+              Accept terms
+            </button>
+          )}
+          {listing.status !== 'closed' ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onClose}
+              className="rounded-full border border-[#d8d6d0] px-3 py-1.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
+            >
+              Close
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onReopen}
+              className="rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+            >
+              Resubmit
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDelete}
+            className="grid h-8 w-8 place-items-center rounded-full text-[#a1a1aa] transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 cursor-pointer"
+            title="Delete space"
+            aria-label={`Delete ${listing.title}`}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+    </article>
   )
 }
 
