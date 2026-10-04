@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { useAuthSession } from '@/components/AuthSessionProvider'
+import { useToast } from '@/components/ToastProvider'
 import {
   approveReviewListing,
   fetchDisputeQueue,
@@ -57,6 +58,7 @@ interface AdminDashboardViewProps {
 
 export default function AdminDashboardView({ currentTab = 'admin', onTabChange }: AdminDashboardViewProps) {
   const auth = useAuthSession()
+  const toast = useToast()
   const [queue, setQueue] = useState<ApiListing[] | null>(null)
   const [error, setError] = useState<string>()
   const [successNote, setSuccessNote] = useState<string>()
@@ -130,10 +132,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         const appliedPolicy = customPolicy ?? policy ?? defaultPolicy(listing)
         await approveReviewListing(slug, appliedPolicy)
         setSuccessNote(`Space "${listing.title}" approved! Seller can now accept commercial terms and publish to devnet.`)
+        toast.success('Space approved', 'Commercial terms were sent to the creator.')
       } else {
         const reason = reasons[slug]?.trim() || ''
         await rejectReviewListing(slug, reason)
         setSuccessNote(`Space "${slug}" rejected. Rejection reason returned to creator.`)
+        toast.info('Space rejected', 'The creator can revise and resubmit.')
       }
       setReasons((prev) => {
         const next = { ...prev }
@@ -143,7 +147,9 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
       await load()
       succeeded = true
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed.')
+      const message = e instanceof Error ? e.message : 'Action failed.'
+      setError(message)
+      toast.error('Review action failed', message)
     } finally {
       setBusy(undefined)
     }
@@ -156,9 +162,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
     try {
       const res = await reconcileChain()
       setReconcileNote(`Devnet synced: checked ${res.checked}, updated ${res.updated}, missing ${res.missing}.`)
+      toast.success('Devnet synced', `${res.updated} updated, ${res.missing} missing.`)
       await load()
     } catch (e) {
-      setReconcileNote(e instanceof Error ? e.message : 'Reconciliation failed.')
+      const message = e instanceof Error ? e.message : 'Reconciliation failed.'
+      setReconcileNote(message)
+      toast.error('Sync failed', message)
     } finally {
       setReconciling(false)
     }
@@ -607,9 +616,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                           resolutionShares[d.spotId] ?? 5000,
                           decisions[d.spotId].trim(),
                         )
+                        toast.success('Dispute resolved', `${d.listingTitle} ${d.spotLabel} was updated.`)
                         await load()
                       } catch (e) {
-                        setResolutionError(e instanceof Error ? e.message : 'Resolution failed.')
+                        const message = e instanceof Error ? e.message : 'Resolution failed.'
+                        setResolutionError(message)
+                        toast.error('Resolution failed', message)
                       } finally {
                         setResolutionBusy(undefined)
                       }
@@ -655,9 +667,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                       setPayError(undefined)
                       try {
                         await payApiSpot(p.spotId, `auto-release-${Date.now()}`)
+                        toast.success('Payout recorded', `${p.listingTitle} ${p.spotLabel} is marked paid.`)
                         await load()
                       } catch (e) {
-                        setPayError(e instanceof Error ? e.message : 'Payout failed.')
+                        const message = e instanceof Error ? e.message : 'Payout failed.'
+                        setPayError(message)
+                        toast.error('Payout failed', message)
                       } finally {
                         setPayBusy(undefined)
                       }
