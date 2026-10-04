@@ -657,7 +657,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                 transition={{ duration: 0.4 }}
                 className="text-2xl sm:text-[32px] font-medium tracking-tight text-[#020817]"
               >
-                {isTee ? 'List your T-shirt' : 'List your Mac lid'}
+                {isTee ? 'List your T-shirt' : 'List your gear surface'}
               </motion.h1>
 
               <motion.p
@@ -677,7 +677,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
               {studioCanvas}
               <div className="flex flex-col gap-6">
 
-                  {/* Step 1: Pricing Format (Centered, sleek motion segmented control) */}
+                  {/* Step 1: sale type */}
                   <motion.div
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -689,7 +689,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         Step 01
                       </span>
                       <h2 className="text-xl font-bold tracking-tight text-[#020817] sm:text-2xl">
-                        Pricing Format
+                        Choose sale type
                       </h2>
                     </div>
 
@@ -754,6 +754,35 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                             : 'Choose how sponsors will buy your spots. This controls the pricing fields and review terms.'}
                         </motion.p>
                       </AnimatePresence>
+
+                      <div className="mt-4 grid gap-2 text-left sm:grid-cols-2">
+                        {([
+                          {
+                            key: 'fixed',
+                            title: 'Fixed price',
+                            copy: 'Sponsors claim spots immediately at your set price.',
+                          },
+                          {
+                            key: 'auction',
+                            title: 'Auction',
+                            copy: 'Sponsors bid until the deadline; reviewer sets auction fees.',
+                          },
+                        ] as const).map((item) => (
+                          <button
+                            key={item.key}
+                            type="button"
+                            onClick={() => setPriceType(item.key)}
+                            className={`rounded-2xl border p-3 text-left transition ${
+                              priceType === item.key
+                                ? 'border-[#4166fb] bg-[#f3f6ff] shadow-[0_10px_30px_rgba(65,102,251,0.12)]'
+                                : 'border-[#e7e5e0] bg-white hover:border-[#cfd6fb]'
+                            }`}
+                          >
+                            <span className="block text-[13px] font-semibold text-[#020817]">{item.title}</span>
+                            <span className="mt-1 block text-[12px] leading-relaxed text-[#64748b]">{item.copy}</span>
+                          </button>
+                        ))}
+                      </div>
 
                       {priceType === 'auction' && (
                         <motion.div
