@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowLeft, BadgeCheck, ShieldCheck, Wallet } from 'lucide-react'
+import { ArrowLeft, BadgeCheck, LayoutDashboard, Plus, ShieldCheck, Wallet } from 'lucide-react'
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import PageShell from '@/components/PageShell'
@@ -190,17 +190,24 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
           </div>
           {isOwner && !editing && (
             <span className="flex shrink-0 items-center gap-2 sm:ml-auto">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#020817] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#0f1a33] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
+              >
+                <LayoutDashboard className="h-4 w-4" aria-hidden />
+                Dashboard
+              </Link>
               <button
                 type="button"
                 onClick={startEditing}
-                className="rounded-full border border-[#e7e5e0] bg-white px-5 py-2.5 text-sm font-medium text-[#020817] transition hover:border-[#c3cdfd]"
+                className="rounded-full border border-[#e7e5e0] bg-white px-5 py-2.5 text-sm font-medium text-[#020817] transition hover:border-[#c3cdfd] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 Edit profile
               </button>
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="rounded-full px-4 py-2.5 text-sm font-medium text-[#020817]/60 transition hover:text-[#020817]"
+                className="rounded-full px-4 py-2.5 text-sm font-medium text-[#020817]/60 transition hover:text-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 Log out
               </button>
@@ -228,7 +235,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
             <button
               type="button"
               onClick={startEditing}
-              className="mt-3 inline-flex items-center rounded-full bg-[#020817] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#0f1a33]"
+              className="mt-3 inline-flex items-center rounded-full bg-[#020817] px-5 py-2.5 text-sm font-medium text-white transition hover:bg-[#0f1a33] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
             >
               Complete profile
             </button>
@@ -244,8 +251,8 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
                 onChange={(e) => setBioDraft(e.target.value)}
                 maxLength={280}
                 rows={3}
-                placeholder="What do you put ads on?"
-                className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 text-[15px] outline-none transition focus:border-[#4166fb]"
+                placeholder="What surfaces do you sell and who sees them?"
+                className="mt-2 block w-full rounded-xl border border-[#e7e5e0] px-4 py-3 text-[15px] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
               />
             </label>
             <p className="mt-1 text-right text-xs text-[#64748b]">{bioDraft.length}/280</p>
@@ -262,7 +269,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
                 type="button"
                 onClick={() => void save()}
                 disabled={saving}
-                className="inline-flex items-center rounded-full bg-[#020817] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
+                className="inline-flex items-center rounded-full bg-[#020817] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 {saving ? 'Saving...' : 'Save profile'}
               </button>
@@ -270,7 +277,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
                 type="button"
                 onClick={() => setEditing(false)}
                 disabled={saving}
-                className="inline-flex items-center rounded-full border border-[#e7e5e0] bg-white px-6 py-2.5 text-sm font-medium text-[#020817] transition hover:border-[#c3cdfd] disabled:opacity-60"
+                className="inline-flex items-center rounded-full border border-[#e7e5e0] bg-white px-6 py-2.5 text-sm font-medium text-[#020817] transition hover:border-[#c3cdfd] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 Cancel
               </button>
@@ -294,22 +301,34 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
                 <ShieldCheck className="mt-0.5 h-4 w-4 text-[#4166fb]" aria-hidden />
                 <div><p className="text-sm font-medium text-[#020817]">Two-factor authentication</p><p className="text-xs text-[#64748b]">Required for withdrawals</p></div>
               </div>
-              {mfaEnabled ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={setupMfa} className="rounded-full bg-[#020817] px-4 py-2 text-sm font-medium text-white">Set up MFA</button>}
+              {mfaEnabled ? <span className="text-sm font-semibold text-emerald-700">Enabled</span> : <button type="button" onClick={setupMfa} className="rounded-full bg-[#020817] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#0f1a33] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2">Set up MFA</button>}
             </div>
           </div>
         )}
 
         {!hydrated ? (
-          <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center text-sm text-[#64748b]">
-            Loading spaces...
-          </div>
+          <ProfileListingsSkeleton />
         ) : mine.length === 0 ? (
-          <div className="rounded-2xl border border-[#e7e5e0] bg-white p-12 text-center">
-            <h3 className="text-xl">No spaces from {display} yet.</h3>
-            <p className="mt-2 text-sm text-[#64748b]">Try another seller or list your own surface.</p>
-            <Link href="/browse" className="mt-6 inline-flex items-center rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#0f1a33]">
-              Browse all spaces
-            </Link>
+          <div className="rounded-2xl border border-dashed border-[#d8d6d0] bg-white/70 p-12 text-center">
+            <h3 className="text-xl font-medium text-[#020817]">
+              {isOwner ? 'Your public profile is ready.' : `No spaces from ${display} yet.`}
+            </h3>
+            <p className="mx-auto mt-2 max-w-md text-sm text-[#64748b]">
+              {isOwner
+                ? 'List your first surface so sponsors can discover your audience and buy placements.'
+                : 'This creator has not published a live space yet. Explore other surfaces in the marketplace.'}
+            </p>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              {isOwner && (
+                <Link href="/list" className="inline-flex items-center gap-1.5 rounded-full bg-[#020817] px-6 py-3 text-sm font-medium text-white transition hover:bg-[#0f1a33] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2">
+                  <Plus className="h-4 w-4" aria-hidden />
+                  List your first space
+                </Link>
+              )}
+              <Link href="/browse" className="inline-flex items-center rounded-full border border-[#e7e5e0] bg-white px-6 py-3 text-sm font-medium text-[#020817] transition hover:border-[#c3cdfd] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2">
+                Browse all spaces
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -325,6 +344,22 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
     <Footer />
   </>
 )
+}
+
+function ProfileListingsSkeleton() {
+  return (
+    <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3" aria-label="Loading profile spaces">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+          <div className="aspect-[4/3] animate-pulse rounded-xl bg-[#ecebe6]" />
+          <div className="mt-4 space-y-2">
+            <div className="h-4 w-2/3 animate-pulse rounded-full bg-[#ecebe6]" />
+            <div className="h-3 w-1/2 animate-pulse rounded-full bg-[#f1f0ec]" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function ProfileStat({ label, value }: { label: string; value: string }) {
