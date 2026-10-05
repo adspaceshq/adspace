@@ -573,6 +573,36 @@ function SellerDashboardPage({
                           ))}
                         </div>
 
+                        {data.listings.some((listing) => listing.status === 'approved') && (
+                          <div className="mb-4 rounded-2xl border border-[#c7d2fe] bg-[#eef2ff] p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-[13px] font-semibold text-[#020817]">
+                                  Commercial terms are ready
+                                </p>
+                                <p className="mt-1 text-[12px] leading-relaxed text-[#526079]">
+                                  A reviewer approved your space. Accept the terms to create the listing and spots on-chain.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2 sm:justify-end">
+                                {data.listings
+                                  .filter((listing) => listing.status === 'approved')
+                                  .map((listing) => (
+                                    <button
+                                      key={listing.id}
+                                      type="button"
+                                      disabled={busy === listing.slug}
+                                      onClick={() => void openTerms(listing.slug)}
+                                      className="inline-flex items-center rounded-full bg-[#4166fb] px-4 py-2 text-[12px] font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+                                    >
+                                      {busy === listing.slug ? 'Opening…' : `Review terms: ${listing.title}`}
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {data.listings.length === 0 ? (
                           <Empty text="You haven’t listed a space yet." action="List your first space" href="/list" />
                         ) : (
