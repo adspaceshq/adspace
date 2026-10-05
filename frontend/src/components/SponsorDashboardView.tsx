@@ -176,6 +176,35 @@ export default function SponsorDashboardView() {
 
   if (!data) return <Skeleton />
 
+  const campaignGroups = [
+    {
+      key: 'artwork',
+      title: 'Needs artwork',
+      description: 'Upload or replace campaign assets so the creator can start production.',
+      campaigns: data.campaigns.filter((campaign) => campaign.artworkDue),
+    },
+    {
+      key: 'verify',
+      title: 'Ready to verify',
+      description: 'Review delivery proof and confirm completion, or report a problem.',
+      campaigns: data.campaigns.filter((campaign) => campaign.status === 'delivered' || campaign.status === 'disputed'),
+    },
+    {
+      key: 'active',
+      title: 'In progress',
+      description: 'Spots awaiting creator approval or currently in production.',
+      campaigns: data.campaigns.filter(
+        (campaign) => !campaign.artworkDue && (campaign.status === 'pending' || campaign.status === 'sold'),
+      ),
+    },
+    {
+      key: 'closed',
+      title: 'Closed',
+      description: 'Completed, paid, refunded, or no longer requiring action.',
+      campaigns: data.campaigns.filter((campaign) => campaign.status === 'paid' || campaign.status === 'refunded'),
+    },
+  ] as const
+
   return (
     <>
       {/* Header */}
@@ -253,28 +282,45 @@ export default function SponsorDashboardView() {
               </Link>
             </div>
           ) : (
-            <ul className="grid gap-3">
-              {data.campaigns.map((campaign) => (
-                <CampaignRow
-                  key={campaign.spotId}
-                  campaign={campaign}
-                  busy={busy === campaign.spotId}
-                  disputing={disputing === campaign.spotId}
-                  disputeReason={disputeReason}
-                  onDisputeReason={setDisputeReason}
-                  onStartDispute={() => {
-                    setDisputing(campaign.spotId)
-                    setDisputeReason('')
-                  }}
-                  onCancelDispute={() => {
-                    setDisputing(null)
-                    setDisputeReason('')
-                  }}
-                  onFile={(file) => uploadArtwork(campaign.spotId, file)}
-                  onReview={(action) => void review(campaign.spotId, action)}
-                />
-              ))}
-            </ul>
+            <div className="space-y-5">
+              {campaignGroups
+                .filter((group) => group.campaigns.length > 0)
+                .map((group) => (
+                  <section key={group.key} className="space-y-2">
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <h3 className="text-[13px] font-semibold text-[#020817]">{group.title}</h3>
+                        <p className="text-[11px] text-[#64748b]">{group.description}</p>
+                      </div>
+                      <span className="rounded-full bg-[#f1f0ec] px-2.5 py-1 text-[11px] font-semibold text-[#64748b]">
+                        {group.campaigns.length}
+                      </span>
+                    </div>
+                    <ul className="grid gap-3">
+                      {group.campaigns.map((campaign) => (
+                        <CampaignRow
+                          key={campaign.spotId}
+                          campaign={campaign}
+                          busy={busy === campaign.spotId}
+                          disputing={disputing === campaign.spotId}
+                          disputeReason={disputeReason}
+                          onDisputeReason={setDisputeReason}
+                          onStartDispute={() => {
+                            setDisputing(campaign.spotId)
+                            setDisputeReason('')
+                          }}
+                          onCancelDispute={() => {
+                            setDisputing(null)
+                            setDisputeReason('')
+                          }}
+                          onFile={(file) => uploadArtwork(campaign.spotId, file)}
+                          onReview={(action) => void review(campaign.spotId, action)}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+            </div>
           )}
         </section>
 
