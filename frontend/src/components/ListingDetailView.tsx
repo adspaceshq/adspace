@@ -146,8 +146,16 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const isAuction = listing.priceType === 'auction'
   const ended = isEnded(listing.endsAt)
   const raised = listing.spots.reduce((a, s) => a + (s.bid ?? 0), 0)
+  const normHandle = (h: string) => h.trim().replace(/^@+/, '').toLowerCase()
+  const currentHandle = x?.handle ? normHandle(x.handle) : null
   const allBids = listing.spots.flatMap((sp) =>
-    (sp.bids ?? []).map((b) => ({ ...b, spotLabel: sp.label }))
+    (sp.bids ?? []).map((b) => ({
+      ...b,
+      spotId: sp.id,
+      spotLabel: sp.label,
+      isCurrentLeader: Boolean(sp.bidBy && normHandle(sp.bidBy) === normHandle(b.bidder) && sp.bid === b.amount),
+      isMine: Boolean(currentHandle && normHandle(b.bidder) === currentHandle),
+    }))
   ).sort((a, b) => +new Date(b.at) - +new Date(a.at))
   const totals = new Map<string, number>()
   for (const b of allBids) totals.set(b.bidder, (totals.get(b.bidder) ?? 0) + b.amount)
@@ -198,7 +206,6 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const shareUrl = (text: string) =>
     `https://x.com/intent/post?text=${encodeURIComponent(text + ` ${window.location.origin}${listingUrl(listing, listings)}`)}`
 
-  const normHandle = (h: string) => h.trim().replace(/^@+/, '').toLowerCase()
   const isOwner = !!x?.handle && normHandle(x.handle) === normHandle(listing.seller.handle || listing.seller.name)
 
   // Proof photos upload at full quality (no shrink), capped at the API's ~3 MB each.
@@ -703,8 +710,22 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
             <h2 className="mb-4 text-2xl">Latest bids.</h2>
             <div className="flex flex-col gap-2">
               {allBids.slice(0, 6).map((b, i) => (
-                <div key={`${b.at}-${i}`} className="flex items-center gap-3 rounded-xl border border-[#e7e5e0] bg-white px-5 py-3 text-sm">
+                <div key={`${b.at}-${i}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e7e5e0] bg-white px-5 py-3 text-sm">
                   <span className="font-semibold">{b.bidder}</span>
+                  {b.isMine && (
+                    <span className="rounded-full bg-[#020817] px-2 py-0.5 text-[11px] font-semibold text-white">
+                      Your bid
+                    </span>
+                  )}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      b.isCurrentLeader
+                        ? 'bg-[#ecfdf5] text-emerald-700'
+                        : 'bg-[#fff7ed] text-amber-700'
+                    }`}
+                  >
+                    {b.isCurrentLeader ? 'Leading' : 'Outbid'}
+                  </span>
                   <span className="text-[#64748b]">bid {formatMoney(b.amount, listing.currency)} on {b.spotLabel}</span>
                   <span className="ml-auto text-[13px] text-[#64748b]">{ago(b.at)}</span>
                 </div>
@@ -820,7 +841,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     </button>
                     <button type="submit" className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8]">
                       {PRIVY_ENABLED && (!x?.authenticated || !x.handle)
-                        ? (x?.loggingIn ? 'Redirecting...' : 'Log in with X')
+                        ? (x?.loggingIn ? 'Redirecting…' : 'Log in with X')
                         : 'Continue to pay'}
                     </button>
                   </div>
@@ -842,8 +863,14 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                         Bid (min {formatMoney(minBidFor(listing, modal.spot), listing.currency)})
                       </label>
                       <input
-                        id="modal-amount" required type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                        min={minBidFor(listing, modal.spot)} className={field} autoFocus
+                        id="modal-amount"
+                        required
+                        type="text"
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        className={field}
+                        autoFocus
                       />
                     </div>
                   )}
@@ -860,7 +887,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       Back
                     </button>
                     <button type="submit" disabled={paying} className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8] disabled:opacity-60">
-                      {paying ? 'Submitting...' : modal.mode === 'claim' ? 'Confirm claim' : 'Confirm bid'}
+                      {paying ? 'Submitting…' : modal.mode === 'claim' ? 'Confirm claim' : 'Confirm bid'}
                     </button>
                   </div>
                 </form>
