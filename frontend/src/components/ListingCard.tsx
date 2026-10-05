@@ -101,8 +101,16 @@ export default function ListingCard({ listing }: { listing: Listing }) {
             <Clock size={13} aria-hidden />
             {deadline}
           </span>
-          <span className="font-mono text-[11px] uppercase tracking-wide">
-            {isAuction ? `${demand.bids} bid${demand.bids === 1 ? '' : 's'}` : `${spotsLeft} open`}
+          <span
+            className={`rounded-full px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide ${
+              soldOut
+                ? 'bg-zinc-100 text-zinc-500'
+                : isAuction
+                  ? 'bg-indigo-50 text-indigo-700'
+                  : 'bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {soldOut ? 'Closed' : isAuction ? `${demand.bids} bid${demand.bids === 1 ? '' : 's'}` : `${spotsLeft} open`}
           </span>
         </div>
 
@@ -121,7 +129,9 @@ export default function ListingCard({ listing }: { listing: Listing }) {
               ? isAuction
                 ? 'All bids placed'
                 : 'All claimed'
-              : `${spotsLeft} spots left`}
+              : isAuction
+                ? `${spotsLeft} accepting bids`
+                : `${spotsLeft} spots left`}
           </span>
         </div>
       </div>

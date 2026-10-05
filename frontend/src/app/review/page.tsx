@@ -13,7 +13,17 @@ export default function ReviewPage() {
       <Header />
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-12 pt-4 md:pt-6">
         {!auth.ready ? (
-          <p className="py-24 text-center text-[#64748b]">Loading...</p>
+          <div className="mx-auto max-w-3xl py-16" aria-label="Loading reviewer dashboard">
+            <div className="animate-pulse space-y-5">
+              <div className="h-8 w-56 rounded-xl bg-[#eeede8]" />
+              <div className="h-4 w-full max-w-lg rounded-lg bg-[#f4f3ef]" />
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="h-20 rounded-2xl bg-[#f4f3ef]" />
+                <div className="h-20 rounded-2xl bg-[#f4f3ef]" />
+                <div className="h-20 rounded-2xl bg-[#f4f3ef]" />
+              </div>
+            </div>
+          </div>
         ) : !auth.authenticated ? (
           <section className="mx-auto max-w-lg py-16 text-center">
             <div className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full bg-[#020817] font-mono text-lg font-medium text-white shadow-sm">
