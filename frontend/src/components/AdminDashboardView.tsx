@@ -486,11 +486,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             </div>
 
             {/* Commercial Parameters Form */}
-            <div className="mt-5 grid grid-cols-2 gap-3.5">
+            <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <label className="block text-xs font-medium text-[#020817]">
                 Platform Fee (%)
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   min="0"
                   max="100"
                   step="0.01"
@@ -498,22 +499,25 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                   onChange={(e) =>
                     setPolicy({ ...policy, platformFeeBps: Math.round(Number(e.target.value) * 100) })
                   }
-                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                 />
+                <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Applied to every completed spot.</span>
               </label>
 
               <label className="block text-xs font-medium text-[#020817]">
                 Settlement Window (hours)
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   min="1"
                   step="1"
                   value={policy.settlementWindowHours}
                   onChange={(e) =>
                     setPolicy({ ...policy, settlementWindowHours: Number(e.target.value) })
                   }
-                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                 />
+                <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Time allowed before settlement actions.</span>
               </label>
 
               {approval.mode === 'auction' && (
@@ -521,7 +525,8 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                   <label className="block text-xs font-medium text-[#020817]">
                     Uplift Fee (%)
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       min="0"
                       max="100"
                       step="0.01"
@@ -529,14 +534,16 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                       onChange={(e) =>
                         setPolicy({ ...policy, upliftFeeBps: Math.round(Number(e.target.value) * 100) })
                       }
-                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                     />
+                    <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Fee on auction upside above starting price.</span>
                   </label>
 
                   <label className="block text-xs font-medium text-[#020817]">
                     Maximum Fee (%)
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       min="0"
                       max="100"
                       step="0.01"
@@ -544,13 +551,14 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                       onChange={(e) =>
                         setPolicy({ ...policy, maxFeeBps: Math.round(Number(e.target.value) * 100) })
                       }
-                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                     />
+                    <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Caps total platform fees for this auction.</span>
                   </label>
                 </>
               )}
 
-              <label className="col-span-2 block text-xs font-medium text-[#020817]">
+              <label className="block text-xs font-medium text-[#020817] sm:col-span-2">
                 Proof Delivery Deadline
                 <input
                   type="datetime-local"
@@ -558,21 +566,22 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                   onChange={(e) =>
                     setPolicy({ ...policy, deliveryDeadline: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                 />
+                <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Creator should upload proof before this deadline.</span>
               </label>
             </div>
 
-            <p className="mt-4 text-[11px] leading-relaxed text-[#64748b]">
-              Approval sends these commercial terms to the creator. Once the creator accepts the terms, the listing is published to the Solana marketplace.
-            </p>
+            <div className="mt-4 rounded-xl border border-[#dbe4ff] bg-[#f6f8ff] px-3 py-2.5 text-[11px] leading-relaxed text-[#526079]">
+              Approval only sends these commercial terms to the creator. Nothing is created on-chain until the creator accepts and publishes.
+            </div>
 
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 type="button"
                 disabled={busy === approval.slug}
                 onClick={() => setApproval(null)}
-                className="rounded-full border border-[#d8d6d0] px-4 py-1.5 text-xs font-normal text-[#64748b] hover:text-[#020817] disabled:opacity-50 cursor-pointer"
+                className="rounded-full border border-[#d8d6d0] px-4 py-2 text-xs font-normal text-[#64748b] hover:text-[#020817] disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 Cancel
               </button>
@@ -584,7 +593,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                     if (ok) setApproval(null)
                   })
                 }
-                className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-5 py-1.5 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-5 py-2 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 <span>{busy === approval.slug ? 'Approving…' : 'Confirm & approve'}</span>
               </button>
