@@ -3,26 +3,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import {
-  AlertTriangle,
-  ArrowRight,
   Check,
   CheckCircle2,
   Clock3,
-  ExternalLink,
   Laptop,
   Layers,
   RefreshCw,
-  Search,
-  Shield,
   ShieldAlert,
   ShieldCheck,
-  Sparkles,
-  Tag,
   Wallet,
   X,
-  XCircle,
 } from 'lucide-react'
 import { useAuthSession } from '@/components/AuthSessionProvider'
+import { useToast } from '@/components/ToastProvider'
 import {
   approveReviewListing,
   fetchDisputeQueue,
@@ -51,6 +44,18 @@ const money = (amount: number, currency = 'USD') =>
     maximumFractionDigits: 0,
   }).format(amount)
 
+const SOLANA_CLUSTER = process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet'
+const ADSPACES_PROGRAM_ID =
+  process.env.NEXT_PUBLIC_ADSPACES_PROGRAM_ID ?? '6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW'
+
+const shortAddress = (address: string) =>
+  address.length > 12 ? `${address.slice(0, 5)}...${address.slice(-4)}` : address
+
+const explorerAddressUrl = (address: string) => {
+  const base = `https://explorer.solana.com/address/${address}`
+  return SOLANA_CLUSTER === 'mainnet-beta' ? base : `${base}?cluster=${encodeURIComponent(SOLANA_CLUSTER)}`
+}
+
 const relative = (iso: string) => {
   const hours = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000))
   if (hours < 1) return 'Just now'
@@ -65,6 +70,7 @@ interface AdminDashboardViewProps {
 
 export default function AdminDashboardView({ currentTab = 'admin', onTabChange }: AdminDashboardViewProps) {
   const auth = useAuthSession()
+  const toast = useToast()
   const [queue, setQueue] = useState<ApiListing[] | null>(null)
   const [error, setError] = useState<string>()
   const [successNote, setSuccessNote] = useState<string>()
@@ -138,10 +144,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         const appliedPolicy = customPolicy ?? policy ?? defaultPolicy(listing)
         await approveReviewListing(slug, appliedPolicy)
         setSuccessNote(`Space "${listing.title}" approved! Seller can now accept commercial terms and publish to devnet.`)
+        toast.success('Space approved', 'Commercial terms were sent to the creator.')
       } else {
         const reason = reasons[slug]?.trim() || ''
         await rejectReviewListing(slug, reason)
         setSuccessNote(`Space "${slug}" rejected. Rejection reason returned to creator.`)
+        toast.info('Space rejected', 'The creator can revise and resubmit.')
       }
       setReasons((prev) => {
         const next = { ...prev }
@@ -151,7 +159,9 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
       await load()
       succeeded = true
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed.')
+      const message = e instanceof Error ? e.message : 'Action failed.'
+      setError(message)
+      toast.error('Review action failed', message)
     } finally {
       setBusy(undefined)
     }
@@ -164,9 +174,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
     try {
       const res = await reconcileChain()
       setReconcileNote(`Devnet synced: checked ${res.checked}, updated ${res.updated}, missing ${res.missing}.`)
+      toast.success('Devnet synced', `${res.updated} updated, ${res.missing} missing.`)
       await load()
     } catch (e) {
-      setReconcileNote(e instanceof Error ? e.message : 'Reconciliation failed.')
+      const message = e instanceof Error ? e.message : 'Reconciliation failed.'
+      setReconcileNote(message)
+      toast.error('Sync failed', message)
     } finally {
       setReconciling(false)
     }
@@ -245,7 +258,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             className="inline-flex items-center gap-1.5 rounded-full border border-[#d8d6d0] bg-white px-3.5 py-1.5 text-xs font-normal text-[#020817] transition hover:border-[#020817] disabled:opacity-50 cursor-pointer shadow-2xs"
           >
             <RefreshCw size={13} className={reconciling ? 'animate-spin text-[#4166fb]' : 'text-[#64748b]'} />
-            <span>{reconciling ? 'Syncing…' : 'Sync devnet'}</span>
+            <span>{reconciling ? 'Syncing…' : `Sync ${SOLANA_CLUSTER}`}</span>
           </button>
         </div>
       </div>
@@ -327,12 +340,17 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         <div>
           <div className="flex items-center gap-1.5 text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
             <Layers size={14} className="text-slate-600" />
-            <span>Solana Devnet</span>
+            <span>Solana {SOLANA_CLUSTER}</span>
           </div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-sm font-mono font-medium text-[#020817]">
-              6ft49…LMSW
-            </span>
+            <a
+              href={explorerAddressUrl(ADSPACES_PROGRAM_ID)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-mono font-medium text-[#020817] hover:text-[#4166fb] hover:underline"
+            >
+              {shortAddress(ADSPACES_PROGRAM_ID)}
+            </a>
             <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </div>
         </div>
@@ -359,9 +377,9 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         </div>
 
         {queue === null ? (
-          <p className="py-12 text-center text-sm text-[#64748b]">Loading review queue…</p>
+          <ReviewQueueSkeleton />
         ) : queue.length === 0 ? (
-          <div className="py-14 text-center">
+          <div className="rounded-2xl border border-dashed border-[#d8d6d0] bg-white/60 py-14 text-center">
             <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-full bg-[#ecebe6] text-[#64748b]">
               <Check size={18} />
             </div>
@@ -369,141 +387,35 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             <p className="mt-1 text-xs text-[#64748b]">
               All registered creator spaces have been reviewed. New submissions will appear here.
             </p>
+            <Link
+              href="/dashboard"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#d8d6d0] bg-white px-4 py-2 text-xs font-semibold text-[#020817] shadow-2xs transition hover:border-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
+            >
+              Open dashboard
+            </Link>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[780px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-[#ecebe6] text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
-                  <th className="pb-2.5 pr-4">Space & Surface</th>
-                  <th className="pb-2.5 px-3">Creator</th>
-                  <th className="pb-2.5 px-3">Mode</th>
-                  <th className="pb-2.5 px-3">Spots & Pricing</th>
-                  <th className="pb-2.5 px-3">Rejection reason (optional)</th>
-                  <th className="pb-2.5 pl-3 text-right">Review action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#ecebe6]/60">
-                {queue.map((l) => {
-                  const surfaceName = (l.surface && surfaceLabels[l.surface]) || l.surface || 'MacBook Lid'
-                  const spotCount = l.spots.length
-                  const minPrice = l.spots.reduce((min, s) => Math.min(min, s.price), Infinity)
-                  const hasPrice = Number.isFinite(minPrice)
-                  const thumb = l.image || cardPhoto(l)
-
-                  return (
-                    <tr key={l.id} className="transition hover:bg-black/[0.015]">
-                      {/* Space & Surface */}
-                      <td className="py-3.5 pr-4">
-                        <div className="flex items-center gap-3">
-                          <div className="h-11 w-16 shrink-0 overflow-hidden rounded-lg bg-[#ecebe6] shadow-2xs">
-                            {thumb ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={thumb} alt="" className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
-                                <Laptop size={16} />
-                              </div>
-                            )}
-                          </div>
-                          <div className="min-w-0">
-                            <span className="block truncate font-medium text-[#020817] text-[13px]">
-                              {l.title}
-                            </span>
-                            <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-[#64748b]">
-                              <span className="inline-flex items-center gap-1 rounded bg-[#ecebe6] px-1.5 py-0.5 text-[10px] font-medium text-[#020817]">
-                                {surfaceName}
-                              </span>
-                              <span>•</span>
-                              <span>{relative(l.deadline)}</span>
-                            </div>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Creator */}
-                      <td className="py-3.5 px-3 whitespace-nowrap">
-                        <div className="text-[12px] font-medium text-[#020817]">
-                          {sellerDisplay({ name: l.seller, handle: l.sellerHandle })}
-                        </div>
-                        {l.sellerHandle && (
-                          <div className="text-[11px] text-[#64748b]">
-                            @{l.sellerHandle.replace(/^@+/, '')}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Mode */}
-                      <td className="py-3.5 px-3 whitespace-nowrap">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-normal ${
-                            l.mode === 'auction'
-                              ? 'bg-[#e9edfe] text-[#3154e8]'
-                              : 'bg-emerald-50 text-emerald-700'
-                          }`}
-                        >
-                          {l.mode === 'auction' ? 'Auction' : 'Fixed price'}
-                        </span>
-                      </td>
-
-                      {/* Spots & Pricing */}
-                      <td className="py-3.5 px-3 whitespace-nowrap">
-                        <div className="font-mono text-[12px] font-normal text-[#020817]">
-                          {spotCount} {spotCount === 1 ? 'spot' : 'spots'}
-                        </div>
-                        <div className="text-[11px] text-[#64748b]">
-                          {hasPrice ? `From ${money(minPrice, l.currency)}` : 'Custom'}
-                        </div>
-                      </td>
-
-                      {/* Rejection Note */}
-                      <td className="py-3.5 px-3">
-                        <input
-                          type="text"
-                          value={reasons[l.slug] ?? ''}
-                          onChange={(e) => setReasons((prev) => ({ ...prev, [l.slug]: e.target.value }))}
-                          placeholder="Feedback if rejecting..."
-                          maxLength={500}
-                          className="w-full min-w-[170px] rounded-lg border border-[#d8d6d0] bg-white px-2.5 py-1.5 text-xs text-[#020817] outline-none transition focus:border-[#4166fb]"
-                        />
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3.5 pl-3 whitespace-nowrap text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            type="button"
-                            disabled={busy === l.slug}
-                            onClick={() => {
-                              setApproval(l)
-                              setPolicy({
-                                platformFeeBps: 250,
-                                upliftFeeBps: l.mode === 'auction' ? 1000 : 0,
-                                maxFeeBps: l.mode === 'auction' ? 1000 : 250,
-                                settlementWindowHours: 48,
-                                deliveryDeadline: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 16),
-                              })
-                            }}
-                            className="inline-flex items-center gap-1 rounded-full bg-[#4166fb] px-3.5 py-1 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                          >
-                            <span>Approve</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={busy === l.slug}
-                            onClick={() => void act(l.slug, 'reject')}
-                            className="inline-flex items-center gap-1 rounded-full border border-[#d8d6d0] bg-white px-3 py-1 text-xs font-normal text-[#dc2626] transition hover:border-[#dc2626] hover:bg-red-50/50 disabled:opacity-50 cursor-pointer"
-                          >
-                            <span>Reject</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div className="grid gap-3">
+            {queue.map((listing) => (
+              <ReviewSubmissionCard
+                key={listing.id}
+                listing={listing}
+                busy={busy === listing.slug}
+                reason={reasons[listing.slug] ?? ''}
+                onReasonChange={(value) => setReasons((prev) => ({ ...prev, [listing.slug]: value }))}
+                onApprove={() => {
+                  setApproval(listing)
+                  setPolicy({
+                    platformFeeBps: 250,
+                    upliftFeeBps: listing.mode === 'auction' ? 1000 : 0,
+                    maxFeeBps: listing.mode === 'auction' ? 1000 : 250,
+                    settlementWindowHours: 48,
+                    deliveryDeadline: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 16),
+                  })
+                }}
+                onReject={() => void act(listing.slug, 'reject')}
+              />
+            ))}
           </div>
         )}
       </section>
@@ -574,11 +486,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             </div>
 
             {/* Commercial Parameters Form */}
-            <div className="mt-5 grid grid-cols-2 gap-3.5">
+            <div className="mt-5 grid grid-cols-1 gap-3.5 sm:grid-cols-2">
               <label className="block text-xs font-medium text-[#020817]">
                 Platform Fee (%)
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="decimal"
                   min="0"
                   max="100"
                   step="0.01"
@@ -586,22 +499,25 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                   onChange={(e) =>
                     setPolicy({ ...policy, platformFeeBps: Math.round(Number(e.target.value) * 100) })
                   }
-                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                 />
+                <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Applied to every completed spot.</span>
               </label>
 
               <label className="block text-xs font-medium text-[#020817]">
                 Settlement Window (hours)
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   min="1"
                   step="1"
                   value={policy.settlementWindowHours}
                   onChange={(e) =>
                     setPolicy({ ...policy, settlementWindowHours: Number(e.target.value) })
                   }
-                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                 />
+                <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Time allowed before settlement actions.</span>
               </label>
 
               {approval.mode === 'auction' && (
@@ -609,7 +525,8 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                   <label className="block text-xs font-medium text-[#020817]">
                     Uplift Fee (%)
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       min="0"
                       max="100"
                       step="0.01"
@@ -617,14 +534,16 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                       onChange={(e) =>
                         setPolicy({ ...policy, upliftFeeBps: Math.round(Number(e.target.value) * 100) })
                       }
-                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                     />
+                    <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Fee on auction upside above starting price.</span>
                   </label>
 
                   <label className="block text-xs font-medium text-[#020817]">
                     Maximum Fee (%)
                     <input
-                      type="number"
+                      type="text"
+                      inputMode="decimal"
                       min="0"
                       max="100"
                       step="0.01"
@@ -632,13 +551,14 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                       onChange={(e) =>
                         setPolicy({ ...policy, maxFeeBps: Math.round(Number(e.target.value) * 100) })
                       }
-                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                      className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                     />
+                    <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Caps total platform fees for this auction.</span>
                   </label>
                 </>
               )}
 
-              <label className="col-span-2 block text-xs font-medium text-[#020817]">
+              <label className="block text-xs font-medium text-[#020817] sm:col-span-2">
                 Proof Delivery Deadline
                 <input
                   type="datetime-local"
@@ -646,21 +566,22 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                   onChange={(e) =>
                     setPolicy({ ...policy, deliveryDeadline: e.target.value })
                   }
-                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-1.5 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+                  className="mt-1 w-full rounded-lg border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none transition focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
                 />
+                <span className="mt-1 block text-[11px] font-normal text-[#64748b]">Creator should upload proof before this deadline.</span>
               </label>
             </div>
 
-            <p className="mt-4 text-[11px] leading-relaxed text-[#64748b]">
-              Approval sends these commercial terms to the creator. Once the creator accepts the terms, the listing is published to the Solana marketplace.
-            </p>
+            <div className="mt-4 rounded-xl border border-[#dbe4ff] bg-[#f6f8ff] px-3 py-2.5 text-[11px] leading-relaxed text-[#526079]">
+              Approval only sends these commercial terms to the creator. Nothing is created on-chain until the creator accepts and publishes.
+            </div>
 
             <div className="mt-6 flex items-center justify-end gap-3">
               <button
                 type="button"
                 disabled={busy === approval.slug}
                 onClick={() => setApproval(null)}
-                className="rounded-full border border-[#d8d6d0] px-4 py-1.5 text-xs font-normal text-[#64748b] hover:text-[#020817] disabled:opacity-50 cursor-pointer"
+                className="rounded-full border border-[#d8d6d0] px-4 py-2 text-xs font-normal text-[#64748b] hover:text-[#020817] disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 Cancel
               </button>
@@ -672,9 +593,9 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                     if (ok) setApproval(null)
                   })
                 }
-                className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-5 py-1.5 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-5 py-2 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
-                <span>{busy === approval.slug ? 'Approving…' : 'Confirm & Approve'}</span>
+                <span>{busy === approval.slug ? 'Approving…' : 'Confirm & approve'}</span>
               </button>
             </div>
           </div>
@@ -707,64 +628,38 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           ) : (
             <div className="space-y-3">
               {disputes.map((d) => (
-                <div key={d.spotId} className="rounded-xl border border-[#ecebe6] bg-white p-3.5 space-y-2.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-medium text-[#020817]">
-                      {d.listingTitle} • {d.spotLabel}
-                    </span>
-                    <span className="font-mono text-[#64748b]">{money(d.amount, d.currency)}</span>
-                  </div>
-                  <p className="text-[11px] text-[#dc2626]">
-                    Reason: {d.reason || 'No reason provided'}
-                  </p>
-                  <div className="flex items-center gap-2 pt-1">
-                    <input
-                      type="number"
-                      min={0}
-                      max={10000}
-                      value={resolutionShares[d.spotId] ?? 5000}
-                      onChange={(e) =>
-                        setResolutionShares((prev) => ({ ...prev, [d.spotId]: Number(e.target.value) }))
+                <DisputeCard
+                  key={d.spotId}
+                  dispute={d}
+                  sellerShareBps={resolutionShares[d.spotId] ?? 5000}
+                  decision={decisions[d.spotId] ?? ''}
+                  busy={resolutionBusy === d.spotId}
+                  onSellerShareChange={(value) =>
+                    setResolutionShares((prev) => ({ ...prev, [d.spotId]: value }))
+                  }
+                  onDecisionChange={(value) => setDecisions((prev) => ({ ...prev, [d.spotId]: value }))}
+                  onResolve={() =>
+                    void (async () => {
+                      setResolutionBusy(d.spotId)
+                      setResolutionError(undefined)
+                      try {
+                        await resolveSpotDispute(
+                          d.spotId,
+                          resolutionShares[d.spotId] ?? 5000,
+                          decisions[d.spotId].trim(),
+                        )
+                        toast.success('Dispute resolved', `${d.listingTitle} ${d.spotLabel} was updated.`)
+                        await load()
+                      } catch (e) {
+                        const message = e instanceof Error ? e.message : 'Resolution failed.'
+                        setResolutionError(message)
+                        toast.error('Resolution failed', message)
+                      } finally {
+                        setResolutionBusy(undefined)
                       }
-                      placeholder="Seller share bps"
-                      className="w-24 rounded-lg border border-[#d8d6d0] px-2 py-1 text-xs"
-                    />
-                    <input
-                      type="text"
-                      value={decisions[d.spotId] ?? ''}
-                      onChange={(e) =>
-                        setDecisions((prev) => ({ ...prev, [d.spotId]: e.target.value }))
-                      }
-                      placeholder="Resolution rationale..."
-                      className="flex-1 rounded-lg border border-[#d8d6d0] px-2.5 py-1 text-xs"
-                    />
-                    <button
-                      type="button"
-                      disabled={resolutionBusy === d.spotId || !(decisions[d.spotId] ?? '').trim()}
-                      onClick={() =>
-                        void (async () => {
-                          setResolutionBusy(d.spotId)
-                          setResolutionError(undefined)
-                          try {
-                            await resolveSpotDispute(
-                              d.spotId,
-                              resolutionShares[d.spotId] ?? 5000,
-                              decisions[d.spotId].trim(),
-                            )
-                            await load()
-                          } catch (e) {
-                            setResolutionError(e instanceof Error ? e.message : 'Resolution failed.')
-                          } finally {
-                            setResolutionBusy(undefined)
-                          }
-                        })()
-                      }
-                      className="rounded-full bg-[#4166fb] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
-                    >
-                      Resolve
-                    </button>
-                  </div>
-                </div>
+                    })()
+                  }
+                />
               ))}
             </div>
           )}
@@ -794,47 +689,282 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           ) : (
             <div className="space-y-2.5">
               {payouts.map((p) => (
-                <div key={p.spotId} className="flex items-center justify-between rounded-xl border border-[#ecebe6] bg-white p-3 text-xs">
-                  <div>
-                    <span className="font-medium text-[#020817]">
-                      {p.listingTitle} · {p.spotLabel}
-                    </span>
-                    <div className="text-[11px] text-[#64748b]">
-                      Seller: {p.seller}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono font-medium text-[#020817]">
-                      {money(p.amount, p.currency)}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={payBusy === p.spotId}
-                      onClick={() =>
-                        void (async () => {
-                          setPayBusy(p.spotId)
-                          setPayError(undefined)
-                          try {
-                            await payApiSpot(p.spotId, `auto-release-${Date.now()}`)
-                            await load()
-                          } catch (e) {
-                            setPayError(e instanceof Error ? e.message : 'Payout failed.')
-                          } finally {
-                            setPayBusy(undefined)
-                          }
-                        })()
+                <PayoutCard
+                  key={p.spotId}
+                  payout={p}
+                  busy={payBusy === p.spotId}
+                  onPay={() =>
+                    void (async () => {
+                      setPayBusy(p.spotId)
+                      setPayError(undefined)
+                      try {
+                        await payApiSpot(p.spotId, `auto-release-${Date.now()}`)
+                        toast.success('Payout recorded', `${p.listingTitle} ${p.spotLabel} is marked paid.`)
+                        await load()
+                      } catch (e) {
+                        const message = e instanceof Error ? e.message : 'Payout failed.'
+                        setPayError(message)
+                        toast.error('Payout failed', message)
+                      } finally {
+                        setPayBusy(undefined)
                       }
-                      className="rounded-full bg-[#020817] px-3 py-1 text-xs font-normal text-white disabled:opacity-50"
-                    >
-                      Pay out
-                    </button>
-                  </div>
-                </div>
+                    })()
+                  }
+                />
               ))}
             </div>
           )}
         </section>
       </div>
     </div>
+  )
+}
+
+function ReviewQueueSkeleton() {
+  return (
+    <div className="grid gap-3" aria-label="Loading review queue">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="flex gap-3">
+              <div className="h-20 w-28 shrink-0 animate-pulse rounded-xl bg-[#ecebe6]" />
+              <div className="flex-1 space-y-3 py-1">
+                <div className="h-4 w-48 animate-pulse rounded-full bg-[#ecebe6]" />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="h-3 w-32 animate-pulse rounded-full bg-[#f1f0ec]" />
+                  <div className="h-3 w-28 animate-pulse rounded-full bg-[#f1f0ec]" />
+                  <div className="h-3 w-24 animate-pulse rounded-full bg-[#f1f0ec]" />
+                  <div className="h-3 w-36 animate-pulse rounded-full bg-[#f1f0ec]" />
+                </div>
+                <div className="h-9 animate-pulse rounded-xl bg-[#f8fafc]" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="h-9 animate-pulse rounded-xl bg-[#f1f0ec]" />
+              <div className="flex justify-end gap-2">
+                <div className="h-8 w-20 animate-pulse rounded-full bg-[#f1f0ec]" />
+                <div className="h-8 w-28 animate-pulse rounded-full bg-[#e9edfe]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ReviewSubmissionCard({
+  listing,
+  busy,
+  reason,
+  onReasonChange,
+  onApprove,
+  onReject,
+}: {
+  listing: ApiListing
+  busy: boolean
+  reason: string
+  onReasonChange: (value: string) => void
+  onApprove: () => void
+  onReject: () => void
+}) {
+  const surfaceName = (listing.surface && surfaceLabels[listing.surface]) || listing.surface || 'Surface'
+  const spotCount = listing.spots.length
+  const minPrice = listing.spots.reduce((min, spot) => Math.min(min, spot.price), Infinity)
+  const hasPrice = Number.isFinite(minPrice)
+  const thumb = listing.image || cardPhoto(listing)
+  const seller = sellerDisplay({ name: listing.seller, handle: listing.sellerHandle })
+
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="flex min-w-0 gap-3">
+          <div className="h-20 w-28 shrink-0 overflow-hidden rounded-xl bg-[#ecebe6] shadow-2xs">
+            {thumb ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={thumb} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
+                <Laptop size={18} />
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-[15px] font-semibold text-[#020817]">{listing.title}</h3>
+              <span
+                className={`inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-medium ${
+                  listing.mode === 'auction'
+                    ? 'bg-[#e9edfe] text-[#3154e8]'
+                    : 'bg-emerald-50 text-emerald-700'
+                }`}
+              >
+                {listing.mode === 'auction' ? 'Auction' : 'Fixed price'}
+              </span>
+            </div>
+            <div className="mt-2 grid gap-2 text-[12px] text-[#64748b] sm:grid-cols-2">
+              <span>
+                Creator <span className="font-medium text-[#020817]">{seller}</span>
+              </span>
+              <span>
+                Surface <span className="font-medium text-[#020817]">{surfaceName}</span>
+              </span>
+              <span>
+                Spots <span className="font-mono text-[#020817]">{spotCount}</span>
+              </span>
+              <span>
+                Pricing{' '}
+                <span className="font-mono text-[#020817]">
+                  {hasPrice ? `from ${money(minPrice, listing.currency)}` : 'custom'}
+                </span>
+              </span>
+            </div>
+            <div className="mt-3 rounded-xl bg-[#f8fafc] px-3 py-2 text-[12px] text-[#64748b]">
+              Approval sends commercial terms to the creator. The listing is only created on-chain after the creator accepts.
+            </div>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <label className="text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+            Rejection feedback
+            <input
+              type="text"
+              value={reason}
+              onChange={(event) => onReasonChange(event.target.value)}
+              placeholder="Add a reason before rejecting"
+              maxLength={500}
+              className="mt-1 w-full rounded-xl border border-[#d8d6d0] bg-white px-3 py-2 text-xs normal-case tracking-normal text-[#020817] outline-none transition focus:border-[#4166fb]"
+            />
+          </label>
+          <div className="flex flex-wrap justify-end gap-2 pt-1">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onReject}
+              className="inline-flex cursor-pointer items-center rounded-full border border-[#d8d6d0] bg-white px-3.5 py-1.5 text-xs font-normal text-[#dc2626] transition hover:border-[#dc2626] hover:bg-red-50/50 disabled:opacity-50"
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onApprove}
+              className="inline-flex cursor-pointer items-center rounded-full bg-[#4166fb] px-4 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50"
+            >
+              Review terms
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function DisputeCard({
+  dispute,
+  sellerShareBps,
+  decision,
+  busy,
+  onSellerShareChange,
+  onDecisionChange,
+  onResolve,
+}: {
+  dispute: DisputeItem
+  sellerShareBps: number
+  decision: string
+  busy: boolean
+  onSellerShareChange: (value: number) => void
+  onDecisionChange: (value: string) => void
+  onResolve: () => void
+}) {
+  const sellerShare = Math.max(0, Math.min(10000, sellerShareBps))
+  const sellerPercent = sellerShare / 100
+  const buyerPercent = 100 - sellerPercent
+
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3.5 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h4 className="text-[13px] font-semibold text-[#020817]">{dispute.listingTitle}</h4>
+          <p className="mt-0.5 text-[12px] text-[#64748b]">
+            {dispute.spotLabel} · {money(dispute.amount, dispute.currency)}
+          </p>
+        </div>
+        <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-medium text-red-700">
+          Disputed
+        </span>
+      </div>
+      <p className="mt-3 rounded-xl bg-red-50/70 px-3 py-2 text-[12px] leading-relaxed text-red-700">
+        {dispute.reason || 'No dispute reason provided.'}
+      </p>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)_auto] sm:items-end">
+        <label className="text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+          Seller share
+          <input
+            type="number"
+            min={0}
+            max={10000}
+            value={sellerShare}
+            onChange={(event) => onSellerShareChange(Number(event.target.value))}
+            className="mt-1 w-full rounded-xl border border-[#d8d6d0] px-3 py-2 text-xs text-[#020817] outline-none focus:border-[#4166fb]"
+          />
+        </label>
+        <label className="text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+          Decision note
+          <input
+            type="text"
+            value={decision}
+            onChange={(event) => onDecisionChange(event.target.value)}
+            placeholder={`Seller ${sellerPercent.toFixed(0)}%, buyer ${buyerPercent.toFixed(0)}%`}
+            className="mt-1 w-full rounded-xl border border-[#d8d6d0] px-3 py-2 text-xs normal-case tracking-normal text-[#020817] outline-none focus:border-[#4166fb]"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy || !decision.trim()}
+          onClick={onResolve}
+          className="inline-flex cursor-pointer justify-center rounded-full bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#3558e8] disabled:opacity-50"
+        >
+          {busy ? 'Resolving…' : 'Resolve'}
+        </button>
+      </div>
+    </article>
+  )
+}
+
+function PayoutCard({
+  payout,
+  busy,
+  onPay,
+}: {
+  payout: PayoutItem
+  busy: boolean
+  onPay: () => void
+}) {
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3.5 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h4 className="text-[13px] font-semibold text-[#020817]">{payout.listingTitle}</h4>
+          <p className="mt-0.5 text-[12px] text-[#64748b]">
+            {payout.spotLabel} · Seller {payout.seller}
+          </p>
+        </div>
+        <div className="flex items-center justify-between gap-3 sm:justify-end">
+          <span className="font-mono text-sm font-semibold text-[#020817]">
+            {money(payout.amount, payout.currency)}
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onPay}
+            className="inline-flex cursor-pointer rounded-full bg-[#020817] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1a2436] disabled:opacity-50"
+          >
+            {busy ? 'Paying…' : 'Pay out'}
+          </button>
+        </div>
+      </div>
+    </article>
   )
 }

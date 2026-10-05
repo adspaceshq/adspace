@@ -16,9 +16,11 @@ export default function ListingCard({ listing }: { listing: Listing }) {
   const isAuction = listing.priceType === 'auction'
   const claimedCount = listing.spots.filter((s) => (isAuction ? !!s.bidBy : !!s.claimedBy)).length
   const soldOut = claimedCount === listing.spots.length
+  const spotsLeft = Math.max(0, listing.spots.length - claimedCount)
   const minPrice = Math.min(...listing.spots.map((s) => s.price))
   const photo = cardPhoto(listing)
   const demand = listingOversubscription(listing)
+  const deadline = isEnded(listing.endsAt) ? 'Ended' : listing.deadline || 'Live'
 
   return (
     <article className="group flex h-full flex-col transition duration-200">
@@ -61,7 +63,7 @@ export default function ListingCard({ listing }: { listing: Listing }) {
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
               </span>
-              Live
+              Fixed
             </span>
           )}
         </div>
@@ -94,6 +96,24 @@ export default function ListingCard({ listing }: { listing: Listing }) {
 
         <p className="mt-0.5 line-clamp-1 text-[13px] text-[#64748b]">{listing.goal}</p>
 
+        <div className="mt-2 flex items-center justify-between gap-2 text-[12px] text-[#64748b]">
+          <span className="inline-flex items-center gap-1">
+            <Clock size={13} aria-hidden />
+            {deadline}
+          </span>
+          <span
+            className={`rounded-full px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide ${
+              soldOut
+                ? 'bg-zinc-100 text-zinc-500'
+                : isAuction
+                  ? 'bg-indigo-50 text-indigo-700'
+                  : 'bg-emerald-50 text-emerald-700'
+            }`}
+          >
+            {soldOut ? 'Closed' : isAuction ? `${demand.bids} bid${demand.bids === 1 ? '' : 's'}` : `${spotsLeft} open`}
+          </span>
+        </div>
+
         <div className="mt-2.5 flex items-center justify-between text-xs pt-2 border-t border-[#e5e4de]/60">
           <div className="flex items-center gap-1.5">
             <SellerAvatar seller={listing.seller} className="h-4 w-4 text-[10px]" />
@@ -109,7 +129,9 @@ export default function ListingCard({ listing }: { listing: Listing }) {
               ? isAuction
                 ? 'All bids placed'
                 : 'All claimed'
-              : `${listing.spots.length - claimedCount} spots left`}
+              : isAuction
+                ? `${spotsLeft} accepting bids`
+                : `${spotsLeft} spots left`}
           </span>
         </div>
       </div>

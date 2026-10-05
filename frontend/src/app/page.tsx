@@ -236,13 +236,13 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Live listings — Nominees-style: centered mega-heading, cards, footer link */}
+        {/* Live listings - centered heading, cards, footer link */}
         <section className="py-20">
           <div className="mx-auto w-full max-w-[1340px] px-6">
             <div className="mb-12 text-center">
               <p className="mb-4 text-sm font-medium uppercase tracking-[0.22em] text-[#020817]">Live now</p>
               <h2 className="font-extrabold uppercase text-[#020817]" style={{ fontSize: 'clamp(24px, 4vw, 56px)', letterSpacing: '-0.04em', lineHeight: 0.95 }}>Live spaces</h2>
-              <p className="mx-auto mt-6 max-w-[48ch] text-[17px] text-[#020817]/70">Suitcases, kits, lids, tattoos. Pick a spot — X login to claim or bid.</p>
+              <p className="mx-auto mt-6 max-w-[48ch] text-[17px] text-[#020817]/70">Suitcases, kits, lids, tattoos. Pick a spot - X login to claim or bid.</p>
             </div>
             {listings.length === 0 ? (
               <>
@@ -250,7 +250,7 @@ export default function Home() {
                   {[
                     { src: HERO_IMAGES[0], title: 'Suitcase to TOKEN2049', seller: '@coinempress' },
                     { src: HERO_IMAGES[1], title: 'Ironman kit + frame', seller: '@winternet' },
-                    { src: HERO_IMAGES[2], title: 'MacBook lid auction', seller: '@VynseDev' },
+                    { src: HERO_IMAGES[2], title: 'Laptop lid auction', seller: '@VynseDev' },
                   ].map((ex) => (
                     <div key={ex.title} className="block">
                       <div className="relative overflow-hidden rounded-2xl bg-[#e9edfe]">

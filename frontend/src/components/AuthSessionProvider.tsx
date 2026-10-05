@@ -6,6 +6,7 @@ import type { PrivyErrorCode } from '@privy-io/react-auth';
 import { useCreateWallet as useCreateSolanaWallet } from '@privy-io/react-auth/solana';
 import { ApiError, createApiSession, fetchApiMe, logoutApiSession, saveOnboarding } from '@/lib/auth-api';
 import { PRIVY_ENABLED } from '@/lib/privy';
+import { useToast } from '@/components/ToastProvider';
 import { BRAND_CATEGORIES, SOCIAL_PLATFORMS } from '@/lib/types';
 import type { AccountType, BrandCategory, Onboarding, SessionUser, SocialPlatform } from '@/lib/types';
 import {
@@ -17,7 +18,9 @@ import {
   Globe,
   Loader2,
   LogOut,
+  ShieldCheck,
   Sparkles,
+  Zap,
 } from 'lucide-react';
 
 export interface AuthSession {
@@ -348,7 +351,7 @@ function ProfileCompletionModal({ auth }: { auth: AuthSession }) {
         <div className="mt-6 space-y-3">
           <ProfileRequirement complete={auth.hasX} label="X account" actionLabel="Connect X" onAction={auth.linkX} />
           <ProfileRequirement complete={Boolean(auth.email)} label="Verified email" actionLabel="Add email" onAction={auth.linkEmail} />
-          <ProfileRequirement complete={Boolean(auth.walletAddress)} label="Privy Solana wallet" pendingLabel="Creating wallet…" />
+          <ProfileRequirement complete={Boolean(auth.walletAddress)} label="Privy Solana wallet" pendingLabel="Creating wallet..." />
           <ProfileRequirement complete={auth.walletDelegated} label="Gasless transactions" actionLabel="Enable" onAction={() => void auth.delegateWallet()} />
         </div>
         {auth.error && <p className="mt-4 text-sm text-red-600">{auth.error}</p>}
@@ -420,6 +423,7 @@ function RoleOnboardingModal({
   onSaved: (onboarding: Onboarding) => void;
   onLogout: () => void;
 }) {
+  const toast = useToast();
   const [step, setStep] = useState<'role' | 'details'>('role');
   const [role, setRole] = useState<AccountType | null>(null);
   const [socials, setSocials] = useState<Partial<Record<SocialPlatform, string>>>(() => {
@@ -444,13 +448,25 @@ function RoleOnboardingModal({
     if (!role || !canSubmit) return;
     setError(undefined);
     setSaving(true);
+    const toastId = toast.loading('Saving your profile', 'Setting up your Adspaces dashboard.');
     try {
       const payload: Onboarding = role === 'creator'
         ? { accountType: 'creator', creator: { socials } }
         : { accountType: 'sponsor', sponsor: { brandName: brandName.trim(), category: category as BrandCategory, ...(website.trim() ? { website: website.trim() } : {}) } };
       onSaved(await saveOnboarding(payload));
+      toast.update(toastId, {
+        title: 'Profile saved',
+        description: role === 'creator' ? 'Your creator dashboard is ready.' : 'Your sponsor dashboard is ready.',
+        tone: 'success',
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save profile. Try again.');
+      const message = e instanceof Error ? e.message : 'Could not save profile. Try again.';
+      setError(message);
+      toast.update(toastId, {
+        title: 'Could not save profile',
+        description: message,
+        tone: 'error',
+      });
     } finally {
       setSaving(false);
     }
@@ -469,7 +485,8 @@ function RoleOnboardingModal({
           <div>
             <div className="flex items-center justify-between gap-3">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb]/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-[#4166fb]">
-                ✨ Welcome to Adspaces
+                <Sparkles className="h-3.5 w-3.5" aria-hidden />
+                Welcome to Adspaces
               </span>
               <span className="text-xs font-medium text-[#64748b]">Step 1 of 2</span>
             </div>
@@ -517,8 +534,9 @@ function RoleOnboardingModal({
                 </div>
 
                 <div className="mt-4 border-t border-[#f1f0ec] pt-3">
-                  <span className="inline-flex items-center text-[11px] font-medium text-[#526079]">
-                    ⚡ Instant USDC wallet payouts
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#526079]">
+                    <Zap className="h-3.5 w-3.5 text-[#4166fb]" aria-hidden />
+                    Instant USDC wallet payouts
                   </span>
                 </div>
               </button>
@@ -557,8 +575,9 @@ function RoleOnboardingModal({
                 </div>
 
                 <div className="mt-4 border-t border-[#f1f0ec] pt-3">
-                  <span className="inline-flex items-center text-[11px] font-medium text-[#526079]">
-                    🛡️ Escrow-protected campaigns
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[#526079]">
+                    <ShieldCheck className="h-3.5 w-3.5 text-[#4166fb]" aria-hidden />
+                    Escrow-protected campaigns
                   </span>
                 </div>
               </button>
@@ -653,8 +672,9 @@ function RoleOnboardingModal({
                 </div>
 
                 <div className="mt-3 flex items-center justify-between text-xs">
-                  <span className={`font-medium ${hasAtLeastOneSocial ? 'text-emerald-700' : 'text-[#64748b]'}`}>
-                    {hasAtLeastOneSocial ? '✓ At least one social link provided' : '• Please fill in at least one profile'}
+                  <span className={`inline-flex items-center gap-1.5 font-medium ${hasAtLeastOneSocial ? 'text-emerald-700' : 'text-[#64748b]'}`}>
+                    {hasAtLeastOneSocial && <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />}
+                    {hasAtLeastOneSocial ? 'At least one social link provided' : 'Please fill in at least one profile'}
                   </span>
                 </div>
               </div>
@@ -742,7 +762,7 @@ function RoleOnboardingModal({
                 {saving ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Setting up your account…</span>
+                    <span>Setting up your account...</span>
                   </>
                 ) : (
                   <>

@@ -183,7 +183,7 @@ export default function Footer() {
               </p>
               <div className="flex flex-col space-y-2.5 text-[14px] text-white/65">
                 <Link href="/browse?surface=gear" className="transition-colors hover:text-white">
-                  MacBook & Laptops
+                  Laptop lids
                 </Link>
                 <Link href="/browse?surface=apparel" className="transition-colors hover:text-white">
                   T-Shirts & Apparel

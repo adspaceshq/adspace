@@ -3,6 +3,7 @@ import StoreProvider from "@/components/StoreProvider";
 import PrivyAppProvider from "@/components/PrivyAppProvider";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
 import { SurfacePickerProvider } from "@/components/SurfacePickerModal";
+import ToastProvider from "@/components/ToastProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -24,11 +25,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="flex min-h-full flex-col">
         <PrivyAppProvider>
-          <AuthSessionProvider>
-            <StoreProvider>
-              <SurfacePickerProvider>{children}</SurfacePickerProvider>
-            </StoreProvider>
-          </AuthSessionProvider>
+          <ToastProvider>
+            <AuthSessionProvider>
+              <StoreProvider>
+                <SurfacePickerProvider>{children}</SurfacePickerProvider>
+              </StoreProvider>
+            </AuthSessionProvider>
+          </ToastProvider>
         </PrivyAppProvider>
       </body>
     </html>

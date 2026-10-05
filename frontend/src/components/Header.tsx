@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  LayoutDashboard,
   LogOut,
   Menu,
   User,
@@ -165,7 +166,7 @@ export default function Header() {
               <button
                 type="button"
                 onClick={openPicker}
-                className="inline-flex h-9 items-center rounded-full bg-[#020817] px-4 text-[13px] font-medium text-white transition hover:bg-[#1a2436] active:scale-[0.98] cursor-pointer"
+                className="inline-flex h-9 items-center rounded-full bg-[#020817] px-4 text-[13px] font-medium text-white transition hover:bg-[#1a2436] active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 List your space
               </button>
@@ -210,7 +211,7 @@ export default function Header() {
                           <button
                             type="button"
                             onClick={copyWallet}
-                            className="inline-flex items-center gap-1 hover:text-[#020817] transition cursor-pointer"
+                            className="inline-flex items-center gap-1 rounded px-1 py-0.5 transition hover:text-[#020817] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                           >
                             {copiedWallet ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                             <span>{copiedWallet ? 'Copied' : 'Copy'}</span>
@@ -233,7 +234,8 @@ export default function Header() {
                         onClick={() => setUserMenuOpen(false)}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-[#020817] transition hover:bg-[#fafaf7]"
                       >
-                        <span className="text-[13px] pl-5">Dashboard & payouts</span>
+                        <LayoutDashboard size={15} className="text-[#64748b]" />
+                        <span>Dashboard & payouts</span>
                       </Link>
                     </div>
 
@@ -244,7 +246,7 @@ export default function Header() {
                           setUserMenuOpen(false)
                           void auth.logout()
                         }}
-                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-red-600 transition hover:bg-red-50 cursor-pointer"
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-red-600 transition hover:bg-red-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                       >
                         <LogOut size={15} />
                         <span>Sign out</span>
@@ -270,13 +272,13 @@ export default function Header() {
               <button
                 type="button"
                 onClick={openPicker}
-                className="inline-flex min-h-[42px] items-center rounded-full bg-[#020817] px-5 text-[14px] font-medium text-white transition hover:bg-[#1a2436] cursor-pointer"
+                className="inline-flex min-h-[42px] items-center rounded-full bg-[#020817] px-5 text-[14px] font-medium text-white transition hover:bg-[#1a2436] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 List your space
               </button>
               <Link
                 href="/browse"
-                className="inline-flex min-h-[42px] items-center rounded-full border border-[#020817]/25 px-5 text-[14px] font-medium text-[#020817] transition hover:border-[#020817] hover:bg-[#fafaf7]"
+                className="inline-flex min-h-[42px] items-center rounded-full border border-[#020817]/25 px-5 text-[14px] font-medium text-[#020817] transition hover:border-[#020817] hover:bg-[#fafaf7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 Browse
               </Link>
@@ -290,7 +292,7 @@ export default function Header() {
           aria-expanded={menuOpen}
           aria-label={menuOpen ? 'Close menu' : 'Open menu'}
           onClick={() => setMenuOpen((v) => !v)}
-          className="ml-auto grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[#020817] transition hover:bg-[#f1f0ec] lg:hidden"
+          className="ml-auto grid h-10 w-10 shrink-0 place-items-center rounded-lg text-[#020817] transition hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2 lg:hidden"
         >
           {menuOpen ? <X size={20} aria-hidden="true" /> : <Menu size={20} aria-hidden="true" />}
         </button>
@@ -305,21 +307,21 @@ export default function Header() {
                 <Link
                   href="/dashboard"
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec]"
+                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   Dashboard
                 </Link>
                 <Link
                   href="/browse"
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec]"
+                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   Marketplace
                 </Link>
                 <Link
                   href={sellerUrl(auth.handle ?? 'seller')}
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec]"
+                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   My Profile ({cleanHandle})
                 </Link>
@@ -327,7 +329,7 @@ export default function Header() {
                   <Link
                     href="/review"
                     onClick={() => setMenuOpen(false)}
-                    className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec]"
+                    className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                   >
                     Review Queue
                   </Link>
@@ -338,7 +340,7 @@ export default function Header() {
                     setMenuOpen(false)
                     void auth.logout()
                   }}
-                  className="rounded-lg px-2 py-2 text-left text-red-600 hover:bg-red-50 cursor-pointer"
+                  className="rounded-lg px-2 py-2 text-left text-red-600 hover:bg-red-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                 >
                   Sign out
                 </button>
@@ -348,14 +350,14 @@ export default function Header() {
                 <Link
                   href="/browse"
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec]"
+                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   Browse all spaces
                 </Link>
                 <Link
                   href="/#how"
                   onClick={() => setMenuOpen(false)}
-                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec]"
+                  className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   How it works
                 </Link>
@@ -371,7 +373,7 @@ export default function Header() {
                   auth.login()
                 }}
                 disabled={!auth.ready || auth.loggingIn}
-                className="inline-flex min-h-[42px] items-center justify-center rounded-xl border border-[#020817]/25 text-[14px] font-medium text-[#020817]"
+                className="inline-flex min-h-[42px] items-center justify-center rounded-xl border border-[#020817]/25 text-[14px] font-medium text-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
                 {auth.loggingIn ? 'Connecting…' : 'Log in'}
               </button>
@@ -382,7 +384,7 @@ export default function Header() {
                 setMenuOpen(false)
                 openPicker()
               }}
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-[#020817] text-[14px] font-medium text-white"
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-[#020817] text-[14px] font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
             >
               List your space
             </button>

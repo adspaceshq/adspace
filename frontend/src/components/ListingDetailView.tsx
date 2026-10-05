@@ -9,6 +9,7 @@ import SpecSheet from '@/components/SpecSheet'
 import SellerAvatar from '@/components/SellerAvatar'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
+import { useToast } from '@/components/ToastProvider'
 import { deadlineLabel, expectedListingPayout, explorerTxUrl, formatMoney, isEnded, isSignatureLike, listingOversubscription, listingUrl, minBidFor, sellerDisplay, sellerUrl, type Spot } from '@/lib/listings'
 import { PRIVY_ENABLED } from '@/lib/privy'
 import { dataUrlToBlob, uploadToCloudinary } from '@/lib/cloudinary'
@@ -44,6 +45,7 @@ function ago(iso: string): string {
 
 export default function ListingDetailView({ id, backHref }: { id: string; backHref?: string }) {
   const { listings, getListing, claimSpot, placeBid, submitProof } = useStore()
+  const toast = useToast()
   const listing = getListing(id)
 
   const [modal, setModal] = useState<{ spot: Spot; mode: 'claim' | 'bid' } | null>(null)
@@ -54,7 +56,6 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const [step, setStep] = useState<'brand' | 'pay'>('brand')
   const [paying, setPaying] = useState(false)
   const [amount, setAmount] = useState('')
-  const [toast, setToast] = useState<string | null>(null)
   const [x, setX] = useState<XIdentity | null>(null)
   // Delivery proof (Step 9): seller-only form state per fulfilled spot.
   const [proofSpot, setProofSpot] = useState<string | null>(null)
@@ -63,7 +64,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const [proofBusy, setProofBusy] = useState(false)
   const [proofError, setProofError] = useState<string | null>(null)
 
-  // Brand site → clickable link. Bare domains get https:// so the link works.
+  // Brand site -> clickable link. Bare domains get https:// so the link works.
   const normalizeWebsite = (raw: string) => {
     const v = raw.trim()
     if (!v) return ''
@@ -145,8 +146,16 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const isAuction = listing.priceType === 'auction'
   const ended = isEnded(listing.endsAt)
   const raised = listing.spots.reduce((a, s) => a + (s.bid ?? 0), 0)
+  const normHandle = (h: string) => h.trim().replace(/^@+/, '').toLowerCase()
+  const currentHandle = x?.handle ? normHandle(x.handle) : null
   const allBids = listing.spots.flatMap((sp) =>
-    (sp.bids ?? []).map((b) => ({ ...b, spotLabel: sp.label }))
+    (sp.bids ?? []).map((b) => ({
+      ...b,
+      spotId: sp.id,
+      spotLabel: sp.label,
+      isCurrentLeader: Boolean(sp.bidBy && normHandle(sp.bidBy) === normHandle(b.bidder) && sp.bid === b.amount),
+      isMine: Boolean(currentHandle && normHandle(b.bidder) === currentHandle),
+    }))
   ).sort((a, b) => +new Date(b.at) - +new Date(a.at))
   const totals = new Map<string, number>()
   for (const b of allBids) totals.set(b.bidder, (totals.get(b.bidder) ?? 0) + b.amount)
@@ -163,8 +172,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const expectedPayout = expectedListingPayout(listing)
 
   const showToast = (msg: string) => {
-    setToast(msg)
-    window.setTimeout(() => setToast(null), 3200)
+    toast.info(msg)
   }
 
   const openClaim = (spot: Spot) => {
@@ -198,7 +206,6 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
   const shareUrl = (text: string) =>
     `https://x.com/intent/post?text=${encodeURIComponent(text + ` ${window.location.origin}${listingUrl(listing, listings)}`)}`
 
-  const normHandle = (h: string) => h.trim().replace(/^@+/, '').toLowerCase()
   const isOwner = !!x?.handle && normHandle(x.handle) === normHandle(listing.seller.handle || listing.seller.name)
 
   // Proof photos upload at full quality (no shrink), capped at the API's ~3 MB each.
@@ -233,9 +240,11 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       setProofSpot(null)
       setProofFiles([])
       setProofPost('')
-      showToast('Proof uploaded.')
+      toast.success('Proof uploaded', 'The sponsor can now review the delivered spot.')
     } catch (e) {
-      setProofError(e instanceof Error ? e.message : 'Could not upload proof.')
+      const message = e instanceof Error ? e.message : 'Could not upload proof.'
+      setProofError(message)
+      toast.error('Proof upload failed', message)
     } finally {
       setProofBusy(false)
     }
@@ -265,12 +274,13 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
       ...(normalizeWebsite(website) ? { website: normalizeWebsite(website) } : {}),
     }
     // On-chain when the backend is configured for chain (devnet USDC moves),
-    // spot-marking fallback otherwise — same API-only mutation either way.
+    // spot-marking fallback otherwise - same API-only mutation either way.
     setPaying(true)
     try {
       if (modal.mode === 'claim') {
         await claimSpot(listing.id, modal.spot.id, actor, extras)
         setSuccess({ spotLabel: modal.spot.label, text: `${modal.spot.label} claimed by ${actor}.` })
+        toast.success('Spot claimed', `${modal.spot.label} is now reserved for ${actor}.`)
       } else {
         const amt = Number(amount)
         const min = minBidFor(listing, modal.spot)
@@ -281,9 +291,10 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
         }
         await placeBid(listing.id, modal.spot.id, actor, amt, extras)
         setSuccess({ spotLabel: modal.spot.label, text: `${actor} bid ${formatMoney(amt, listing.currency)} on ${modal.spot.label}.` })
+        toast.success('Bid placed', `${formatMoney(amt, listing.currency)} bid submitted for ${modal.spot.label}.`)
       }
     } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Something went wrong.')
+      toast.error('Payment failed', err instanceof Error ? err.message : 'Something went wrong.')
       setPaying(false)
       return
     }
@@ -291,7 +302,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     setModal(null)
   }
 
-  // Brand step → pay step. Login first when Privy is on, same rule as submit.
+  // Brand step -> pay step. Login first when Privy is on, same rule as submit.
   const continueToPay = (e: React.FormEvent) => {
     e.preventDefault()
     if (PRIVY_ENABLED) {
@@ -459,6 +470,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                 const isClaimed = Boolean(sp.claimedBy)
                 const amount = sp.bid ?? sp.price
                 const websiteClean = sp.website ? sp.website.replace(/^https?:\/\//i, '').replace(/\/$/, '') : null
+                const isMine = Boolean(x?.handle && normHandle(x.handle) === normHandle(brand))
 
                 return (
                   <div
@@ -497,6 +509,11 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                         >
                           {isClaimed ? 'Claimed' : 'Top bid'}
                         </span>
+                        {isMine && (
+                          <span className="inline-flex items-center rounded-full bg-[#020817] px-2 py-0.5 text-[11px] font-medium text-white">
+                            Your bid
+                          </span>
+                        )}
                       </div>
 
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-[#64748b]">
@@ -601,7 +618,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                         type="button"
                         aria-label="Remove photo"
                         onClick={() => setProofFiles((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-[#020817] text-[11px] text-white"
+                        className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-[#020817] text-[15px] leading-none text-white transition hover:bg-[#1a2436] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                       >
                         ×
                       </button>
@@ -610,7 +627,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-3">
-                <label htmlFor={`proof-file-${sp.id}`} className="cursor-pointer rounded-full border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium transition hover:border-[#4166fb]">
+                <label htmlFor={`proof-file-${sp.id}`} className="inline-flex min-h-10 cursor-pointer items-center rounded-full border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium transition hover:border-[#4166fb] focus-within:ring-2 focus-within:ring-[#4166fb] focus-within:ring-offset-2">
                   {proofBusy ? 'Reading…' : 'Add photos'}
                 </label>
                 <input
@@ -624,22 +641,24 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                 <input
                   value={proofSpot === sp.id ? proofPost : ''}
                   onChange={(e) => setProofPost(e.target.value)}
-                  placeholder="x.com/… post link (optional)"
+                  placeholder="x.com/... post link (optional)"
+                  type="url"
+                  inputMode="url"
                   spellCheck={false}
-                  className="min-w-[200px] flex-1 rounded-lg border border-[#e7e5e0] bg-white px-3 py-2 text-[13px] outline-none transition focus:border-[#4166fb]"
+                  className="min-h-10 min-w-[200px] flex-1 rounded-lg border border-[#e7e5e0] bg-white px-3 py-2 text-[13px] outline-none transition focus:border-[#4166fb] focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 />
                 <button
                   type="button"
                   onClick={() => void saveProof(sp.id)}
                   disabled={proofBusy || !proofFiles.length}
-                  className="rounded-full bg-[#020817] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
+                  className="min-h-10 rounded-full bg-[#020817] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   {proofBusy ? 'Uploading…' : 'Upload proof'}
                 </button>
                 <button
                   type="button"
                   onClick={() => { setProofSpot(null); setProofFiles([]); setProofPost(''); setProofError(null) }}
-                  className="text-[13px] font-medium text-[#64748b] transition hover:text-[#020817]"
+                  className="min-h-10 rounded-full px-3 text-[13px] font-medium text-[#64748b] transition hover:bg-[#f1f0ec] hover:text-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   Cancel
                 </button>
@@ -693,8 +712,22 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
             <h2 className="mb-4 text-2xl">Latest bids.</h2>
             <div className="flex flex-col gap-2">
               {allBids.slice(0, 6).map((b, i) => (
-                <div key={`${b.at}-${i}`} className="flex items-center gap-3 rounded-xl border border-[#e7e5e0] bg-white px-5 py-3 text-sm">
+                <div key={`${b.at}-${i}`} className="flex flex-wrap items-center gap-3 rounded-xl border border-[#e7e5e0] bg-white px-5 py-3 text-sm">
                   <span className="font-semibold">{b.bidder}</span>
+                  {b.isMine && (
+                    <span className="rounded-full bg-[#020817] px-2 py-0.5 text-[11px] font-semibold text-white">
+                      Your bid
+                    </span>
+                  )}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                      b.isCurrentLeader
+                        ? 'bg-[#ecfdf5] text-emerald-700'
+                        : 'bg-[#fff7ed] text-amber-700'
+                    }`}
+                  >
+                    {b.isCurrentLeader ? 'Leading' : 'Outbid'}
+                  </span>
                   <span className="text-[#64748b]">bid {formatMoney(b.amount, listing.currency)} on {b.spotLabel}</span>
                   <span className="ml-auto text-[13px] text-[#64748b]">{ago(b.at)}</span>
                 </div>
@@ -731,11 +764,21 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
               </>
             ) : modal && step === 'brand' && (
               <>
-                <h3 className="mb-1 text-2xl">{modal.mode === 'claim' ? 'Claim' : 'Bid on'} {modal.spot.label}</h3>
+                <div className="mb-5 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4166fb]">
+                      Step 1 of 2
+                    </p>
+                    <h3 className="mt-1 text-2xl">{modal.mode === 'claim' ? 'Claim' : 'Bid on'} {modal.spot.label}</h3>
+                  </div>
+                  <span className="rounded-full bg-[#f3f6ff] px-3 py-1 text-[11px] font-semibold text-[#4166fb]">
+                    {modal.mode === 'claim' ? 'Fixed price' : 'Auction'}
+                  </span>
+                </div>
                 <p className="mb-6 text-sm text-[#64748b]">
                   {modal.mode === 'claim'
-                    ? `${formatMoney(modal.spot.price, listing.currency)} fixed — your brand goes on the real thing.`
-                    : `current ${formatMoney(modal.spot.bid ?? modal.spot.price, listing.currency)} — your brand goes on the real thing.`}
+                    ? `${formatMoney(modal.spot.price, listing.currency)} reserves this spot and places your logo on the campaign surface.`
+                    : `Current leader is ${formatMoney(modal.spot.bid ?? modal.spot.price, listing.currency)}. Add your brand details before confirming your bid.`}
                 </p>
                 <form onSubmit={continueToPay}>
                   {PRIVY_ENABLED ? (
@@ -750,7 +793,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                         </span>
                       ) : (
                         <span className="text-[#64748b]">
-                          Log in with X to {modal.mode === 'claim' ? 'claim' : 'bid'} — your handle is your identity.
+                          Log in with X to {modal.mode === 'claim' ? 'claim' : 'bid'} - your handle is your identity.
                           {x?.error && <span className="mt-1 block text-[#dc2626]">{x.error}</span>}
                         </span>
                       )}
@@ -772,7 +815,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     />
                   </div>
                   <div className="mb-5 flex flex-col gap-[6px]">
-                    <span className="text-[13px] font-semibold" id="modal-logo-label">Logo <span className="font-normal text-[#64748b]">(required — it goes on the real thing)</span></span>
+                    <span className="text-[13px] font-semibold" id="modal-logo-label">Logo <span className="font-normal text-[#64748b]">(required for the sticker preview)</span></span>
                     <div className="flex items-center gap-3">
                       {logo && (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -805,14 +848,15 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     </button>
                   </div>
                 </form>
-                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC — no mainnet funds move.</p>
+                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC - no mainnet funds move.</p>
               </>
             )}
             {modal && step === 'pay' && !success && (
               <>
-                <h3 className="mb-1 text-2xl">Pay{modal.mode === 'claim' ? ` ${formatMoney(modal.spot.price, listing.currency)}` : ''}</h3>
+                <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-[#4166fb]">Step 2 of 2</p>
+                <h3 className="mt-1 text-2xl">{modal.mode === 'claim' ? 'Confirm claim' : 'Confirm bid'}</h3>
                 <p className="mb-6 text-sm text-[#64748b]">
-                  {modal.spot.label} · {name || actor}{website.trim() ? ` · ${website.trim()}` : ''} — devnet USDC payment.
+                  {modal.spot.label} · {name || actor}{website.trim() ? ` · ${website.trim()}` : ''} · devnet USDC payment.
                 </p>
                 <form onSubmit={submit}>
                   {modal.mode === 'bid' && (
@@ -821,8 +865,14 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                         Bid (min {formatMoney(minBidFor(listing, modal.spot), listing.currency)})
                       </label>
                       <input
-                        id="modal-amount" required type="number" value={amount} onChange={(e) => setAmount(e.target.value)}
-                        min={minBidFor(listing, modal.spot)} className={field} autoFocus
+                        id="modal-amount"
+                        required
+                        type="text"
+                        inputMode="decimal"
+                        value={amount}
+                        onChange={(e) => setAmount(e.target.value)}
+                        className={field}
+                        autoFocus
                       />
                     </div>
                   )}
@@ -831,7 +881,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                     <span className="font-mono font-semibold">
                       {modal.mode === 'claim'
                         ? formatMoney(modal.spot.price, listing.currency)
-                        : (Number(amount) > 0 ? formatMoney(Number(amount), listing.currency) : '—')}
+                        : (Number(amount) > 0 ? formatMoney(Number(amount), listing.currency) : '-')}
                     </span>
                   </div>
                   <div className="mt-6 flex justify-end gap-3">
@@ -839,20 +889,14 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                       Back
                     </button>
                     <button type="submit" disabled={paying} className="rounded-full bg-[#4166fb] px-[22px] py-[13px] text-[15px] font-medium text-white transition hover:bg-[#3558e8] disabled:opacity-60">
-                      {paying ? 'Paying…' : modal.mode === 'claim' ? 'Pay and claim' : 'Pay and bid'}
+                      {paying ? 'Submitting…' : modal.mode === 'claim' ? 'Confirm claim' : 'Confirm bid'}
                     </button>
                   </div>
                 </form>
-                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC — no mainnet funds move.</p>
+                <p className="mt-4 text-center text-xs text-[#64748b]">Devnet USDC - no mainnet funds move.</p>
               </>
             )}
           </div>
-        </div>
-      )}
-
-      {toast && (
-        <div className="fixed bottom-6 left-1/2 z-[110] max-w-[90vw] -translate-x-1/2 rounded-full bg-[#020817] px-[22px] py-[14px] text-center text-sm font-medium text-white shadow-[0_16px_40px_rgba(2,8,23,0.1)]">
-          {toast}
         </div>
       )}
     </>

@@ -2,6 +2,7 @@ import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
 import { resolvePayoutReference } from "./payout.js";
 import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, SponsorDashboard, SponsorSpotStatus, Spot } from "./types.js";
 import type { ChainPublication } from "./listing-chain.js";
+import { isHostedAssetUrl } from "./cloudinary.js";
 
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000).toISOString();
 
@@ -26,6 +27,8 @@ function artworkLocked(artworkClose: string): boolean {
 }
 
 const MAX_PROOF_PHOTOS = 5;
+const validImageUpload = (url: string) => url.startsWith("data:image/") || isHostedAssetUrl(url);
+const validProofUpload = (url: string) => url.startsWith("data:image/") || isHostedAssetUrl(url);
 
 /** Step 9 proof: 1–5 inline photos plus an optional X-post link. */
 function parseProof(proof: { photos: unknown; postUrl?: unknown }): { photos: string[]; postUrl?: string } {
@@ -35,7 +38,7 @@ function parseProof(proof: { photos: unknown; postUrl?: unknown }): { photos: st
   }
   const clean = photos.map((p) => {
     const url = typeof p === "string" ? p.trim() : "";
-    if (!url.startsWith("data:image/")) throw Object.assign(new Error("proof photos must be image uploads"), { status: 400 });
+    if (!validProofUpload(url)) throw Object.assign(new Error("proof uploads must be image or video uploads"), { status: 400 });
     if (url.length > MAX_LOGO_URL_LENGTH) throw Object.assign(new Error("proof photo is too large"), { status: 400 });
     return url;
   });
@@ -69,7 +72,7 @@ function parseBrandAssets(assets?: PurchaseAssets, opts: { requireLogo?: boolean
     throw Object.assign(new Error("logo is required"), { status: 400 });
   }
   if (logoUrl) {
-    if (!logoUrl.startsWith("data:image/")) {
+    if (!validImageUpload(logoUrl)) {
       throw Object.assign(new Error("logo must be an image upload"), { status: 400 });
     }
     if (logoUrl.length > MAX_LOGO_URL_LENGTH) {
@@ -210,7 +213,7 @@ export class Store {
     });
     const image = typeof req.image === "string" ? req.image.trim() : "";
     if (image) {
-      if (!image.startsWith("data:image/")) throw Object.assign(new Error("image must be an image upload"), { status: 400 });
+      if (!validImageUpload(image)) throw Object.assign(new Error("image must be an image upload"), { status: 400 });
       if (image.length > MAX_LOGO_URL_LENGTH) throw Object.assign(new Error("image is too large"), { status: 400 });
     }
     const listing: Listing = {

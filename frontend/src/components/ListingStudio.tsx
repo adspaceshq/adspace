@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  CircleDollarSign,
   DollarSign,
   Gavel,
   Info,
@@ -30,7 +31,9 @@ import SpecSheet from '@/components/SpecSheet'
 import { XProbe, type XIdentity } from '@/components/AuthButton'
 import { useStore } from '@/components/StoreProvider'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
+import { useToast } from '@/components/ToastProvider'
 import { dataUrlToBlob, uploadToCloudinary } from '@/lib/cloudinary'
+import { userErrorMessage } from '@/lib/errors'
 import {
   INSIDE_VIEW_ID,
   LID_VIEW_ID,
@@ -56,13 +59,19 @@ interface SpotDraft {
   label: string
   size: string
   price: string
-  /* View the sticker lives on — the deck when set to 'inside'. Absent = the lid, where every spot starts. */
+  /* View the sticker lives on - the deck when set to 'inside'. Absent = the lid, where every spot starts. */
   view?: string
   /* Sticker position in % of that view's photo, set by clicking or dragging. Absent = auto-laid out. */
   x?: number
   y?: number
   /* Sticker width in % of that view's photo, set by dragging the corner handle. Absent = auto width. */
   w?: number
+}
+
+type ValidationIssue = {
+  id: 'title' | 'pricing' | 'deadline' | 'spots' | 'increment'
+  label: string
+  targetId: string
 }
 
 const toDateInput = (d: Date) =>
@@ -87,13 +96,14 @@ export default function ListingStudio({ surface: initialSurface = 'gear' }: List
 
 function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'apparel' }) {
   const { addListing } = useStore()
+  const toast = useToast()
   const router = useRouter()
   const searchParams = useSearchParams()
   const { openPicker } = useSurfacePicker()
 
   const [sellerName, setSellerName] = useState('')
   const [title, setTitle] = useState('')
-  // Second surface alongside the Mac: 'gear' is the MacBook lid,
+  // Surface families: 'gear' covers laptop lids and similar hardware,
   // 'apparel' is the T-shirt (model-photo editor and buyer view).
   const [surface, setSurface] = useState<'gear' | 'apparel'>(() => {
     const s = searchParams.get('surface')
@@ -116,6 +126,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   }, [searchParams, initialSurface])
 
   const isTee = surface === 'apparel'
+  const surfaceLabel = isTee ? 'T-shirt' : 'Gear surface'
   const [goal, setGoal] = useState('')
   const [deadline, setDeadline] = useState(() => toDateInput(new Date(Date.now() + 14 * 86_400_000)))
   // Optional artwork due date: buyers must submit final art by then (empty = none).
@@ -123,12 +134,12 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   const [priceType, setPriceType] = useState<'fixed' | 'auction' | null>(null)
   const [minIncrement, setMinIncrement] = useState('1')
   const [spots, setSpots] = useState<SpotDraft[]>([{ label: '', size: '', price: '' }])
-  // Id of the spot whose price panel is open — set by dropping or tapping a sticker.
+  // Id of the spot whose price panel is open - set by dropping or tapping a sticker.
   const [editingSpot, setEditingSpot] = useState<string | null>(null)
   // Which Mac view is on screen. Row clicks drive it so the Mac jumps to the tapped sticker's view.
   const [activeView, setActiveView] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // Review gate: submitting the form (button or Enter) only opens the confirm dialog —
+  // Review gate: submitting the form (button or Enter) only opens the confirm dialog -
   // nothing is submitted until "Submit for review" is clicked there.
   const [reviewing, setReviewing] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -188,8 +199,8 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
         setImage(url)
         setImageBusy(false)
       })
-      .catch(() => {
-        setImageError('Could not read that file.')
+      .catch((err) => {
+        setImageError(userErrorMessage(err, 'Could not upload that photo. Try a different image.'))
         setImageBusy(false)
       })
   }
@@ -197,7 +208,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   const updateSpot = (i: number, patch: Partial<SpotDraft>) =>
     setSpots((prev) => prev.map((s, j) => (j === i ? { ...s, ...patch } : s)))
 
-  // Live view of what buyers will see — rebuilt from the form on every keystroke.
+  // Live view of what buyers will see - rebuilt from the form on every keystroke.
   const preview: Listing = useMemo(() => {
     const pid = 'preview'
     const pspots = spots.map((s, i) => ({
@@ -207,7 +218,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
       price: Number(s.price) || 0,
     }))
     // Tee branch first: each spot lives on the model shot it was dropped on
-    // (front, back, either side) — unlabeled drafts start on the front.
+    // (front, back, either side) - unlabeled drafts start on the front.
     if (isTee) {
       const teeIds: Record<string, string[]> = {
         [TEE_FRONT_VIEW_ID]: [],
@@ -276,8 +287,8 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     }
   }, [spots, title, surface, isTee, priceType])
 
-  // A click on bare photo drops a spot exactly where clicked — on the view that was
-  // clicked — and opens the side panel so the price is the next thing typed.
+  // A click on bare photo drops a spot exactly where clicked - on the view that was
+  // clicked - and opens the side panel so the price is the next thing typed.
   const placeSpot = (x: number, y: number, viewId: string) => {
     setSpots((prev) => [
       ...pinDraftPositions(prev, isTee ? TEE_FRONT_VIEW_ID : LID_VIEW_ID),
@@ -317,6 +328,33 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   const floor = priced.length ? Math.min(...priced) : 0
   const total = priced.reduce((a, b) => a + b, 0)
   const currency = preview.currency ?? 'USD'
+  const validationIssues = useMemo<ValidationIssue[]>(() => {
+    const issues: ValidationIssue[] = []
+    if (!title.trim()) {
+      issues.push({ id: 'title', label: 'Add a clear space title.', targetId: 'listing-title' })
+    }
+    if (!priceType) {
+      issues.push({ id: 'pricing', label: 'Choose Fixed price or Auction.', targetId: 'pricing-format' })
+    }
+    if (!deadline) {
+      issues.push({ id: 'deadline', label: 'Pick a campaign deadline.', targetId: 'listing-deadline' })
+    }
+    if (!spots.length) {
+      issues.push({ id: 'spots', label: 'Place at least one sponsor spot on the canvas.', targetId: 'studio-canvas' })
+    } else if (spots.some((spot) => !(Number(spot.price) > 0))) {
+      issues.push({ id: 'spots', label: 'Price every sponsor spot above zero.', targetId: 'spot-price' })
+    }
+    if (priceType === 'auction' && !(Number(minIncrement) > 0)) {
+      issues.push({ id: 'increment', label: 'Set a minimum bid increment above zero.', targetId: 'min-increment' })
+    }
+    return issues
+  }, [deadline, minIncrement, priceType, spots, title])
+
+  const focusValidationIssue = (issue: ValidationIssue) => {
+    const target = document.getElementById(issue.targetId)
+    target?.focus()
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   const addSticker = () => {
     if (spots.length >= 60) {
@@ -352,38 +390,10 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
       setError('Please authenticate with X to list.')
       return
     }
-    const hasTitle = Boolean(title.trim())
-    const hasSpots = spots.length > 0
-
-    if (!hasTitle && !hasSpots) {
-      setError('A title and at least one spot are required.')
-      document.getElementById('listing-title')?.focus()
-      document.getElementById('listing-title')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    if (!hasTitle) {
-      setError('Please enter a space title to continue.')
-      document.getElementById('listing-title')?.focus()
-      document.getElementById('listing-title')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    if (!hasSpots) {
-      setError('Please place at least one sponsor spot on the canvas above.')
-      document.getElementById('studio-canvas')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    if (!priceType) {
-      setError('Please choose a pricing format (Fixed price or Auction).')
-      return
-    }
-    if (!deadline) {
-      setError('Please pick a campaign deadline.')
-      document.getElementById('listing-deadline')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    const prices = spots.map((s) => Number(s.price))
-    if (prices.some((p) => !p || p <= 0)) {
-      setError('Every spot needs a price above zero.')
+    const firstIssue = validationIssues[0]
+    if (firstIssue) {
+      setError(firstIssue.label)
+      focusValidationIssue(firstIssue)
       return
     }
     setError(null)
@@ -402,6 +412,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
       return
     }
     setPublishing(true)
+    const toastId = toast.loading('Submitting listing', 'Sending your space to the review queue.')
     const seller = PRIVY_ENABLED ? (x?.handle ?? '') : sellerName.trim()
     const id = `user-${Date.now()}`
     const spotIds = spots.map((_, i) => `${id}-s${i + 1}`)
@@ -449,11 +460,22 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     try {
       await addListing(listing)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not submit. Try again.')
+      const message = userErrorMessage(err, 'Could not submit. Try again.')
+      setError(message)
+      toast.update(toastId, {
+        title: 'Could not submit listing',
+        description: message,
+        tone: 'error',
+      })
       setReviewing(false)
       setPublishing(false)
       return
     }
+    toast.update(toastId, {
+      title: 'Listing submitted',
+      description: 'A reviewer will check the terms before it goes live.',
+      tone: 'success',
+    })
     router.push('/dashboard')
   }
 
@@ -527,7 +549,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.9, y: 4 }}
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                  className="w-68 rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_20px_48px_rgba(2,8,23,0.22)]"
+                  className="w-[min(17rem,calc(100vw-2rem))] rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_20px_48px_rgba(2,8,23,0.22)]"
                 >
                   <div className="mb-3 flex items-center justify-between gap-2 border-b border-[#f1f0ec] pb-2">
                     <span className="font-mono text-[12px] font-bold text-[#020817]">
@@ -558,7 +580,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   />
 
                   <label className="mb-1 block text-[12px] font-semibold text-[#020817]" htmlFor="spot-price">
-                    {priceType === 'auction' ? 'Starting bid ($)' : 'Fixed price ($)'}
+                    {priceType === 'auction' ? 'Starting bid ($)' : priceType === 'fixed' ? 'Fixed price ($)' : 'Spot price ($)'}
                   </label>
                   <div className="relative mb-2">
                     <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-[#64748b]">
@@ -566,11 +588,11 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     </span>
                     <input
                       id="spot-price"
-                      type="number"
-                      min={1}
+                      type="text"
+                      inputMode="decimal"
                       autoFocus
                       placeholder="25"
-                      className="w-full rounded-xl border border-[#e7e5e0] bg-[#fafaf9] py-2 pl-7 pr-3 font-mono text-[14px] font-semibold text-[#020817] focus:border-[#4166fb] focus:bg-white focus:outline-none"
+                      className="w-full rounded-xl border border-[#e7e5e0] bg-[#fafaf9] py-2 pl-7 pr-3 font-mono text-[14px] font-semibold text-[#020817] focus:border-[#4166fb] focus:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                       value={spots[editingIdx]?.price ?? ''}
                       onChange={(e) => updateSpot(editingIdx, { price: e.target.value })}
                       onKeyDown={(e) => {
@@ -600,7 +622,9 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   <p className="text-[11px] leading-snug text-[#64748b]">
                     {priceType === 'auction'
                       ? 'First bid must meet or exceed this amount.'
-                      : 'First buyer pays this amount to claim.'}
+                      : priceType === 'fixed'
+                      ? 'First buyer pays this amount to claim.'
+                      : 'Choose Fixed price or Auction below before submitting.'}
                   </p>
 
                   {spots.length > 1 && (
@@ -639,7 +663,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                 transition={{ duration: 0.4 }}
                 className="text-2xl sm:text-[32px] font-medium tracking-tight text-[#020817]"
               >
-                {isTee ? 'List your T-shirt' : 'List your Mac lid'}
+                {isTee ? 'List your T-shirt' : 'List your gear surface'}
               </motion.h1>
 
               <motion.p
@@ -659,7 +683,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
               {studioCanvas}
               <div className="flex flex-col gap-6">
 
-                  {/* Step 1: Pricing Format (Centered, sleek motion segmented control) */}
+                  {/* Step 1: sale type */}
                   <motion.div
                     initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
@@ -671,13 +695,15 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         Step 01
                       </span>
                       <h2 className="text-xl font-bold tracking-tight text-[#020817] sm:text-2xl">
-                        Pricing Format
+                        Choose sale type
                       </h2>
                     </div>
 
                     {/* Centered Animated Segmented Pill Control */}
                     <div className="mt-4 flex justify-center">
                       <div
+                        id="pricing-format"
+                        tabIndex={-1}
                         className="inline-flex items-center rounded-full bg-[#eae9e4] p-1 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]"
                         role="radiogroup"
                         aria-label="Pricing format"
@@ -730,10 +756,65 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                           className="text-[14px] text-[#64748b]"
                         >
                           {priceType === 'fixed'
-                            ? 'Instant claim — first sponsor to pay your asking price secures the spot immediately.'
-                            : 'Competitive bidding — brands place bids on your spots and outbid each other until your listing closes.'}
+                            ? 'Instant claim - first sponsor to pay your asking price secures the spot immediately.'
+                            : priceType === 'auction'
+                            ? 'Competitive bidding - brands place bids on your spots and outbid each other until your listing closes.'
+                            : 'Choose how sponsors will buy your spots. This controls the pricing fields and review terms.'}
                         </motion.p>
                       </AnimatePresence>
+
+                      <div className="mt-4 grid gap-3 text-left sm:grid-cols-2">
+                        {([
+                          {
+                            key: 'fixed',
+                            title: 'Fixed price',
+                            copy: 'Sponsors claim spots immediately at your set price.',
+                            badge: 'Fastest',
+                            Icon: CircleDollarSign,
+                          },
+                          {
+                            key: 'auction',
+                            title: 'Auction',
+                            copy: 'Sponsors bid until the deadline; reviewer sets auction fees.',
+                            badge: 'Competitive',
+                            Icon: Gavel,
+                          },
+                        ] as const).map((item) => {
+                          const selected = priceType === item.key
+                          const Icon = item.Icon
+                          return (
+                            <button
+                              key={item.key}
+                              type="button"
+                              onClick={() => setPriceType(item.key)}
+                              className={`min-h-[116px] rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2 ${
+                                selected
+                                  ? 'border-[#4166fb] bg-[#f3f6ff] shadow-[0_10px_30px_rgba(65,102,251,0.12)]'
+                                  : 'border-[#e7e5e0] bg-white hover:border-[#cfd6fb]'
+                              }`}
+                            >
+                              <span className="flex items-start justify-between gap-3">
+                                <span
+                                  className={`grid h-9 w-9 place-items-center rounded-xl ${
+                                    selected ? 'bg-[#4166fb] text-white' : 'bg-[#f1f0ec] text-[#64748b]'
+                                  }`}
+                                >
+                                  <Icon size={17} />
+                                </span>
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                    selected ? 'bg-white text-[#4166fb]' : 'bg-[#f8fafc] text-[#64748b]'
+                                  }`}
+                                >
+                                  {item.badge}
+                                </span>
+                              </span>
+                              <span className="mt-3 block text-[14px] font-semibold text-[#020817]">{item.title}</span>
+                              <span className="mt-1 block text-[12px] leading-relaxed text-[#64748b]">{item.copy}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
 
                       {priceType === 'auction' && (
                         <motion.div
@@ -751,13 +832,11 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                             </span>
                             <input
                               id="min-increment"
-                              type="number"
+                              type="text"
                               inputMode="decimal"
-                              min="0.01"
-                              step="0.01"
                               value={minIncrement}
                               onChange={(e) => setMinIncrement(e.target.value)}
-                              className="w-full rounded-xl border border-[#e5e4de] bg-white py-2.5 pl-8 pr-4 font-mono text-[14px] font-medium text-[#020817] shadow-xs focus:border-[#020817] focus:outline-none"
+                              className="w-full rounded-xl border border-[#e5e4de] bg-white py-2.5 pl-8 pr-4 font-mono text-[14px] font-medium text-[#020817] shadow-xs focus:border-[#020817] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                               required
                             />
                           </div>
@@ -813,7 +892,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                 </>
                               ) : (
                                 <>
-                                  <span className="font-mono text-xs font-bold">𝕏</span>
+                                  <span className="font-mono text-xs font-bold">X</span>
                                   <span>Authenticate with X</span>
                                 </>
                               )}
@@ -845,7 +924,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                   {x.handle.replace('@', '').charAt(0).toUpperCase()}
                                 </span>
                                 <span className="absolute -bottom-0.5 -right-0.5 grid h-4 w-4 place-items-center rounded-full bg-[#020817] font-mono text-[9px] font-bold text-white ring-2 ring-white">
-                                  𝕏
+                                  X
                                 </span>
                               </div>
                               <div>
@@ -905,7 +984,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         </label>
                         <input
                           id="listing-title"
-                          placeholder={isTee ? 'Put your brand on my T-shirt at TOKEN2049' : 'Put your brand on my MacBook lid'}
+                          placeholder={isTee ? 'Put your brand on my T-shirt at TOKEN2049' : 'Put your brand on my laptop lid'}
                           value={title}
                           onChange={(e) => {
                             setTitle(e.target.value)
@@ -971,6 +1050,48 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         </span>
                       </div>
 
+                      <div className="rounded-2xl border border-[#e7e5e0] bg-white p-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-[#020817]">Surface photo</p>
+                            <p className="mt-1 text-[12px] leading-relaxed text-[#64748b]">
+                              Optional, but recommended. Upload the real surface buyers will see.
+                            </p>
+                            {imageError && (
+                              <p className="mt-2 text-[12px] font-medium text-[#dc2626]">{imageError}</p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            {image && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={image}
+                                alt=""
+                                className="h-12 w-16 rounded-xl border border-[#e7e5e0] object-cover"
+                              />
+                            )}
+                            <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full border border-[#d8d6d0] bg-[#fafaf9] px-4 py-2 text-[12px] font-semibold text-[#020817] transition hover:border-[#4166fb] hover:text-[#4166fb]">
+                              {imageBusy ? (
+                                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#4166fb] border-t-transparent" />
+                              ) : (
+                                <UploadCloud size={15} />
+                              )}
+                              <span>{imageBusy ? 'Uploading…' : image ? 'Replace photo' : 'Upload photo'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                disabled={imageBusy}
+                                onChange={(event) => {
+                                  void onPhotoFile(event.target.files?.[0])
+                                  event.currentTarget.value = ''
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
                   </motion.div>
 
@@ -993,7 +1114,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                           type="button"
                           onClick={addSticker}
                           disabled={spots.length >= 60}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-[#020817] bg-[#020817] px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-black disabled:opacity-50"
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[#020817] bg-[#020817] px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-black disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                         >
                           <Plus size={14} /> {isTee ? 'Add Print Zone' : 'Add Sticker'}
                         </button>
@@ -1038,7 +1159,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                               <button
                                 type="button"
                                 onClick={() => focusSticker(p.id, i)}
-                                className="flex min-w-0 flex-1 items-center gap-3 text-left focus:outline-none"
+                                className="flex min-h-10 min-w-0 flex-1 items-center gap-3 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                               >
                                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#020817] font-mono text-[12px] font-bold text-white">
                                   {i + 1}
@@ -1074,7 +1195,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                           exit={{ opacity: 0 }}
                                           className="inline-block text-[#dc2626] font-medium"
                                         >
-                                          Unpriced — click to price
+                                          Needs a price
                                         </motion.span>
                                       )}
                                     </AnimatePresence>
@@ -1086,7 +1207,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                 <button
                                   type="button"
                                   onClick={() => focusSticker(p.id, i)}
-                                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-[#4166fb] border border-[#c3cdfd] hover:bg-[#e9edfe] transition"
+                                  className="min-h-9 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-[#4166fb] border border-[#c3cdfd] hover:bg-[#e9edfe] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                                 >
                                   {isSelected ? 'Editing' : 'Edit'}
                                 </button>
@@ -1095,7 +1216,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                     type="button"
                                     onClick={() => removeSpot(p.id)}
                                     aria-label={`Remove spot ${i + 1}`}
-                                    className="grid h-8 w-8 place-items-center rounded-lg text-[#94a3b8] transition hover:bg-[#fee2e2] hover:text-[#dc2626]"
+                                    className="grid h-10 w-10 place-items-center rounded-lg text-[#94a3b8] transition hover:bg-[#fee2e2] hover:text-[#dc2626] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#dc2626] focus-visible:ring-offset-2"
                                   >
                                     <Trash2 size={15} />
                                   </button>
@@ -1125,7 +1246,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                             transition={{ duration: 0.15 }}
                             className="block font-mono text-xl font-bold text-[#020817]"
                           >
-                            {total > 0 ? formatMoney(total, currency) : '—'}
+                            {total > 0 ? formatMoney(total, currency) : '-'}
                           </motion.span>
                         </AnimatePresence>
                         {priced.length < spots.length && (
@@ -1144,6 +1265,47 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     transition={{ duration: 0.4, delay: 0.15 }}
                     className="pt-8 pb-6 flex flex-col gap-4"
                   >
+                    <div
+                      className={`rounded-2xl border p-4 ${
+                        validationIssues.length
+                          ? 'border-amber-200 bg-amber-50/70'
+                          : 'border-emerald-200 bg-emerald-50/70'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ${
+                            validationIssues.length ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                          }`}
+                        >
+                          {validationIssues.length ? <AlertCircle size={14} /> : <Check size={14} />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-semibold text-[#020817]">
+                            {validationIssues.length ? 'Before you submit' : 'Ready for review'}
+                          </p>
+                          {validationIssues.length ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {validationIssues.map((issue) => (
+                                <button
+                                  key={issue.id}
+                                  type="button"
+                                  onClick={() => focusValidationIssue(issue)}
+                                  className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-[12px] font-medium text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                                >
+                                  {issue.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-[12px] text-emerald-700">
+                              Your listing has the required details. Review the final summary before sending it to reviewers.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex flex-col items-center pt-2">
                       <button
                         type="button"
@@ -1230,7 +1392,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                       />
                     ) : (
                       <span className="grid h-7 w-7 place-items-center rounded-full bg-[#020817] font-mono text-[11px] font-bold text-white shrink-0">
-                        𝕏
+                        X
                       </span>
                     )}
                     <span className="truncate text-[14px] font-semibold text-[#020817]">
@@ -1240,7 +1402,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     </span>
                   </div>
                   <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-[#64748b] shrink-0">
-                    {isTee ? 'T-Shirt' : 'MacBook Lid'} • {priceType === 'fixed' ? 'Fixed price' : 'Auction'}
+                    {surfaceLabel} · {priceType === 'fixed' ? 'Fixed price' : 'Auction'}
                   </span>
                 </div>
 
@@ -1325,6 +1487,20 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                 </span>
               </div>
 
+              <div className="mt-5 rounded-2xl border border-[#c7d2fe] bg-[#eef2ff] p-4">
+                <div className="flex gap-3">
+                  <Info size={17} className="mt-0.5 shrink-0 text-[#4166fb]" />
+                  <div>
+                    <p className="text-[13px] font-semibold text-[#020817]">
+                      This submits for reviewer approval only
+                    </p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-[#526079]">
+                      Nothing is created on-chain yet. After a reviewer approves the commercial terms, you will accept them from your dashboard to publish the listing and spots.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Actions */}
               <div className="mt-6 flex items-center justify-between gap-3">
                 <button
@@ -1361,3 +1537,4 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     </>
   )
 }
+

@@ -13,7 +13,6 @@ import {
   Sparkles,
   Truck,
   UploadCloud,
-  X,
 } from 'lucide-react'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import {
@@ -25,6 +24,8 @@ import {
 } from '@/lib/auth-api'
 import { uploadToCloudinary } from '@/lib/cloudinary'
 import type { SponsorDashboard, SponsorSpot, SponsorSpotStatus } from '@/lib/types'
+import { useToast } from '@/components/ToastProvider'
+import { userErrorMessage } from '@/lib/errors'
 
 const money = (amount: number, currency: string) =>
   new Intl.NumberFormat('en-US', {
@@ -36,10 +37,10 @@ const money = (amount: number, currency: string) =>
 const STATUS_LABEL: Record<SponsorSpotStatus, string> = {
   pending: 'Awaiting approval',
   sold: 'In production',
-  delivered: 'Delivered — verify',
+  delivered: 'Delivered - review proof',
   disputed: 'Reported',
   paid: 'Complete & paid',
-  refunded: 'Outbid — refunded',
+  refunded: 'Outbid - refunded',
 }
 
 const STATUS_TONE: Record<SponsorSpotStatus, string> = {
@@ -55,9 +56,9 @@ const MAX_ARTWORK_BYTES = 8 * 1024 * 1024
 
 export default function SponsorDashboardView() {
   const auth = useAuthSession()
+  const toast = useToast()
   const [data, setData] = useState<SponsorDashboard | null>(null)
   const [error, setError] = useState<string>()
-  const [toast, setToast] = useState<string>()
   const [busy, setBusy] = useState<string>()
   const [disputing, setDisputing] = useState<string | null>(null)
   const [disputeReason, setDisputeReason] = useState('')
@@ -68,7 +69,7 @@ export default function SponsorDashboardView() {
       setData(await fetchSponsorDashboard())
       setError(undefined)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your sponsorships.')
+      setError(userErrorMessage(e, 'Could not load your sponsorships.'))
     }
   }, [auth.ready, auth.authenticated, auth.userId])
 
@@ -83,7 +84,7 @@ export default function SponsorDashboardView() {
         }
       },
       (e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load your sponsorships.')
+        if (!cancelled) setError(userErrorMessage(e, 'Could not load your sponsorships.'))
       },
     )
     return () => {
@@ -93,26 +94,34 @@ export default function SponsorDashboardView() {
 
   const uploadArtwork = (spotId: string, file: File | undefined) => {
     if (!file || busy) return
-    if (!file.type.startsWith('image/')) return setToast('Artwork must be an image file.')
-    if (file.size > MAX_ARTWORK_BYTES) return setToast('Artwork must be under 8 MB.')
+    if (!file.type.startsWith('image/')) return void toast.error('Artwork must be an image file')
+    if (file.size > MAX_ARTWORK_BYTES) return void toast.error('Artwork must be under 8 MB')
     setBusy(spotId)
-    setToast(undefined)
+    const toastId = toast.loading('Uploading artwork', 'Sending your campaign asset to Cloudinary.')
     uploadToCloudinary(file, 'logos', file.name)
       .then((url) => submitSpotArtwork(spotId, { logoUrl: url }))
       .then(async () => {
         await load()
         setBusy(undefined)
-        setToast('Artwork submitted successfully.')
+        toast.update(toastId, {
+          title: 'Artwork submitted',
+          description: 'The creator can now place your asset.',
+          tone: 'success',
+        })
       })
       .catch((e) => {
         setBusy(undefined)
-        setToast(e instanceof Error ? e.message : 'Could not submit artwork.')
+        toast.update(toastId, {
+          title: 'Could not submit artwork',
+          description: userErrorMessage(e, 'Could not submit artwork.'),
+          tone: 'error',
+        })
       })
   }
 
   const review = async (spotId: string, action: 'confirm' | 'withdraw' | { dispute: string }) => {
     setBusy(spotId)
-    setToast(undefined)
+    const toastId = toast.loading('Updating campaign', 'Saving your delivery review.')
     try {
       if (action === 'confirm') await confirmSpotReceipt(spotId)
       else if (action === 'withdraw') await withdrawSpotDispute(spotId)
@@ -120,8 +129,17 @@ export default function SponsorDashboardView() {
       setDisputing(null)
       setDisputeReason('')
       await load()
+      toast.update(toastId, {
+        title: 'Campaign updated',
+        description: action === 'confirm' ? 'Delivery was approved.' : action === 'withdraw' ? 'Your report was withdrawn.' : 'Your report was sent.',
+        tone: 'success',
+      })
     } catch (e) {
-      setToast(e instanceof Error ? e.message : 'Could not update that spot.')
+      toast.update(toastId, {
+        title: 'Could not update campaign',
+        description: userErrorMessage(e, 'Could not update that spot.'),
+        tone: 'error',
+      })
     } finally {
       setBusy(undefined)
     }
@@ -132,7 +150,7 @@ export default function SponsorDashboardView() {
     return (
       <section className="mx-auto max-w-lg py-20 text-center">
         <div className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full bg-[#020817] font-mono text-lg font-medium text-white shadow-sm">
-          𝕏
+          X
         </div>
         <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-[#020817]">Sponsor Dashboard</h1>
         <p className="mt-2 text-[15px] leading-relaxed text-[#64748b]">
@@ -158,6 +176,35 @@ export default function SponsorDashboardView() {
 
   if (!data) return <Skeleton />
 
+  const campaignGroups = [
+    {
+      key: 'artwork',
+      title: 'Needs artwork',
+      description: 'Upload or replace campaign assets so the creator can start production.',
+      campaigns: data.campaigns.filter((campaign) => campaign.artworkDue),
+    },
+    {
+      key: 'verify',
+      title: 'Ready to verify',
+      description: 'Review delivery proof and confirm completion, or report a problem.',
+      campaigns: data.campaigns.filter((campaign) => campaign.status === 'delivered' || campaign.status === 'disputed'),
+    },
+    {
+      key: 'active',
+      title: 'In progress',
+      description: 'Spots awaiting creator approval or currently in production.',
+      campaigns: data.campaigns.filter(
+        (campaign) => !campaign.artworkDue && (campaign.status === 'pending' || campaign.status === 'sold'),
+      ),
+    },
+    {
+      key: 'closed',
+      title: 'Closed',
+      description: 'Completed, paid, refunded, or no longer requiring action.',
+      campaigns: data.campaigns.filter((campaign) => campaign.status === 'paid' || campaign.status === 'refunded'),
+    },
+  ] as const
+
   return (
     <>
       {/* Header */}
@@ -178,18 +225,6 @@ export default function SponsorDashboardView() {
           <span>Find ad spaces</span>
         </Link>
       </div>
-
-      {toast && (
-        <div
-          role="status"
-          className="mb-6 flex items-center justify-between rounded-xl bg-[#fafaf9] px-4 py-2.5 text-sm text-[#020817]"
-        >
-          <span>{toast}</span>
-          <button onClick={() => setToast(undefined)} className="text-[#a1a1aa] hover:text-[#020817]">
-            <X size={16} />
-          </button>
-        </div>
-      )}
 
       {/* Unboxed Stats Strip */}
       <section aria-label="Sponsor summary" className="mb-6 grid grid-cols-2 gap-x-8 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -247,28 +282,45 @@ export default function SponsorDashboardView() {
               </Link>
             </div>
           ) : (
-            <ul className="divide-y divide-[#ecebe6]/60">
-              {data.campaigns.map((campaign) => (
-                <CampaignRow
-                  key={campaign.spotId}
-                  campaign={campaign}
-                  busy={busy === campaign.spotId}
-                  disputing={disputing === campaign.spotId}
-                  disputeReason={disputeReason}
-                  onDisputeReason={setDisputeReason}
-                  onStartDispute={() => {
-                    setDisputing(campaign.spotId)
-                    setDisputeReason('')
-                  }}
-                  onCancelDispute={() => {
-                    setDisputing(null)
-                    setDisputeReason('')
-                  }}
-                  onFile={(file) => uploadArtwork(campaign.spotId, file)}
-                  onReview={(action) => void review(campaign.spotId, action)}
-                />
-              ))}
-            </ul>
+            <div className="space-y-5">
+              {campaignGroups
+                .filter((group) => group.campaigns.length > 0)
+                .map((group) => (
+                  <section key={group.key} className="space-y-2">
+                    <div className="flex items-end justify-between gap-3">
+                      <div>
+                        <h3 className="text-[13px] font-semibold text-[#020817]">{group.title}</h3>
+                        <p className="text-[11px] text-[#64748b]">{group.description}</p>
+                      </div>
+                      <span className="rounded-full bg-[#f1f0ec] px-2.5 py-1 text-[11px] font-semibold text-[#64748b]">
+                        {group.campaigns.length}
+                      </span>
+                    </div>
+                    <ul className="grid gap-3">
+                      {group.campaigns.map((campaign) => (
+                        <CampaignRow
+                          key={campaign.spotId}
+                          campaign={campaign}
+                          busy={busy === campaign.spotId}
+                          disputing={disputing === campaign.spotId}
+                          disputeReason={disputeReason}
+                          onDisputeReason={setDisputeReason}
+                          onStartDispute={() => {
+                            setDisputing(campaign.spotId)
+                            setDisputeReason('')
+                          }}
+                          onCancelDispute={() => {
+                            setDisputing(null)
+                            setDisputeReason('')
+                          }}
+                          onFile={(file) => uploadArtwork(campaign.spotId, file)}
+                          onReview={(action) => void review(campaign.spotId, action)}
+                        />
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+            </div>
           )}
         </section>
 
@@ -280,7 +332,7 @@ export default function SponsorDashboardView() {
                 Buyer Escrow Protection
               </h2>
               <span className="font-mono text-[11px] font-normal text-emerald-600">
-                • Active
+                Active
               </span>
             </div>
             <p className="mt-0.5 text-[12px] text-[#64748b]">
@@ -347,7 +399,7 @@ function CampaignRow({
   const handle = campaign.sellerHandle.replace(/^@+/, '')
 
   return (
-    <li className="flex flex-col gap-5 py-5 sm:py-6 lg:flex-row lg:items-center lg:justify-between transition hover:bg-black/[0.015] px-2 -mx-2 rounded-2xl">
+    <li className="flex flex-col gap-5 rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_10px_30px_rgba(2,8,23,0.04)] transition hover:border-[#cfd6fb] sm:p-5 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex min-w-0 items-start gap-4">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -377,7 +429,7 @@ function CampaignRow({
             <span
               className={`inline-block text-[12px] font-normal ${STATUS_TONE[campaign.status]}`}
             >
-              • {STATUS_LABEL[campaign.status]}
+              {STATUS_LABEL[campaign.status]}
             </span>
           </div>
           {campaign.status === 'disputed' && campaign.disputeReason && (
@@ -495,7 +547,7 @@ function CampaignRow({
         )}
 
         {campaign.status === 'refunded' && (
-          <p className="text-xs text-[#64748b] lg:text-right">Outbid on this auction — your funds were returned.</p>
+          <p className="text-xs text-[#64748b] lg:text-right">Outbid on this auction. Your funds were returned.</p>
         )}
         {campaign.status === 'paid' && (
           <p className="text-xs text-[#64748b] lg:text-right">Campaign complete and paid out.</p>

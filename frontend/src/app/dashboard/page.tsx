@@ -22,8 +22,10 @@ import {
 import Header from '@/components/Header'
 import SponsorDashboardView from '@/components/SponsorDashboardView'
 import AdminDashboardView from '@/components/AdminDashboardView'
+import ConfirmDialog from '@/components/ConfirmDialog'
 import { useAuthSession } from '@/components/AuthSessionProvider'
 import { useStore } from '@/components/StoreProvider'
+import { useToast } from '@/components/ToastProvider'
 import {
   acceptListingTerms,
   approveApiSpot,
@@ -44,6 +46,7 @@ import {
 import { cardPhoto, isEnded } from '@/lib/listings'
 import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
 import { embeddedUsdcBalance } from '@/lib/adspaces-program'
+import { userErrorMessage } from '@/lib/errors'
 
 const money = (amount: number, currency: string) =>
   new Intl.NumberFormat('en-US', {
@@ -73,7 +76,7 @@ export default function DashboardPage() {
 
   if (currentTab === 'admin') {
     return (
-      <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+      <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
         <Header />
         <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
           <AdminDashboardView
@@ -87,36 +90,16 @@ export default function DashboardPage() {
 
   if (currentTab === 'sponsor') {
     return (
-      <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+      <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
         <Header />
         <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
-          {isReviewer && (
-            <div className="mb-4 flex justify-end">
-              <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('admin')}
-                  className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                >
-                  Admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('creator')}
-                  className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                >
-                  Creator
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('sponsor')}
-                  className="rounded-full bg-[#020817] px-3 py-1 text-white shadow-2xs transition cursor-pointer"
-                >
-                  Sponsor
-                </button>
-              </div>
-            </div>
-          )}
+          <div className="mb-4">
+            <DashboardModeSwitch
+              isReviewer={isReviewer}
+              currentTab="sponsor"
+              onTabChange={(tab) => setActiveTab(tab)}
+            />
+          </div>
           <SponsorDashboardView />
         </main>
       </div>
@@ -134,11 +117,63 @@ export default function DashboardPage() {
 
 function SponsorDashboardPage() {
   return (
-    <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+    <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
       <Header />
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
         <SponsorDashboardView />
       </main>
+    </div>
+  )
+}
+
+function DashboardModeSwitch({
+  isReviewer,
+  currentTab,
+  onTabChange,
+}: {
+  isReviewer?: boolean
+  currentTab: 'admin' | 'creator' | 'sponsor'
+  onTabChange: (tab: 'admin' | 'creator' | 'sponsor') => void
+}) {
+  return (
+    <div className="flex justify-start sm:justify-end">
+      <div className="inline-flex w-full rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium sm:w-auto">
+        {isReviewer && (
+          <button
+            type="button"
+            onClick={() => onTabChange('admin')}
+            className={`flex-1 rounded-full px-3 py-1.5 transition cursor-pointer sm:flex-none ${
+              currentTab === 'admin'
+                ? 'bg-[#020817] text-white shadow-2xs'
+                : 'text-[#64748b] hover:text-[#020817]'
+            }`}
+          >
+            Admin
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onTabChange('creator')}
+          className={`flex-1 rounded-full px-3 py-1.5 transition cursor-pointer sm:flex-none ${
+            currentTab === 'creator'
+              ? 'bg-[#020817] text-white shadow-2xs'
+              : 'text-[#64748b] hover:text-[#020817]'
+          }`}
+        >
+          Creator
+        </button>
+        <button
+          type="button"
+          onClick={() => onTabChange('sponsor')}
+          className={`flex-1 rounded-full px-3 py-1.5 transition cursor-pointer sm:flex-none ${
+            currentTab === 'sponsor'
+              ? 'bg-[#020817] text-white shadow-2xs'
+              : 'text-[#64748b] hover:text-[#020817]'
+          }`}
+        >
+          Sponsor
+        </button>
+      </div>
     </div>
   )
 }
@@ -153,6 +188,7 @@ function SellerDashboardPage({
   onTabChange?: (tab: 'admin' | 'creator' | 'sponsor') => void
 }) {
   const auth = useAuthSession()
+  const toast = useToast()
   const { refresh } = useStore()
   const [data, setData] = useState<SellerDashboard | null>(null)
   const [error, setError] = useState<string>()
@@ -170,6 +206,8 @@ function SellerDashboardPage({
   const [walletUsdc, setWalletUsdc] = useState<number>()
   const [withdrawals, setWithdrawals] = useState<WalletWithdrawal[]>([])
   const [copiedWallet, setCopiedWallet] = useState(false)
+  const [confirmAction, setConfirmAction] = useState<{ kind: 'refund'; spotId: string } | { kind: 'delete'; slug: string } | null>(null)
+  const confirming = Boolean(confirmAction && busy === (confirmAction.kind === 'refund' ? confirmAction.spotId : confirmAction.slug))
   const termsListing = termsFor ? data?.listings.find((listing) => listing.slug === termsFor) : undefined
 
   const load = useCallback(async () => {
@@ -178,7 +216,7 @@ function SellerDashboardPage({
       setData(await fetchSellerDashboard())
       setError(undefined)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not load your dashboard.')
+      setError(userErrorMessage(e, 'Could not load your dashboard.'))
     }
   }, [auth.ready, auth.authenticated, auth.userId])
 
@@ -193,7 +231,7 @@ function SellerDashboardPage({
         }
       },
       (e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Could not load your dashboard.')
+        if (!cancelled) setError(userErrorMessage(e, 'Could not load your dashboard.'))
       },
     )
     return () => {
@@ -218,36 +256,76 @@ function SellerDashboardPage({
   }, [auth.ready, auth.authenticated, auth.userId])
 
   const act = async (spotId: string, action: 'approve' | 'reject' | 'fulfill' | 'refund') => {
+    if (action === 'refund') {
+      setConfirmAction({ kind: 'refund', spotId })
+      return
+    }
     setBusy(spotId)
     setError(undefined)
     try {
       if (action === 'approve') await approveApiSpot(spotId)
       else if (action === 'reject') await rejectApiSpot(spotId)
       else if (action === 'fulfill') await fulfillApiSpot(spotId)
-      else {
-        if (!window.confirm('Refund this buyer from on-chain escrow?')) return
-        await refundApiSpot(spotId)
-      }
+      toast.success(
+        action === 'approve'
+          ? 'Spot approved'
+          : action === 'reject'
+          ? 'Spot rejected'
+          : 'Spot marked fulfilled',
+      )
       await load()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed.')
+      const message = userErrorMessage(e, 'Action failed.')
+      setError(message)
+      toast.error('Action failed', message)
     } finally {
       setBusy(undefined)
     }
   }
 
   const actListing = async (slug: string, action: 'close' | 'reopen' | 'delete') => {
-    if (action === 'delete' && !window.confirm('Delete this listing forever? Spots and bids go with it.')) return
+    if (action === 'delete') {
+      setConfirmAction({ kind: 'delete', slug })
+      return
+    }
     setBusy(slug)
     setError(undefined)
     try {
       if (action === 'close') await closeApiListing(slug)
       else if (action === 'reopen') await reopenApiListing(slug)
       else await deleteApiListing(slug)
+      toast.success(action === 'close' ? 'Listing closed' : action === 'reopen' ? 'Listing reopened' : 'Listing deleted')
       await load()
       await refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Action failed.')
+      const message = userErrorMessage(e, 'Action failed.')
+      setError(message)
+      toast.error('Action failed', message)
+    } finally {
+      setBusy(undefined)
+    }
+  }
+
+  const runConfirmedAction = async () => {
+    if (!confirmAction) return
+    const busyId = confirmAction.kind === 'refund' ? confirmAction.spotId : confirmAction.slug
+    setBusy(busyId)
+    setError(undefined)
+    try {
+      if (confirmAction.kind === 'refund') {
+        await refundApiSpot(confirmAction.spotId)
+        toast.success('Refund started', 'The on-chain refund was submitted.')
+      } else {
+        await deleteApiListing(confirmAction.slug)
+        await refresh()
+        toast.success('Listing deleted')
+      }
+      setConfirmAction(null)
+      await load()
+    } catch (e) {
+      const message = userErrorMessage(e, 'Action failed.')
+      setError(message)
+      toast.error('Action failed', message)
     } finally {
       setBusy(undefined)
     }
@@ -260,7 +338,7 @@ function SellerDashboardPage({
     try {
       setTerms(await fetchTerms())
     } catch (e) {
-      setTermsError(e instanceof Error ? e.message : 'Could not load the terms.')
+      setTermsError(userErrorMessage(e, 'Could not load the terms.'))
     }
   }
 
@@ -339,7 +417,7 @@ function SellerDashboardPage({
   const cleanHandle = auth.handle ? (auth.handle.startsWith('@') ? auth.handle : `@${auth.handle}`) : null
 
   return (
-    <div className="flex min-h-screen lg:h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
+    <div className="flex min-h-screen flex-col bg-[#f4f4f4] overflow-y-auto">
       <Header />
       <main className="mx-auto w-full max-w-[1340px] flex-1 px-6 pb-6 pt-4 md:pt-6">
           {!auth.ready ? (
@@ -347,7 +425,7 @@ function SellerDashboardPage({
           ) : !auth.authenticated ? (
             <section className="mx-auto max-w-lg py-16 text-center">
               <div className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-full bg-[#020817] font-mono text-lg font-medium text-white shadow-sm">
-                𝕏
+                X
               </div>
               <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-[#020817]">Creator Dashboard</h1>
               <p className="mt-2 text-[15px] leading-relaxed text-[#64748b]">
@@ -390,7 +468,7 @@ function SellerDashboardPage({
                     {auth.isReviewer && (
                       <>
                         {' '}
-                        •{' '}
+                        ·{' '}
                         <Link href="/review" className="font-normal text-[#4166fb] hover:underline">
                           Review queue →
                         </Link>
@@ -399,30 +477,12 @@ function SellerDashboardPage({
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
-                  {isReviewer && (
-                    <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
-                      <button
-                        type="button"
-                        onClick={() => onTabChange?.('admin')}
-                        className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                      >
-                        Admin
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onTabChange?.('creator')}
-                        className="rounded-full bg-[#020817] px-3 py-1 text-white shadow-2xs transition cursor-pointer"
-                      >
-                        Creator
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onTabChange?.('sponsor')}
-                        className="rounded-full px-3 py-1 text-[#64748b] hover:text-[#020817] transition cursor-pointer"
-                      >
-                        Sponsor
-                      </button>
-                    </div>
+                  {onTabChange && (
+                    <DashboardModeSwitch
+                      isReviewer={isReviewer}
+                      currentTab={currentTab}
+                      onTabChange={onTabChange}
+                    />
                   )}
                   <Link
                     href="/list"
@@ -499,112 +559,107 @@ function SellerDashboardPage({
                           </Link>
                         </div>
 
+                        <div className="mb-4 grid gap-2 rounded-2xl border border-[#e7e5e0] bg-white p-3 sm:grid-cols-4">
+                          {[
+                            ['Submitted', 'Reviewer checks terms'],
+                            ['Terms ready', 'Creator accepts offer'],
+                            ['Live', 'Created on-chain'],
+                            ['Settlement', 'Proof and payout'],
+                          ].map(([label, description]) => (
+                            <div key={label} className="rounded-xl bg-[#fafaf7] px-3 py-2">
+                              <p className="text-[12px] font-semibold text-[#020817]">{label}</p>
+                              <p className="mt-0.5 text-[11px] leading-snug text-[#64748b]">{description}</p>
+                            </div>
+                          ))}
+                        </div>
+
+                        {data.listings.some((listing) => listing.status === 'approved') && (
+                          <div className="mb-4 rounded-2xl border border-[#c7d2fe] bg-[#eef2ff] p-4">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div>
+                                <p className="text-[13px] font-semibold text-[#020817]">
+                                  Commercial terms are ready
+                                </p>
+                                <p className="mt-1 text-[12px] leading-relaxed text-[#526079]">
+                                  A reviewer approved your space. Accept the terms to create the listing and spots on-chain.
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2 sm:justify-end">
+                                {data.listings
+                                  .filter((listing) => listing.status === 'approved')
+                                  .map((listing) => (
+                                    <button
+                                      key={listing.id}
+                                      type="button"
+                                      disabled={busy === listing.slug}
+                                      onClick={() => void openTerms(listing.slug)}
+                                      className="inline-flex items-center rounded-full bg-[#4166fb] px-4 py-2 text-[12px] font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+                                    >
+                                      {busy === listing.slug ? 'Opening…' : `Review terms: ${listing.title}`}
+                                    </button>
+                                  ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         {data.listings.length === 0 ? (
                           <Empty text="You haven’t listed a space yet." action="List your first space" href="/list" />
                         ) : (
-                          <div className="overflow-x-auto">
-                            <table className="w-full min-w-[640px] text-left text-sm">
-                              <thead>
-                                <tr className="border-b border-[#ecebe6] text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
-                                  <th className="pb-2.5 pr-4">Space</th>
-                                  <th className="pb-2.5 px-3">Status</th>
-                                  <th className="pb-2.5 px-3">Spots</th>
-                                  <th className="pb-2.5 px-3">Pricing</th>
-                                  <th className="pb-2.5 px-3">Revenue</th>
-                                  <th className="pb-2.5 pl-3 text-right">Actions</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[#ecebe6]/60">
-                                {data.listings.map((l) => (
-                                  <tr key={l.id} className="transition hover:bg-black/[0.015]">
-                                    <td className="py-2.5 pr-4">
-                                      <div className="flex items-center gap-3">
-                                        <div className="h-10 w-14 shrink-0 overflow-hidden rounded-lg bg-[#f1f0ec] shadow-2xs">
-                                          {cardPhoto(l) ? (
-                                            // eslint-disable-next-line @next/next/no-img-element
-                                            <img src={cardPhoto(l)} alt="" className="h-full w-full object-cover" />
-                                          ) : (
-                                            <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
-                                              Space
-                                            </div>
-                                          )}
-                                        </div>
-                                        <div className="min-w-0">
-                                          <span className="block truncate font-medium text-[#020817] text-[13px]">
-                                            {l.title}
-                                          </span>
-                                          {l.reviewNote && (
-                                            <span className="mt-0.5 block max-w-[240px] text-[11px] font-normal text-[#dc2626]">
-                                              Note: {l.reviewNote}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                      <ListingStatusBadge status={l.status} deadline={l.deadline} />
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                      <span className="inline-flex items-center gap-1 rounded-full bg-[#f4f4f2] px-2.5 py-0.5 font-mono text-[11px] font-normal text-[#020817]">
-                                        {l.sold} / {l.open} sold
-                                      </span>
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap text-[12px] font-normal text-[#64748b]">
-                                      {l.mode === 'fixed' ? 'Fixed' : 'Auction'}
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap font-mono text-[13px] font-normal text-[#020817]">
-                                      {money(l.revenue, l.currency)}
-                                    </td>
-                                    <td className="py-2.5 pl-3 whitespace-nowrap text-right">
-                                      <div className="flex items-center justify-end gap-1.5">
-                                        {l.status === 'active' && (
-                                          <Link
-                                            href={`/listings/${l.slug}`}
-                                            className="inline-flex rounded-full border border-[#d8d6d0] px-3 py-0.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] hover:text-[#4166fb]"
-                                          >
-                                            View
-                                          </Link>
-                                        )}
-                                        {l.status === 'approved' && (
-                                          <button
-                                            disabled={busy === l.slug}
-                                            onClick={() => void openTerms(l.slug)}
-                                            className="rounded-full bg-[#4166fb] px-3 py-0.5 text-xs font-normal text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Accept terms
-                                          </button>
-                                        )}
-                                        {l.status !== 'closed' ? (
-                                          <button
-                                            disabled={busy === l.slug}
-                                            onClick={() => void actListing(l.slug, 'close')}
-                                            className="rounded-full border border-[#d8d6d0] px-3 py-0.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Close
-                                          </button>
-                                        ) : (
-                                          <button
-                                            disabled={busy === l.slug}
-                                            onClick={() => void actListing(l.slug, 'reopen')}
-                                            className="rounded-full bg-[#4166fb] px-3 py-0.5 text-xs font-normal text-white transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Resubmit
-                                          </button>
-                                        )}
-                                        <button
-                                          disabled={busy === l.slug}
-                                          onClick={() => void actListing(l.slug, 'delete')}
-                                          className="rounded-full p-1 text-[#a1a1aa] transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 cursor-pointer"
-                                          title="Delete space"
-                                        >
-                                          <Trash2 size={14} />
-                                        </button>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          <div className="space-y-5">
+                            {([
+                              {
+                                key: 'terms',
+                                title: 'Terms ready',
+                                description: 'Approved by reviewers. Accept terms to publish on-chain.',
+                                listings: data.listings.filter((listing) => listing.status === 'approved'),
+                              },
+                              {
+                                key: 'submitted',
+                                title: 'In review',
+                                description: 'Reviewer is checking pricing, policy, and commercial terms.',
+                                listings: data.listings.filter((listing) => listing.status === 'submitted'),
+                              },
+                              {
+                                key: 'live',
+                                title: 'Live spaces',
+                                description: 'Published on-chain and visible in the marketplace.',
+                                listings: data.listings.filter((listing) => listing.status === 'active'),
+                              },
+                              {
+                                key: 'closed',
+                                title: 'Closed',
+                                description: 'Not accepting new sponsor activity.',
+                                listings: data.listings.filter((listing) => listing.status === 'closed'),
+                              },
+                            ] as const)
+                              .filter((group) => group.listings.length > 0)
+                              .map((group) => (
+                                <section key={group.key} className="space-y-2">
+                                  <div className="flex items-end justify-between gap-3">
+                                    <div>
+                                      <h3 className="text-[13px] font-semibold text-[#020817]">{group.title}</h3>
+                                      <p className="text-[11px] text-[#64748b]">{group.description}</p>
+                                    </div>
+                                    <span className="rounded-full bg-[#f1f0ec] px-2.5 py-1 text-[11px] font-semibold text-[#64748b]">
+                                      {group.listings.length}
+                                    </span>
+                                  </div>
+                                  <div className="grid gap-3">
+                                    {group.listings.map((listing) => (
+                                      <SellerListingCard
+                                        key={listing.id}
+                                        listing={listing}
+                                        busy={busy === listing.slug}
+                                        onAcceptTerms={() => void openTerms(listing.slug)}
+                                        onClose={() => void actListing(listing.slug, 'close')}
+                                        onReopen={() => void actListing(listing.slug, 'reopen')}
+                                        onDelete={() => void actListing(listing.slug, 'delete')}
+                                      />
+                                    ))}
+                                  </div>
+                                </section>
+                              ))}
                           </div>
                         )}
                       </section>
@@ -619,100 +674,18 @@ function SellerDashboardPage({
                             </p>
                           </div>
 
-                          <div className="overflow-x-auto">
-                            <table className="w-full min-w-[700px] text-left text-sm">
-                              <thead>
-                                <tr className="border-b border-[#ecebe6] text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
-                                  <th className="pb-2.5 pr-4">Buyer</th>
-                                  <th className="pb-2.5 px-3">Space & Spot</th>
-                                  <th className="pb-2.5 px-3">Amount</th>
-                                  <th className="pb-2.5 px-3">Submitted</th>
-                                  <th className="pb-2.5 px-3">Status</th>
-                                  <th className="pb-2.5 pl-3 text-right">Action</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-[#ecebe6]/60">
-                                {data.attention.map((item) => (
-                                  <tr key={item.spotId} className="transition hover:bg-black/[0.015]">
-                                    <td className="py-2.5 pr-4 font-mono text-[13px] font-normal text-[#020817]">
-                                      {item.buyer}
-                                    </td>
-                                    <td className="py-2.5 px-3">
-                                      <span className="block font-medium text-[#020817] text-[13px]">
-                                        {item.listingTitle}
-                                      </span>
-                                      <span className="block text-[11px] text-[#64748b]">{item.spotLabel}</span>
-                                    </td>
-                                    <td className="py-2.5 px-3 font-mono text-[13px] font-normal text-[#020817]">
-                                      {money(item.amount, item.currency)}
-                                    </td>
-                                    <td className="py-2.5 px-3 text-[12px] text-[#64748b]">
-                                      {relative(item.submittedAt)}
-                                    </td>
-                                    <td className="py-2.5 px-3 whitespace-nowrap">
-                                      <AttentionStatusBadge
-                                        status={item.status}
-                                        artworkReceived={item.artworkReceived}
-                                        disputeReason={item.disputeReason}
-                                      />
-                                    </td>
-                                    <td className="py-2.5 pl-3 whitespace-nowrap text-right">
-                                      <div className="flex items-center justify-end gap-1.5">
-                                        {item.status === 'pending' ? (
-                                          <>
-                                            <button
-                                              disabled={busy === item.spotId}
-                                              onClick={() => void act(item.spotId, 'approve')}
-                                              className="rounded-full bg-[#4166fb] px-3.5 py-0.5 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
-                                            >
-                                              Approve
-                                            </button>
-                                            <button
-                                              disabled={busy === item.spotId}
-                                              onClick={() => void act(item.spotId, 'reject')}
-                                              className="rounded-full border border-[#d8d6d0] px-3.5 py-0.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
-                                            >
-                                              Reject
-                                            </button>
-                                          </>
-                                        ) : item.status === 'delivered' ? (
-                                          <Link
-                                            href={`/listings/${item.listingSlug}`}
-                                            className="inline-flex rounded-full bg-[#4166fb] px-3.5 py-0.5 text-xs font-medium text-white transition hover:bg-[#3558e8]"
-                                          >
-                                            Upload proof
-                                          </Link>
-                                        ) : item.status === 'disputed' ? (
-                                          <Link
-                                            href={`/listings/${item.listingSlug}`}
-                                            className="inline-flex rounded-full border border-[#d8d6d0] px-3.5 py-0.5 text-xs font-normal text-[#020817] hover:border-[#4166fb]"
-                                          >
-                                            View dispute
-                                          </Link>
-                                        ) : (
-                                          <button
-                                            disabled={busy === item.spotId}
-                                            onClick={() => void act(item.spotId, 'fulfill')}
-                                            className="rounded-full border border-[#d8d6d0] px-3.5 py-0.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Mark fulfilled
-                                          </button>
-                                        )}
-                                        {item.status !== 'pending' && (
-                                          <button
-                                            disabled={busy === item.spotId}
-                                            onClick={() => void act(item.spotId, 'refund')}
-                                            className="rounded-full border border-red-200 px-3 py-0.5 text-xs font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-50 cursor-pointer"
-                                          >
-                                            Refund
-                                          </button>
-                                        )}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                          <div className="grid gap-3">
+                            {data.attention.map((item) => (
+                              <AttentionCard
+                                key={item.spotId}
+                                item={item}
+                                busy={busy === item.spotId}
+                                onApprove={() => void act(item.spotId, 'approve')}
+                                onReject={() => void act(item.spotId, 'reject')}
+                                onFulfill={() => void act(item.spotId, 'fulfill')}
+                                onRefund={() => void act(item.spotId, 'refund')}
+                              />
+                            ))}
                           </div>
                         </section>
                       )}
@@ -727,7 +700,7 @@ function SellerDashboardPage({
                               Solana Settlements
                             </h2>
                             <span className="font-mono text-[11px] font-normal text-emerald-600">
-                              • Devnet
+                              Devnet
                             </span>
                           </div>
                           <p className="mt-0.5 text-[12px] text-[#64748b]">
@@ -787,6 +760,13 @@ function SellerDashboardPage({
                         </div>
                       </div>
 
+                      <PayoutLedger
+                        currency={data.summary.currency}
+                        gross={data.summary.revenue}
+                        paidOut={data.summary.paidOut ?? 0}
+                        listings={data.listings}
+                      />
+
                       <button
                         type="button"
                         onClick={() => {
@@ -837,7 +817,7 @@ function SellerDashboardPage({
                       }}
                     >
                       <div
-                        className="max-h-[90vh] w-full max-w-[500px] overflow-y-auto rounded-[28px] bg-white p-7 shadow-2xl"
+                        className="max-h-[90vh] w-full max-w-[500px] overflow-y-auto rounded-[24px] bg-white p-5 shadow-2xl sm:rounded-[28px] sm:p-7"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-start justify-between">
@@ -905,7 +885,7 @@ function SellerDashboardPage({
                           </p>
                         )}
 
-                        <div className="mt-6 flex items-center justify-between gap-3">
+                        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <button
                             type="button"
                             onClick={() => setTermsFor(null)}
@@ -918,7 +898,7 @@ function SellerDashboardPage({
                             type="button"
                             onClick={() => void accept()}
                             disabled={!terms || busy === termsFor}
-                            className="inline-flex items-center rounded-full bg-[#4166fb] px-7 py-3 text-[14px] font-semibold text-white shadow-[0_10px_25px_-6px_rgba(65,102,251,0.5)] transition hover:bg-[#3558e8] active:scale-[0.98] disabled:opacity-60 cursor-pointer"
+                            className="inline-flex items-center justify-center rounded-full bg-[#4166fb] px-7 py-3 text-[14px] font-semibold text-white shadow-[0_10px_25px_-6px_rgba(65,102,251,0.5)] transition hover:bg-[#3558e8] active:scale-[0.98] disabled:opacity-60 cursor-pointer"
                           >
                             {busy === termsFor ? 'Accepting…' : 'Accept & go live'}
                           </button>
@@ -1074,6 +1054,22 @@ function SellerDashboardPage({
             </>
           )}
         </main>
+        <ConfirmDialog
+          open={Boolean(confirmAction)}
+          title={confirmAction?.kind === 'refund' ? 'Refund this buyer?' : 'Delete this listing?'}
+          description={
+            confirmAction?.kind === 'refund'
+              ? 'This sends an on-chain refund from escrow. The buyer will lose the spot and the action cannot be undone.'
+              : 'This permanently removes the listing and its spots from your dashboard. This action cannot be undone.'
+          }
+          confirmLabel={confirmAction?.kind === 'refund' ? 'Refund buyer' : 'Delete listing'}
+          tone="danger"
+          busy={confirming}
+          onConfirm={() => void runConfirmedAction()}
+          onClose={() => {
+            if (!confirming) setConfirmAction(null)
+          }}
+        />
     </div>
   )
 }
@@ -1100,39 +1096,362 @@ function MetricItem({
   )
 }
 
+function SellerListingCard({
+  listing,
+  busy,
+  onAcceptTerms,
+  onClose,
+  onReopen,
+  onDelete,
+}: {
+  listing: SellerDashboard['listings'][number]
+  busy: boolean
+  onAcceptTerms: () => void
+  onClose: () => void
+  onReopen: () => void
+  onDelete: () => void
+}) {
+  const photo = cardPhoto(listing)
+
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="h-16 w-24 shrink-0 overflow-hidden rounded-xl bg-[#f1f0ec] shadow-2xs">
+            {photo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <div className="grid h-full w-full place-items-center text-xs text-[#a1a1aa]">
+                Space
+              </div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="truncate text-[14px] font-semibold text-[#020817]">{listing.title}</h3>
+              <span className="rounded-full bg-[#f4f4f2] px-2 py-0.5 text-[11px] font-medium text-[#64748b]">
+                {listing.mode === 'fixed' ? 'Fixed price' : 'Auction'}
+              </span>
+            </div>
+            {listing.reviewNote && (
+              <p className="mt-1 max-w-[520px] text-[12px] text-[#dc2626]">
+                Reviewer note: {listing.reviewNote}
+              </p>
+            )}
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#64748b]">
+              <ListingStatusBadge status={listing.status} deadline={listing.deadline} />
+              <span className="font-mono text-[#020817]">{listing.sold} sold / {listing.open} open</span>
+              <span className="font-mono text-[#020817]">{money(listing.revenue, listing.currency)} revenue</span>
+            </div>
+            {(listing.status === 'approved' || listing.status === 'active') && (
+              <ReviewTermsStrip listing={listing} />
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {listing.status === 'active' && (
+            <Link
+              href={`/listings/${listing.slug}`}
+              className="inline-flex rounded-full border border-[#d8d6d0] px-3 py-1.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] hover:text-[#4166fb]"
+            >
+              View
+            </Link>
+          )}
+          {listing.status === 'approved' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onAcceptTerms}
+              className="rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+            >
+              Accept terms
+            </button>
+          )}
+          {listing.status !== 'closed' ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onClose}
+              className="rounded-full border border-[#d8d6d0] px-3 py-1.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
+            >
+              Close
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onReopen}
+              className="rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+            >
+              Resubmit
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onDelete}
+            className="grid h-8 w-8 place-items-center rounded-full text-[#a1a1aa] transition hover:bg-red-50 hover:text-red-600 disabled:opacity-50 cursor-pointer"
+            title="Delete space"
+            aria-label={`Delete ${listing.title}`}
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function ReviewTermsStrip({ listing }: { listing: SellerDashboard['listings'][number] }) {
+  const fee = ((listing.platformFeeBps ?? listing.feeBps ?? 0) / 100).toFixed(2)
+  const settlementHours =
+    listing.settlementWindowHours ??
+    (listing.reviewWindowSeconds != null ? Math.round(listing.reviewWindowSeconds / 3600) : undefined)
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-2 rounded-xl bg-[#f8fafc] px-3 py-2 text-[11px] text-[#64748b]">
+      <span>
+        Reviewer terms: <span className="font-mono font-semibold text-[#020817]">{fee}% platform fee</span>
+      </span>
+      {listing.mode === 'auction' && (
+        <span>
+          Uplift/max{' '}
+          <span className="font-mono font-semibold text-[#020817]">
+            {((listing.upliftFeeBps ?? 0) / 100).toFixed(2)}% / {((listing.maxFeeBps ?? 0) / 100).toFixed(2)}%
+          </span>
+        </span>
+      )}
+      {settlementHours != null && (
+        <span>
+          Settlement <span className="font-mono font-semibold text-[#020817]">{settlementHours}h</span>
+        </span>
+      )}
+    </div>
+  )
+}
+
+function AttentionCard({
+  item,
+  busy,
+  onApprove,
+  onReject,
+  onFulfill,
+  onRefund,
+}: {
+  item: SellerDashboard['attention'][number]
+  busy: boolean
+  onApprove: () => void
+  onReject: () => void
+  onFulfill: () => void
+  onRefund: () => void
+}) {
+  return (
+    <article className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-[14px] font-semibold text-[#020817]">{item.listingTitle}</h3>
+            <span className="rounded-full bg-[#f4f4f2] px-2 py-0.5 text-[11px] font-medium text-[#64748b]">
+              {item.spotLabel}
+            </span>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-[#64748b]">
+            <span>Buyer <span className="font-mono text-[#020817]">{item.buyer}</span></span>
+            <span className="font-mono text-[#020817]">{money(item.amount, item.currency)}</span>
+            <span>{relative(item.submittedAt)}</span>
+          </div>
+          <div className="mt-2">
+            <AttentionStatusBadge
+              status={item.status}
+              artworkReceived={item.artworkReceived}
+              disputeReason={item.disputeReason}
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {item.status === 'pending' ? (
+            <>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onApprove}
+                className="rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={onReject}
+                className="rounded-full border border-[#d8d6d0] px-3.5 py-1.5 text-xs font-normal text-[#64748b] transition hover:text-[#020817] disabled:opacity-50 cursor-pointer"
+              >
+                Reject
+              </button>
+            </>
+          ) : item.status === 'delivered' ? (
+            <Link
+              href={`/listings/${item.listingSlug}`}
+              className="inline-flex rounded-full bg-[#4166fb] px-3.5 py-1.5 text-xs font-semibold text-white transition hover:bg-[#3558e8]"
+            >
+              Upload proof
+            </Link>
+          ) : item.status === 'disputed' ? (
+            <Link
+              href={`/listings/${item.listingSlug}`}
+              className="inline-flex rounded-full border border-[#d8d6d0] px-3.5 py-1.5 text-xs font-normal text-[#020817] hover:border-[#4166fb]"
+            >
+              View dispute
+            </Link>
+          ) : (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onFulfill}
+              className="rounded-full border border-[#d8d6d0] px-3.5 py-1.5 text-xs font-normal text-[#020817] transition hover:border-[#4166fb] disabled:opacity-50 cursor-pointer"
+            >
+              Mark fulfilled
+            </button>
+          )}
+          {item.status !== 'pending' && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onRefund}
+              className="rounded-full border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50 disabled:opacity-50 cursor-pointer"
+            >
+              Refund
+            </button>
+          )}
+        </div>
+      </div>
+    </article>
+  )
+}
+
+function PayoutLedger({
+  currency,
+  gross,
+  paidOut,
+  listings,
+}: {
+  currency: string
+  gross: number
+  paidOut: number
+  listings: SellerDashboard['listings']
+}) {
+  const pending = Math.max(0, gross - paidOut)
+  const earningListings = listings
+    .filter((listing) => listing.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 4)
+
+  return (
+    <section className="rounded-2xl border border-[#e7e5e0] bg-white p-4 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[14px] font-semibold text-[#020817]">Payout ledger</h3>
+          <p className="mt-0.5 text-[12px] leading-relaxed text-[#64748b]">
+            Gross sponsor commitments, released payouts, and unsettled escrow.
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        <LedgerMetric label="Gross" value={money(gross, currency)} />
+        <LedgerMetric label="Paid" value={money(paidOut, currency)} />
+        <LedgerMetric label="Pending" value={money(pending, currency)} />
+      </div>
+
+      <div className="mt-4 border-t border-[#ecebe6] pt-3">
+        <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-[#64748b]">
+          Top earning spaces
+        </p>
+        {earningListings.length === 0 ? (
+          <p className="rounded-xl bg-[#fafaf7] px-3 py-2 text-[12px] text-[#64748b]">
+            No settled sponsor commitments yet.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {earningListings.map((listing) => (
+              <div key={listing.id} className="flex items-center justify-between gap-3 text-[12px]">
+                <span className="truncate text-[#020817]">{listing.title}</span>
+                <span className="shrink-0 font-mono font-semibold text-[#020817]">
+                  {money(listing.revenue, listing.currency)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </section>
+  )
+}
+
+function LedgerMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl bg-[#fafaf7] px-3 py-2">
+      <p className="text-[10px] font-medium uppercase tracking-wider text-[#64748b]">{label}</p>
+      <p className="mt-1 truncate font-mono text-[13px] font-semibold text-[#020817]">{value}</p>
+    </div>
+  )
+}
+
 function ListingStatusBadge({ status, deadline }: { status: string; deadline: string }) {
   const ended = isEnded(deadline)
-  if (status === 'active') {
-    return (
-      <span className={`inline-flex items-center gap-1.5 font-medium text-xs ${
-        ended ? 'text-[#64748b]' : 'text-emerald-700'
-      }`}>
-        <span className={`h-1.5 w-1.5 rounded-full ${ended ? 'bg-slate-400' : 'bg-emerald-500'}`} />
-        {ended ? 'Ended' : 'Active'}
-      </span>
-    )
-  }
-  if (status === 'approved') {
-    return (
-      <span className="inline-flex items-center gap-1.5 font-medium text-xs text-[#4166fb]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#4166fb]" />
-        Approved
-      </span>
-    )
-  }
-  if (status === 'submitted') {
-    return (
-      <span className="inline-flex items-center gap-1.5 font-medium text-xs text-amber-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-        Under review
-      </span>
-    )
-  }
+  const statusText =
+    status === 'active'
+      ? ended
+        ? 'Ended'
+        : 'Live'
+      : status === 'approved'
+      ? 'Terms ready'
+      : status === 'submitted'
+      ? 'In review'
+      : 'Closed'
+  const helper =
+    status === 'active'
+      ? ended
+        ? 'Campaign ended'
+        : 'Visible in marketplace'
+      : status === 'approved'
+      ? 'Accept to publish on-chain'
+      : status === 'submitted'
+      ? 'Waiting for reviewer'
+      : 'Not accepting spots'
+  const dotClass =
+    status === 'active'
+      ? ended
+        ? 'bg-slate-400'
+        : 'bg-emerald-500'
+      : status === 'approved'
+      ? 'bg-[#4166fb]'
+      : status === 'submitted'
+      ? 'bg-amber-500'
+      : 'bg-slate-400'
+  const textClass =
+    status === 'active'
+      ? ended
+        ? 'text-[#64748b]'
+        : 'text-emerald-700'
+      : status === 'approved'
+      ? 'text-[#4166fb]'
+      : status === 'submitted'
+      ? 'text-amber-700'
+      : 'text-[#64748b]'
+
   return (
-    <span className="inline-flex items-center gap-1.5 font-medium text-xs text-[#64748b]">
-      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-      Closed
-    </span>
+    <div>
+      <span className={`inline-flex items-center gap-1.5 font-medium text-xs ${textClass}`}>
+        <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+        {statusText}
+      </span>
+      <span className="mt-0.5 block max-w-[150px] text-[11px] leading-snug text-[#64748b]">
+        {helper}
+      </span>
+    </div>
   )
 }
 
@@ -1178,7 +1497,7 @@ function AttentionStatusBadge({
           : 'Approved'}
       </span>
       {status === 'approved' && artworkReceived && (
-        <span className="mt-0.5 block text-[11px] font-medium text-emerald-600">Artwork in ✓</span>
+        <span className="mt-0.5 block text-[11px] font-medium text-emerald-600">Artwork received</span>
       )}
       {status === 'disputed' && disputeReason && (
         <span className="mt-0.5 block max-w-[220px] text-[11px] text-red-600 truncate" title={disputeReason}>
@@ -1212,10 +1531,10 @@ function Empty({ text, action, href }: { text: string; action?: string; href?: s
 function DashboardSkeleton() {
   return (
     <div className="animate-pulse space-y-8 py-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <div className="h-8 w-60 rounded-xl bg-[#eeede8]" />
-          <div className="h-4 w-96 rounded-lg bg-[#f4f3ef]" />
+          <div className="h-4 w-64 rounded-lg bg-[#f4f3ef] sm:w-96" />
         </div>
         <div className="h-11 w-36 rounded-full bg-[#eeede8]" />
       </div>
@@ -1229,3 +1548,5 @@ function DashboardSkeleton() {
     </div>
   )
 }
+
+
