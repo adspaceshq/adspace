@@ -68,6 +68,12 @@ interface SpotDraft {
   w?: number
 }
 
+type ValidationIssue = {
+  id: 'title' | 'pricing' | 'deadline' | 'spots' | 'increment'
+  label: string
+  targetId: string
+}
+
 const toDateInput = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 
@@ -322,6 +328,33 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
   const floor = priced.length ? Math.min(...priced) : 0
   const total = priced.reduce((a, b) => a + b, 0)
   const currency = preview.currency ?? 'USD'
+  const validationIssues = useMemo<ValidationIssue[]>(() => {
+    const issues: ValidationIssue[] = []
+    if (!title.trim()) {
+      issues.push({ id: 'title', label: 'Add a clear space title.', targetId: 'listing-title' })
+    }
+    if (!priceType) {
+      issues.push({ id: 'pricing', label: 'Choose Fixed price or Auction.', targetId: 'pricing-format' })
+    }
+    if (!deadline) {
+      issues.push({ id: 'deadline', label: 'Pick a campaign deadline.', targetId: 'listing-deadline' })
+    }
+    if (!spots.length) {
+      issues.push({ id: 'spots', label: 'Place at least one sponsor spot on the canvas.', targetId: 'studio-canvas' })
+    } else if (spots.some((spot) => !(Number(spot.price) > 0))) {
+      issues.push({ id: 'spots', label: 'Price every sponsor spot above zero.', targetId: 'spot-price' })
+    }
+    if (priceType === 'auction' && !(Number(minIncrement) > 0)) {
+      issues.push({ id: 'increment', label: 'Set a minimum bid increment above zero.', targetId: 'min-increment' })
+    }
+    return issues
+  }, [deadline, minIncrement, priceType, spots, title])
+
+  const focusValidationIssue = (issue: ValidationIssue) => {
+    const target = document.getElementById(issue.targetId)
+    target?.focus()
+    target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 
   const addSticker = () => {
     if (spots.length >= 60) {
@@ -357,38 +390,10 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
       setError('Please authenticate with X to list.')
       return
     }
-    const hasTitle = Boolean(title.trim())
-    const hasSpots = spots.length > 0
-
-    if (!hasTitle && !hasSpots) {
-      setError('A title and at least one spot are required.')
-      document.getElementById('listing-title')?.focus()
-      document.getElementById('listing-title')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    if (!hasTitle) {
-      setError('Please enter a space title to continue.')
-      document.getElementById('listing-title')?.focus()
-      document.getElementById('listing-title')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    if (!hasSpots) {
-      setError('Please place at least one sponsor spot on the canvas above.')
-      document.getElementById('studio-canvas')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    if (!priceType) {
-      setError('Please choose a pricing format (Fixed price or Auction).')
-      return
-    }
-    if (!deadline) {
-      setError('Please pick a campaign deadline.')
-      document.getElementById('listing-deadline')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      return
-    }
-    const prices = spots.map((s) => Number(s.price))
-    if (prices.some((p) => !p || p <= 0)) {
-      setError('Every spot needs a price above zero.')
+    const firstIssue = validationIssues[0]
+    if (firstIssue) {
+      setError(firstIssue.label)
+      focusValidationIssue(firstIssue)
       return
     }
     setError(null)
@@ -697,6 +702,8 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     {/* Centered Animated Segmented Pill Control */}
                     <div className="mt-4 flex justify-center">
                       <div
+                        id="pricing-format"
+                        tabIndex={-1}
                         className="inline-flex items-center rounded-full bg-[#eae9e4] p-1 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]"
                         role="radiogroup"
                         aria-label="Pricing format"
@@ -1216,6 +1223,47 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     transition={{ duration: 0.4, delay: 0.15 }}
                     className="pt-8 pb-6 flex flex-col gap-4"
                   >
+                    <div
+                      className={`rounded-2xl border p-4 ${
+                        validationIssues.length
+                          ? 'border-amber-200 bg-amber-50/70'
+                          : 'border-emerald-200 bg-emerald-50/70'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <span
+                          className={`mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full ${
+                            validationIssues.length ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                          }`}
+                        >
+                          {validationIssues.length ? <AlertCircle size={14} /> : <Check size={14} />}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[13px] font-semibold text-[#020817]">
+                            {validationIssues.length ? 'Before you submit' : 'Ready for review'}
+                          </p>
+                          {validationIssues.length ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {validationIssues.map((issue) => (
+                                <button
+                                  key={issue.id}
+                                  type="button"
+                                  onClick={() => focusValidationIssue(issue)}
+                                  className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-[12px] font-medium text-amber-800 transition hover:border-amber-300 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
+                                >
+                                  {issue.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-[12px] text-emerald-700">
+                              Your listing has the required details. Review the final summary before sending it to reviewers.
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
                     <div className="flex flex-col items-center pt-2">
                       <button
                         type="button"
