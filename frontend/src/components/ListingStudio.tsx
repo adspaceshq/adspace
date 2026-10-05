@@ -1050,6 +1050,48 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         </span>
                       </div>
 
+                      <div className="rounded-2xl border border-[#e7e5e0] bg-white p-4">
+                        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="text-[13px] font-semibold text-[#020817]">Surface photo</p>
+                            <p className="mt-1 text-[12px] leading-relaxed text-[#64748b]">
+                              Optional, but recommended. Upload the real surface buyers will see.
+                            </p>
+                            {imageError && (
+                              <p className="mt-2 text-[12px] font-medium text-[#dc2626]">{imageError}</p>
+                            )}
+                          </div>
+                          <div className="flex shrink-0 items-center gap-3">
+                            {image && (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={image}
+                                alt=""
+                                className="h-12 w-16 rounded-xl border border-[#e7e5e0] object-cover"
+                              />
+                            )}
+                            <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-full border border-[#d8d6d0] bg-[#fafaf9] px-4 py-2 text-[12px] font-semibold text-[#020817] transition hover:border-[#4166fb] hover:text-[#4166fb]">
+                              {imageBusy ? (
+                                <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#4166fb] border-t-transparent" />
+                              ) : (
+                                <UploadCloud size={15} />
+                              )}
+                              <span>{imageBusy ? 'Uploading…' : image ? 'Replace photo' : 'Upload photo'}</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="sr-only"
+                                disabled={imageBusy}
+                                onChange={(event) => {
+                                  void onPhotoFile(event.target.files?.[0])
+                                  event.currentTarget.value = ''
+                                }}
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+
                     </div>
                   </motion.div>
 
@@ -1072,7 +1114,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                           type="button"
                           onClick={addSticker}
                           disabled={spots.length >= 60}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-[#020817] bg-[#020817] px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-black disabled:opacity-50"
+                          className="inline-flex min-h-10 items-center gap-1.5 rounded-full border border-[#020817] bg-[#020817] px-4 py-2 text-xs font-semibold text-white shadow-xs transition hover:bg-black disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                         >
                           <Plus size={14} /> {isTee ? 'Add Print Zone' : 'Add Sticker'}
                         </button>
@@ -1117,7 +1159,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                               <button
                                 type="button"
                                 onClick={() => focusSticker(p.id, i)}
-                                className="flex min-w-0 flex-1 items-center gap-3 text-left focus:outline-none"
+                                className="flex min-h-10 min-w-0 flex-1 items-center gap-3 rounded-xl text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                               >
                                 <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#020817] font-mono text-[12px] font-bold text-white">
                                   {i + 1}
@@ -1153,7 +1195,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                           exit={{ opacity: 0 }}
                                           className="inline-block text-[#dc2626] font-medium"
                                         >
-                                          Unpriced - click to price
+                                          Needs a price
                                         </motion.span>
                                       )}
                                     </AnimatePresence>
@@ -1165,7 +1207,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                 <button
                                   type="button"
                                   onClick={() => focusSticker(p.id, i)}
-                                  className="rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-[#4166fb] border border-[#c3cdfd] hover:bg-[#e9edfe] transition"
+                                  className="min-h-9 rounded-lg bg-white px-3 py-1.5 text-xs font-semibold text-[#4166fb] border border-[#c3cdfd] hover:bg-[#e9edfe] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                                 >
                                   {isSelected ? 'Editing' : 'Edit'}
                                 </button>
@@ -1174,7 +1216,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                                     type="button"
                                     onClick={() => removeSpot(p.id)}
                                     aria-label={`Remove spot ${i + 1}`}
-                                    className="grid h-8 w-8 place-items-center rounded-lg text-[#94a3b8] transition hover:bg-[#fee2e2] hover:text-[#dc2626]"
+                                    className="grid h-10 w-10 place-items-center rounded-lg text-[#94a3b8] transition hover:bg-[#fee2e2] hover:text-[#dc2626] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#dc2626] focus-visible:ring-offset-2"
                                   >
                                     <Trash2 size={15} />
                                   </button>
