@@ -377,9 +377,9 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         </div>
 
         {queue === null ? (
-          <p className="py-12 text-center text-sm text-[#64748b]">Loading review queue…</p>
+          <ReviewQueueSkeleton />
         ) : queue.length === 0 ? (
-          <div className="py-14 text-center">
+          <div className="rounded-2xl border border-dashed border-[#d8d6d0] bg-white/60 py-14 text-center">
             <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-full bg-[#ecebe6] text-[#64748b]">
               <Check size={18} />
             </div>
@@ -387,6 +387,12 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             <p className="mt-1 text-xs text-[#64748b]">
               All registered creator spaces have been reviewed. New submissions will appear here.
             </p>
+            <Link
+              href="/dashboard"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-full border border-[#d8d6d0] bg-white px-4 py-2 text-xs font-semibold text-[#020817] shadow-2xs transition hover:border-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
+            >
+              Open dashboard
+            </Link>
           </div>
         ) : (
           <div className="grid gap-3">
@@ -701,6 +707,39 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           )}
         </section>
       </div>
+    </div>
+  )
+}
+
+function ReviewQueueSkeleton() {
+  return (
+    <div className="grid gap-3" aria-label="Loading review queue">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-2xl border border-[#e7e5e0] bg-white p-3 shadow-[0_10px_30px_rgba(2,8,23,0.04)]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+            <div className="flex gap-3">
+              <div className="h-20 w-28 shrink-0 animate-pulse rounded-xl bg-[#ecebe6]" />
+              <div className="flex-1 space-y-3 py-1">
+                <div className="h-4 w-48 animate-pulse rounded-full bg-[#ecebe6]" />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="h-3 w-32 animate-pulse rounded-full bg-[#f1f0ec]" />
+                  <div className="h-3 w-28 animate-pulse rounded-full bg-[#f1f0ec]" />
+                  <div className="h-3 w-24 animate-pulse rounded-full bg-[#f1f0ec]" />
+                  <div className="h-3 w-36 animate-pulse rounded-full bg-[#f1f0ec]" />
+                </div>
+                <div className="h-9 animate-pulse rounded-xl bg-[#f8fafc]" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="h-9 animate-pulse rounded-xl bg-[#f1f0ec]" />
+              <div className="flex justify-end gap-2">
+                <div className="h-8 w-20 animate-pulse rounded-full bg-[#f1f0ec]" />
+                <div className="h-8 w-28 animate-pulse rounded-full bg-[#e9edfe]" />
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
