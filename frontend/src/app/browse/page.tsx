@@ -8,8 +8,8 @@ import {
   ArrowUpDown,
   Plus,
   RotateCcw,
+  Search,
   Sparkles,
-  X,
 } from 'lucide-react'
 import Header from '@/components/Header'
 import ListingCard from '@/components/ListingCard'
@@ -39,6 +39,7 @@ function BrowseInner() {
   )
   const [formatFilter, setFormatFilter] = useState<PriceFormatFilter>('all')
   const [sortBy, setSortBy] = useState<SortOption>('ending-soonest')
+  const [query, setQuery] = useState('')
 
   // Total marketplace stats
   const activeListings = useMemo(() => {
@@ -68,10 +69,25 @@ function BrowseInner() {
 
   // Filter and sort listings
   const filtered = useMemo(() => {
+    const search = query.trim().toLowerCase()
     const result = activeListings.filter((l) => {
       if (surface !== 'all' && l.surface !== surface) return false
       if (formatFilter === 'auction' && l.priceType !== 'auction') return false
       if (formatFilter === 'fixed' && l.priceType === 'auction') return false
+      if (search) {
+        const haystack = [
+          l.title,
+          l.description,
+          l.goal,
+          l.seller.name,
+          l.seller.handle,
+          surfaceLabels[l.surface] ?? l.surface,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        if (!haystack.includes(search)) return false
+      }
       return true
     })
 
@@ -93,13 +109,14 @@ function BrowseInner() {
       const bEnds = new Date(b.endsAt ?? 0).getTime()
       return aEnds - bEnds
     })
-  }, [activeListings, surface, formatFilter, sortBy])
+  }, [activeListings, surface, formatFilter, query, sortBy])
 
-  const hasActiveFilters = surface !== 'all' || formatFilter !== 'all'
+  const hasActiveFilters = surface !== 'all' || formatFilter !== 'all' || query.trim().length > 0
 
   const resetFilters = () => {
     setSurface('all')
     setFormatFilter('all')
+    setQuery('')
   }
 
   return (
@@ -153,6 +170,20 @@ function BrowseInner() {
             <span className="mt-0.5 block text-xl font-medium tracking-tight text-[#020817]">Devnet USDC</span>
           </div>
         </section>
+
+        <div className="mb-4 max-w-xl">
+          <label className="relative block">
+            <span className="sr-only">Search marketplace</span>
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#64748b]" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by space, creator, surface, or city"
+              className="h-11 w-full rounded-full border border-[#d8d6d0] bg-white pl-9 pr-4 text-[13px] text-[#020817] shadow-2xs outline-none transition placeholder:text-[#94a3b8] focus:border-[#4166fb] focus:ring-2 focus:ring-[#4166fb]/15"
+            />
+          </label>
+        </div>
 
         {/* Controls: Category Tabs + Format & Sort (Zero lines, clean & unboxed) */}
         <div className="mb-8 flex flex-wrap items-center justify-between gap-y-3">
