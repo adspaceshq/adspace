@@ -9,6 +9,7 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  CircleDollarSign,
   DollarSign,
   Gavel,
   Info,
@@ -582,11 +583,11 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                     </span>
                     <input
                       id="spot-price"
-                      type="number"
-                      min={1}
+                      type="text"
+                      inputMode="decimal"
                       autoFocus
                       placeholder="25"
-                      className="w-full rounded-xl border border-[#e7e5e0] bg-[#fafaf9] py-2 pl-7 pr-3 font-mono text-[14px] font-semibold text-[#020817] focus:border-[#4166fb] focus:bg-white focus:outline-none"
+                      className="w-full rounded-xl border border-[#e7e5e0] bg-[#fafaf9] py-2 pl-7 pr-3 font-mono text-[14px] font-semibold text-[#020817] focus:border-[#4166fb] focus:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                       value={spots[editingIdx]?.price ?? ''}
                       onChange={(e) => updateSpot(editingIdx, { price: e.target.value })}
                       onKeyDown={(e) => {
@@ -755,33 +756,57 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                         </motion.p>
                       </AnimatePresence>
 
-                      <div className="mt-4 grid gap-2 text-left sm:grid-cols-2">
+                      <div className="mt-4 grid gap-3 text-left sm:grid-cols-2">
                         {([
                           {
                             key: 'fixed',
                             title: 'Fixed price',
                             copy: 'Sponsors claim spots immediately at your set price.',
+                            badge: 'Fastest',
+                            Icon: CircleDollarSign,
                           },
                           {
                             key: 'auction',
                             title: 'Auction',
                             copy: 'Sponsors bid until the deadline; reviewer sets auction fees.',
+                            badge: 'Competitive',
+                            Icon: Gavel,
                           },
-                        ] as const).map((item) => (
-                          <button
-                            key={item.key}
-                            type="button"
-                            onClick={() => setPriceType(item.key)}
-                            className={`rounded-2xl border p-3 text-left transition ${
-                              priceType === item.key
-                                ? 'border-[#4166fb] bg-[#f3f6ff] shadow-[0_10px_30px_rgba(65,102,251,0.12)]'
-                                : 'border-[#e7e5e0] bg-white hover:border-[#cfd6fb]'
-                            }`}
-                          >
-                            <span className="block text-[13px] font-semibold text-[#020817]">{item.title}</span>
-                            <span className="mt-1 block text-[12px] leading-relaxed text-[#64748b]">{item.copy}</span>
-                          </button>
-                        ))}
+                        ] as const).map((item) => {
+                          const selected = priceType === item.key
+                          const Icon = item.Icon
+                          return (
+                            <button
+                              key={item.key}
+                              type="button"
+                              onClick={() => setPriceType(item.key)}
+                              className={`min-h-[116px] rounded-2xl border p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2 ${
+                                selected
+                                  ? 'border-[#4166fb] bg-[#f3f6ff] shadow-[0_10px_30px_rgba(65,102,251,0.12)]'
+                                  : 'border-[#e7e5e0] bg-white hover:border-[#cfd6fb]'
+                              }`}
+                            >
+                              <span className="flex items-start justify-between gap-3">
+                                <span
+                                  className={`grid h-9 w-9 place-items-center rounded-xl ${
+                                    selected ? 'bg-[#4166fb] text-white' : 'bg-[#f1f0ec] text-[#64748b]'
+                                  }`}
+                                >
+                                  <Icon size={17} />
+                                </span>
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${
+                                    selected ? 'bg-white text-[#4166fb]' : 'bg-[#f8fafc] text-[#64748b]'
+                                  }`}
+                                >
+                                  {item.badge}
+                                </span>
+                              </span>
+                              <span className="mt-3 block text-[14px] font-semibold text-[#020817]">{item.title}</span>
+                              <span className="mt-1 block text-[12px] leading-relaxed text-[#64748b]">{item.copy}</span>
+                            </button>
+                          )
+                        })}
                       </div>
 
                       {priceType === 'auction' && (
@@ -800,13 +825,11 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                             </span>
                             <input
                               id="min-increment"
-                              type="number"
+                              type="text"
                               inputMode="decimal"
-                              min="0.01"
-                              step="0.01"
                               value={minIncrement}
                               onChange={(e) => setMinIncrement(e.target.value)}
-                              className="w-full rounded-xl border border-[#e5e4de] bg-white py-2.5 pl-8 pr-4 font-mono text-[14px] font-medium text-[#020817] shadow-xs focus:border-[#020817] focus:outline-none"
+                              className="w-full rounded-xl border border-[#e5e4de] bg-white py-2.5 pl-8 pr-4 font-mono text-[14px] font-medium text-[#020817] shadow-xs focus:border-[#020817] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                               required
                             />
                           </div>
@@ -858,7 +881,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                               {x?.loggingIn ? (
                                 <>
                                   <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                                  <span>Connecting to X...</span>
+                                  <span>Connecting to X…</span>
                                 </>
                               ) : (
                                 <>
@@ -1374,6 +1397,20 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                 </span>
               </div>
 
+              <div className="mt-5 rounded-2xl border border-[#c7d2fe] bg-[#eef2ff] p-4">
+                <div className="flex gap-3">
+                  <Info size={17} className="mt-0.5 shrink-0 text-[#4166fb]" />
+                  <div>
+                    <p className="text-[13px] font-semibold text-[#020817]">
+                      This submits for reviewer approval only
+                    </p>
+                    <p className="mt-1 text-[12px] leading-relaxed text-[#526079]">
+                      Nothing is created on-chain yet. After a reviewer approves the commercial terms, you will accept them from your dashboard to publish the listing and spots.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {/* Actions */}
               <div className="mt-6 flex items-center justify-between gap-3">
                 <button
@@ -1393,7 +1430,7 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
                   {publishing ? (
                     <>
                       <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                      <span>Submitting...</span>
+                      <span>Submitting…</span>
                     </>
                   ) : (
                     <>
