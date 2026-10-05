@@ -136,13 +136,13 @@ function DashboardModeSwitch({
   onTabChange: (tab: 'admin' | 'creator' | 'sponsor') => void
 }) {
   return (
-    <div className="flex justify-end">
-      <div className="inline-flex rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium">
+    <div className="flex justify-start sm:justify-end">
+      <div className="inline-flex w-full rounded-full bg-[#ecebe6] p-1 text-[12px] font-medium sm:w-auto">
         {isReviewer && (
           <button
             type="button"
             onClick={() => onTabChange('admin')}
-            className={`rounded-full px-3 py-1 transition cursor-pointer ${
+            className={`flex-1 rounded-full px-3 py-1.5 transition cursor-pointer sm:flex-none ${
               currentTab === 'admin'
                 ? 'bg-[#020817] text-white shadow-2xs'
                 : 'text-[#64748b] hover:text-[#020817]'
@@ -154,7 +154,7 @@ function DashboardModeSwitch({
         <button
           type="button"
           onClick={() => onTabChange('creator')}
-          className={`rounded-full px-3 py-1 transition cursor-pointer ${
+          className={`flex-1 rounded-full px-3 py-1.5 transition cursor-pointer sm:flex-none ${
             currentTab === 'creator'
               ? 'bg-[#020817] text-white shadow-2xs'
               : 'text-[#64748b] hover:text-[#020817]'
@@ -165,7 +165,7 @@ function DashboardModeSwitch({
         <button
           type="button"
           onClick={() => onTabChange('sponsor')}
-          className={`rounded-full px-3 py-1 transition cursor-pointer ${
+          className={`flex-1 rounded-full px-3 py-1.5 transition cursor-pointer sm:flex-none ${
             currentTab === 'sponsor'
               ? 'bg-[#020817] text-white shadow-2xs'
               : 'text-[#64748b] hover:text-[#020817]'
@@ -817,7 +817,7 @@ function SellerDashboardPage({
                       }}
                     >
                       <div
-                        className="max-h-[90vh] w-full max-w-[500px] overflow-y-auto rounded-[28px] bg-white p-7 shadow-2xl"
+                        className="max-h-[90vh] w-full max-w-[500px] overflow-y-auto rounded-[24px] bg-white p-5 shadow-2xl sm:rounded-[28px] sm:p-7"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <div className="flex items-start justify-between">
@@ -885,7 +885,7 @@ function SellerDashboardPage({
                           </p>
                         )}
 
-                        <div className="mt-6 flex items-center justify-between gap-3">
+                        <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <button
                             type="button"
                             onClick={() => setTermsFor(null)}
@@ -898,7 +898,7 @@ function SellerDashboardPage({
                             type="button"
                             onClick={() => void accept()}
                             disabled={!terms || busy === termsFor}
-                            className="inline-flex items-center rounded-full bg-[#4166fb] px-7 py-3 text-[14px] font-semibold text-white shadow-[0_10px_25px_-6px_rgba(65,102,251,0.5)] transition hover:bg-[#3558e8] active:scale-[0.98] disabled:opacity-60 cursor-pointer"
+                            className="inline-flex items-center justify-center rounded-full bg-[#4166fb] px-7 py-3 text-[14px] font-semibold text-white shadow-[0_10px_25px_-6px_rgba(65,102,251,0.5)] transition hover:bg-[#3558e8] active:scale-[0.98] disabled:opacity-60 cursor-pointer"
                           >
                             {busy === termsFor ? 'Accepting…' : 'Accept & go live'}
                           </button>
@@ -1531,10 +1531,10 @@ function Empty({ text, action, href }: { text: string; action?: string; href?: s
 function DashboardSkeleton() {
   return (
     <div className="animate-pulse space-y-8 py-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="space-y-2">
           <div className="h-8 w-60 rounded-xl bg-[#eeede8]" />
-          <div className="h-4 w-96 rounded-lg bg-[#f4f3ef]" />
+          <div className="h-4 w-64 rounded-lg bg-[#f4f3ef] sm:w-96" />
         </div>
         <div className="h-11 w-36 rounded-full bg-[#eeede8]" />
       </div>
