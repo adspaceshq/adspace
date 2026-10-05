@@ -606,18 +606,60 @@ function SellerDashboardPage({
                         {data.listings.length === 0 ? (
                           <Empty text="You haven’t listed a space yet." action="List your first space" href="/list" />
                         ) : (
-                          <div className="grid gap-3">
-                            {data.listings.map((listing) => (
-                              <SellerListingCard
-                                key={listing.id}
-                                listing={listing}
-                                busy={busy === listing.slug}
-                                onAcceptTerms={() => void openTerms(listing.slug)}
-                                onClose={() => void actListing(listing.slug, 'close')}
-                                onReopen={() => void actListing(listing.slug, 'reopen')}
-                                onDelete={() => void actListing(listing.slug, 'delete')}
-                              />
-                            ))}
+                          <div className="space-y-5">
+                            {([
+                              {
+                                key: 'terms',
+                                title: 'Terms ready',
+                                description: 'Approved by reviewers. Accept terms to publish on-chain.',
+                                listings: data.listings.filter((listing) => listing.status === 'approved'),
+                              },
+                              {
+                                key: 'submitted',
+                                title: 'In review',
+                                description: 'Reviewer is checking pricing, policy, and commercial terms.',
+                                listings: data.listings.filter((listing) => listing.status === 'submitted'),
+                              },
+                              {
+                                key: 'live',
+                                title: 'Live spaces',
+                                description: 'Published on-chain and visible in the marketplace.',
+                                listings: data.listings.filter((listing) => listing.status === 'active'),
+                              },
+                              {
+                                key: 'closed',
+                                title: 'Closed',
+                                description: 'Not accepting new sponsor activity.',
+                                listings: data.listings.filter((listing) => listing.status === 'closed'),
+                              },
+                            ] as const)
+                              .filter((group) => group.listings.length > 0)
+                              .map((group) => (
+                                <section key={group.key} className="space-y-2">
+                                  <div className="flex items-end justify-between gap-3">
+                                    <div>
+                                      <h3 className="text-[13px] font-semibold text-[#020817]">{group.title}</h3>
+                                      <p className="text-[11px] text-[#64748b]">{group.description}</p>
+                                    </div>
+                                    <span className="rounded-full bg-[#f1f0ec] px-2.5 py-1 text-[11px] font-semibold text-[#64748b]">
+                                      {group.listings.length}
+                                    </span>
+                                  </div>
+                                  <div className="grid gap-3">
+                                    {group.listings.map((listing) => (
+                                      <SellerListingCard
+                                        key={listing.id}
+                                        listing={listing}
+                                        busy={busy === listing.slug}
+                                        onAcceptTerms={() => void openTerms(listing.slug)}
+                                        onClose={() => void actListing(listing.slug, 'close')}
+                                        onReopen={() => void actListing(listing.slug, 'reopen')}
+                                        onDelete={() => void actListing(listing.slug, 'delete')}
+                                      />
+                                    ))}
+                                  </div>
+                                </section>
+                              ))}
                           </div>
                         )}
                       </section>
