@@ -265,7 +265,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
     }
     if (!actor) return
     if (!logo) {
-      showToast('Add your logo - every spot carries art.')
+      showToast('Add your logo — every spot carries art.')
       setStep('brand')
       return
     }
@@ -618,7 +618,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                         type="button"
                         aria-label="Remove photo"
                         onClick={() => setProofFiles((prev) => prev.filter((_, j) => j !== i))}
-                        className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-[#020817] text-[11px] text-white"
+                        className="absolute -right-2 -top-2 grid h-7 w-7 place-items-center rounded-full bg-[#020817] text-[15px] leading-none text-white transition hover:bg-[#1a2436] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                       >
                         ×
                       </button>
@@ -627,8 +627,8 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-3">
-                <label htmlFor={`proof-file-${sp.id}`} className="cursor-pointer rounded-full border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium transition hover:border-[#4166fb]">
-                  {proofBusy ? 'Reading...' : 'Add photos'}
+                <label htmlFor={`proof-file-${sp.id}`} className="inline-flex min-h-10 cursor-pointer items-center rounded-full border border-[#e7e5e0] bg-white px-4 py-2 text-[13px] font-medium transition hover:border-[#4166fb] focus-within:ring-2 focus-within:ring-[#4166fb] focus-within:ring-offset-2">
+                  {proofBusy ? 'Reading…' : 'Add photos'}
                 </label>
                 <input
                   id={`proof-file-${sp.id}`}
@@ -642,21 +642,23 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                   value={proofSpot === sp.id ? proofPost : ''}
                   onChange={(e) => setProofPost(e.target.value)}
                   placeholder="x.com/... post link (optional)"
+                  type="url"
+                  inputMode="url"
                   spellCheck={false}
-                  className="min-w-[200px] flex-1 rounded-lg border border-[#e7e5e0] bg-white px-3 py-2 text-[13px] outline-none transition focus:border-[#4166fb]"
+                  className="min-h-10 min-w-[200px] flex-1 rounded-lg border border-[#e7e5e0] bg-white px-3 py-2 text-[13px] outline-none transition focus:border-[#4166fb] focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 />
                 <button
                   type="button"
                   onClick={() => void saveProof(sp.id)}
                   disabled={proofBusy || !proofFiles.length}
-                  className="rounded-full bg-[#020817] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60"
+                  className="min-h-10 rounded-full bg-[#020817] px-4 py-2 text-[13px] font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
-                  {proofBusy ? 'Uploading...' : 'Upload proof'}
+                  {proofBusy ? 'Uploading…' : 'Upload proof'}
                 </button>
                 <button
                   type="button"
                   onClick={() => { setProofSpot(null); setProofFiles([]); setProofPost(''); setProofError(null) }}
-                  className="text-[13px] font-medium text-[#64748b] transition hover:text-[#020817]"
+                  className="min-h-10 rounded-full px-3 text-[13px] font-medium text-[#64748b] transition hover:bg-[#f1f0ec] hover:text-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   Cancel
                 </button>
