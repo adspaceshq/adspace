@@ -271,7 +271,7 @@ export default function SellerPage({ params }: { params: Promise<{ handle: strin
                 disabled={saving}
                 className="inline-flex items-center rounded-full bg-[#020817] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#0f1a33] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
-                {saving ? 'Saving...' : 'Save profile'}
+                {saving ? 'Saving…' : 'Save profile'}
               </button>
               <button
                 type="button"

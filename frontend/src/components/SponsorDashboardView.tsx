@@ -467,7 +467,7 @@ function CampaignRow({
               className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] active:scale-[0.98] disabled:opacity-50 cursor-pointer"
             >
               <UploadCloud size={14} />
-              <span>{busy ? 'Uploading...' : campaign.artworkSubmittedAt ? 'Replace artwork' : 'Upload artwork'}</span>
+              <span>{busy ? 'Uploading…' : campaign.artworkSubmittedAt ? 'Replace artwork' : 'Upload artwork'}</span>
             </button>
           </>
         )}
@@ -489,7 +489,7 @@ function CampaignRow({
               className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
             >
               <Check size={14} />
-              <span>{busy ? 'Saving...' : 'Approve delivery'}</span>
+              <span>{busy ? 'Saving…' : 'Approve delivery'}</span>
             </button>
             <button
               type="button"
