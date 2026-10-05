@@ -463,6 +463,7 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                 const isClaimed = Boolean(sp.claimedBy)
                 const amount = sp.bid ?? sp.price
                 const websiteClean = sp.website ? sp.website.replace(/^https?:\/\//i, '').replace(/\/$/, '') : null
+                const isMine = Boolean(x?.handle && normHandle(x.handle) === normHandle(brand))
 
                 return (
                   <div
@@ -501,6 +502,11 @@ export default function ListingDetailView({ id, backHref }: { id: string; backHr
                         >
                           {isClaimed ? 'Claimed' : 'Top bid'}
                         </span>
+                        {isMine && (
+                          <span className="inline-flex items-center rounded-full bg-[#020817] px-2 py-0.5 text-[11px] font-medium text-white">
+                            Your bid
+                          </span>
+                        )}
                       </div>
 
                       <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-[#64748b]">
