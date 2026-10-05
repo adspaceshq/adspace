@@ -44,6 +44,18 @@ const money = (amount: number, currency = 'USD') =>
     maximumFractionDigits: 0,
   }).format(amount)
 
+const SOLANA_CLUSTER = process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet'
+const ADSPACES_PROGRAM_ID =
+  process.env.NEXT_PUBLIC_ADSPACES_PROGRAM_ID ?? '6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW'
+
+const shortAddress = (address: string) =>
+  address.length > 12 ? `${address.slice(0, 5)}...${address.slice(-4)}` : address
+
+const explorerAddressUrl = (address: string) => {
+  const base = `https://explorer.solana.com/address/${address}`
+  return SOLANA_CLUSTER === 'mainnet-beta' ? base : `${base}?cluster=${encodeURIComponent(SOLANA_CLUSTER)}`
+}
+
 const relative = (iso: string) => {
   const hours = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000))
   if (hours < 1) return 'Just now'
@@ -246,7 +258,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
             className="inline-flex items-center gap-1.5 rounded-full border border-[#d8d6d0] bg-white px-3.5 py-1.5 text-xs font-normal text-[#020817] transition hover:border-[#020817] disabled:opacity-50 cursor-pointer shadow-2xs"
           >
             <RefreshCw size={13} className={reconciling ? 'animate-spin text-[#4166fb]' : 'text-[#64748b]'} />
-            <span>{reconciling ? 'Syncing...' : 'Sync devnet'}</span>
+            <span>{reconciling ? 'Syncing…' : `Sync ${SOLANA_CLUSTER}`}</span>
           </button>
         </div>
       </div>
@@ -328,12 +340,17 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         <div>
           <div className="flex items-center gap-1.5 text-[11px] font-normal uppercase tracking-wider text-[#64748b]">
             <Layers size={14} className="text-slate-600" />
-            <span>Solana Devnet</span>
+            <span>Solana {SOLANA_CLUSTER}</span>
           </div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-sm font-mono font-medium text-[#020817]">
-              6ft49...LMSW
-            </span>
+            <a
+              href={explorerAddressUrl(ADSPACES_PROGRAM_ID)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-mono font-medium text-[#020817] hover:text-[#4166fb] hover:underline"
+            >
+              {shortAddress(ADSPACES_PROGRAM_ID)}
+            </a>
             <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
           </div>
         </div>
@@ -360,7 +377,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
         </div>
 
         {queue === null ? (
-          <p className="py-12 text-center text-sm text-[#64748b]">Loading review queue...</p>
+          <p className="py-12 text-center text-sm text-[#64748b]">Loading review queue…</p>
         ) : queue.length === 0 ? (
           <div className="py-14 text-center">
             <div className="mx-auto mb-3 grid h-10 w-10 place-items-center rounded-full bg-[#ecebe6] text-[#64748b]">
@@ -563,7 +580,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                 }
                 className="inline-flex items-center gap-1.5 rounded-full bg-[#4166fb] px-5 py-1.5 text-xs font-medium text-white shadow-2xs transition hover:bg-[#3558e8] disabled:opacity-50 cursor-pointer"
               >
-                <span>{busy === approval.slug ? 'Approving...' : 'Confirm & approve'}</span>
+                <span>{busy === approval.slug ? 'Approving…' : 'Confirm & approve'}</span>
               </button>
             </div>
           </div>
@@ -588,7 +605,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           )}
 
           {disputes === null ? (
-            <p className="py-6 text-center text-xs text-[#64748b]">Loading disputes...</p>
+            <p className="py-6 text-center text-xs text-[#64748b]">Loading disputes…</p>
           ) : disputes.length === 0 ? (
             <div className="py-6 text-center text-xs text-[#64748b]">
               No active disputes in escrow.
@@ -649,7 +666,7 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
           )}
 
           {payouts === null ? (
-            <p className="py-6 text-center text-xs text-[#64748b]">Loading payouts...</p>
+            <p className="py-6 text-center text-xs text-[#64748b]">Loading payouts…</p>
           ) : payouts.length === 0 ? (
             <div className="py-6 text-center text-xs text-[#64748b]">
               No spots awaiting payout release.
@@ -861,7 +878,7 @@ function DisputeCard({
           onClick={onResolve}
           className="inline-flex cursor-pointer justify-center rounded-full bg-[#4166fb] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#3558e8] disabled:opacity-50"
         >
-          {busy ? 'Resolving...' : 'Resolve'}
+          {busy ? 'Resolving…' : 'Resolve'}
         </button>
       </div>
     </article>
@@ -896,7 +913,7 @@ function PayoutCard({
             onClick={onPay}
             className="inline-flex cursor-pointer rounded-full bg-[#020817] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#1a2436] disabled:opacity-50"
           >
-            {busy ? 'Paying...' : 'Pay out'}
+            {busy ? 'Paying…' : 'Pay out'}
           </button>
         </div>
       </div>
