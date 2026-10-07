@@ -194,13 +194,21 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     setImageError(null)
     photoDataUrl(file)
       .then(async (dataUrl) => {
-        const blob = await dataUrlToBlob(dataUrl)
-        const url = await uploadToCloudinary(blob, 'listings', file.name.replace(/\.[^.]+$/, '.jpg'))
-        setImage(url)
+        // Prefer hosted Cloudinary URL, but never block the seller on it:
+        // the shrunk data URL is already ≤2.5 MB and the API accepts
+        // `data:image/*` inline (CONTRACT.md), so a blocked/failed
+        // Cloudinary upload (adblock, offline, CORS) falls back to it.
+        try {
+          const blob = await dataUrlToBlob(dataUrl)
+          const url = await uploadToCloudinary(blob, 'listings', file.name.replace(/\.[^.]+$/, '.jpg'))
+          setImage(url)
+        } catch {
+          setImage(dataUrl)
+        }
         setImageBusy(false)
       })
       .catch((err) => {
-        setImageError(userErrorMessage(err, 'Could not upload that photo. Try a different image.'))
+        setImageError(userErrorMessage(err, 'Could not read that file.'))
         setImageBusy(false)
       })
   }
