@@ -43,7 +43,7 @@ import {
   rejectApiSpot,
   reopenApiListing,
 } from '@/lib/auth-api'
-import { cardPhoto, isEnded } from '@/lib/listings'
+import { cardPhoto, explorerTxUrl, isEnded } from '@/lib/listings'
 import type { SellerDashboard, TermsDoc, WalletWithdrawal } from '@/lib/types'
 import { embeddedUsdcBalance } from '@/lib/adspaces-program'
 import { userErrorMessage } from '@/lib/errors'
@@ -64,10 +64,9 @@ const relative = (iso: string) => {
 
 export default function DashboardPage() {
   const auth = useAuthSession()
-  const isReviewer = Boolean(
-    auth.isReviewer ||
-    (auth.handle && ['adspacesfun', 'notcodesid', 'x402__ai'].includes(auth.handle.replace('@', '').toLowerCase()))
-  )
+  // Reviewer status comes from the API session (PLATFORM_REVIEWERS allowlist)
+  // — no client-side handle checks.
+  const isReviewer = auth.isReviewer
 
   const [activeTab, setActiveTab] = useState<'admin' | 'creator' | 'sponsor' | null>(null)
 
@@ -994,9 +993,7 @@ function SellerDashboardPage({
 
                         {withdrawSignature && (
                           <a
-                            href={`https://explorer.solana.com/tx/${withdrawSignature}?cluster=${encodeURIComponent(
-                              process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet',
-                            )}`}
+                            href={explorerTxUrl(withdrawSignature)}
                             target="_blank"
                             rel="noopener"
                             className="mt-3 block break-all text-xs font-medium text-[#4166fb] hover:underline"
