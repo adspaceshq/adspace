@@ -244,7 +244,7 @@ export default function Footer() {
                 >
                   Discord
                 </a>
-                <a href="mailto:team@adspaces.net" className="transition-colors hover:text-white">
+                <a href="mailto:adspacesfun@gmail.com" className="transition-colors hover:text-white">
                   Email support
                 </a>
               </div>
@@ -273,10 +273,10 @@ export default function Footer() {
               <span>© {new Date().getFullYear()} Adspaces Inc.</span>
               <span className="hidden sm:inline">·</span>
               <a
-                href="mailto:team@adspaces.net"
+                href="mailto:adspacesfun@gmail.com"
                 className="transition-colors hover:text-white/80"
               >
-                team@adspaces.net
+                adspacesfun@gmail.com
               </a>
             </div>
 
