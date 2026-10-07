@@ -120,6 +120,10 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | undefined>();
   const [exchanging, setExchanging] = useState(false);
   const exchangedFor = useRef<string | null>(null);
+  // Overlapping triggers (link callbacks, wallet provisioning, resync) must
+  // share one exchange: parallel exchanges mint parallel sessions and the
+  // cookie + CSRF pair desyncs, surfacing as "invalid CSRF token".
+  const exchangeInFlight = useRef<Promise<void> | null>(null);
   const walletProvisionedFor = useRef<string | null>(null);
   const syncedAccountsFor = useRef<string | null>(null);
   const { createWallet: createSolanaWallet } = useCreateSolanaWallet();
@@ -141,24 +145,36 @@ function PrivySessionProvider({ children }: { children: React.ReactNode }) {
   })[0];
 
   const exchange = useCallback(async () => {
-    setExchanging(true);
-    try {
-      const session = await createApiSession();
-      setMe(session);
-      setError(undefined);
-    } catch (e) {
-      exchangedFor.current = null;
-      setMe(null);
-      if (e instanceof ApiError && e.status === 401) {
-        await privyLogout();
+    if (exchangeInFlight.current) {
+      await exchangeInFlight.current;
+      return;
+    }
+    const run = (async () => {
+      setExchanging(true);
+      try {
+        const session = await createApiSession();
+        setMe(session);
+        setError(undefined);
+      } catch (e) {
+        exchangedFor.current = null;
+        setMe(null);
+        if (e instanceof ApiError && e.status === 401) {
+          await privyLogout();
+        }
+        setError(
+          e instanceof Error
+            ? e.message
+            : 'Privy login succeeded but the API rejected the session. Check the backend Privy configuration.',
+        );
+      } finally {
+        setExchanging(false);
       }
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Privy login succeeded but the API rejected the session. Check the backend Privy configuration.',
-      );
+    })();
+    exchangeInFlight.current = run;
+    try {
+      await run;
     } finally {
-      setExchanging(false);
+      if (exchangeInFlight.current === run) exchangeInFlight.current = null;
     }
   }, [privyLogout]);
 

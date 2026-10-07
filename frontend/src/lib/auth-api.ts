@@ -54,54 +54,78 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/**
+ * Mutations pair the session cookie with the in-memory CSRF token. If a
+ * background session rotation landed a fresh cookie after we read the token,
+ * the first attempt 403s — refresh the session once and retry with the new
+ * pair instead of surfacing "invalid CSRF token".
+ */
+async function withCsrfRetry<T>(send: () => Promise<T>): Promise<T> {
+  try {
+    return await send();
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 403 && /csrf/i.test(e.message)) {
+      await fetchApiMe();
+      return await send();
+    }
+    throw e;
+  }
+}
+
 /** Owner POST without a body: session cookie + Privy Bearer + CSRF. */
 export async function apiPostEmpty<T>(path: string): Promise<T> {
-  let token: string | null = null;
-  try {
-    token = await getAccessToken();
-  } catch {
-    token = null;
-  }
-  return request<T>(path, {
-    method: "POST",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-    },
+  return withCsrfRetry(async () => {
+    let token: string | null = null;
+    try {
+      token = await getAccessToken();
+    } catch {
+      token = null;
+    }
+    return request<T>(path, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+    });
   });
 }
 
 /** Owner DELETE: session cookie + Privy Bearer + CSRF. */
 export async function apiDelete<T>(path: string): Promise<T> {
-  let token: string | null = null;
-  try {
-    token = await getAccessToken();
-  } catch {
-    token = null;
-  }
-  return request<T>(path, {
-    method: "DELETE",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-    },
+  return withCsrfRetry(async () => {
+    let token: string | null = null;
+    try {
+      token = await getAccessToken();
+    } catch {
+      token = null;
+    }
+    return request<T>(path, {
+      method: "DELETE",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+    });
   });
 }
 /** Authenticated POST: session cookie + Privy Bearer so the API can verify X. */
 export async function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
-  let token: string | null = null;
-  try {
-    token = await getAccessToken();
-  } catch {
-    token = null;
-  }
-  return request<T>(path, {
-    method: "POST",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-    },
-    body: JSON.stringify(body),
+  return withCsrfRetry(async () => {
+    let token: string | null = null;
+    try {
+      token = await getAccessToken();
+    } catch {
+      token = null;
+    }
+    return request<T>(path, {
+      method: "POST",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+      body: JSON.stringify(body),
+    });
   });
 }
 
@@ -128,19 +152,21 @@ export async function apiGet<T>(path: string): Promise<T> {
 
 /** Authenticated PATCH: session cookie + Privy Bearer + CSRF. */
 export async function apiPatch<T>(path: string, body: unknown = {}): Promise<T> {
-  let token: string | null = null;
-  try {
-    token = await getAccessToken();
-  } catch {
-    token = null;
-  }
-  return request<T>(path, {
-    method: "PATCH",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-    },
-    body: JSON.stringify(body),
+  return withCsrfRetry(async () => {
+    let token: string | null = null;
+    try {
+      token = await getAccessToken();
+    } catch {
+      token = null;
+    }
+    return request<T>(path, {
+      method: "PATCH",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+      body: JSON.stringify(body),
+    });
   });
 }
 
@@ -154,19 +180,21 @@ export function updateMyProfile(patch: UpdateProfileRequest): Promise<PublicProf
 }
 
 export async function saveOnboarding(input: Onboarding): Promise<Onboarding> {
-  let token: string | null = null;
-  try {
-    token = await getAccessToken();
-  } catch {
-    token = null;
-  }
-  return request<Onboarding>("/api/users/me/onboarding", {
-    method: "PUT",
-    headers: {
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-    },
-    body: JSON.stringify(input),
+  return withCsrfRetry(async () => {
+    let token: string | null = null;
+    try {
+      token = await getAccessToken();
+    } catch {
+      token = null;
+    }
+    return request<Onboarding>("/api/users/me/onboarding", {
+      method: "PUT",
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+      body: JSON.stringify(input),
+    });
   });
 }
 

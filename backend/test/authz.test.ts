@@ -79,8 +79,15 @@ test("logout revokes the persisted session", async () => {
 
 test("authentication is rate limited and production cookies are hardened", async () => {
   const previous = process.env.NODE_ENV;
+  const previousSameSite = process.env.SESSION_COOKIE_SAMESITE;
   process.env.NODE_ENV = "production";
+  delete process.env.SESSION_COOKIE_SAMESITE;
+  // Cross-site default: SameSite=None + Secure so the cookie is sent on fetch.
+  assert.deepEqual(cookieOptions(), { httpOnly: true, sameSite: "none", secure: true, path: "/", maxAge: 604_800_000 });
+  process.env.SESSION_COOKIE_SAMESITE = "lax";
   assert.deepEqual(cookieOptions(), { httpOnly: true, sameSite: "lax", secure: true, path: "/", maxAge: 604_800_000 });
+  if (previousSameSite === undefined) delete process.env.SESSION_COOKIE_SAMESITE;
+  else process.env.SESSION_COOKIE_SAMESITE = previousSameSite;
   process.env.NODE_ENV = previous;
   const app = createApp({ auth: new FakeAuthRepository(), verifyToken: async (token) => identities[token] });
   for (let i = 0; i < 10; i++) await request(app).post("/api/auth/session").set("Authorization", "Bearer owner").expect(200);

@@ -12,10 +12,22 @@ const COOKIE = "adspaces_sid";
 export const sessionCookieName = COOKIE;
 
 export function cookieOptions() {
+  // Deployed the API (onrender) and the frontend (workers.dev) are cross-site,
+  // and browsers never attach SameSite=Lax cookies to cross-site fetch — every
+  // mutation then arrives cookieless and fails CSRF. SameSite=None (Secure) is
+  // sent cross-site and also works same-site, so it is the production default.
+  const raw = (process.env.SESSION_COOKIE_SAMESITE ?? "").trim().toLowerCase();
+  const sameSite: "none" | "lax" | "strict" =
+    raw === "none" || raw === "lax" || raw === "strict"
+      ? raw
+      : process.env.NODE_ENV === "production"
+        ? "none"
+        : "lax";
   return {
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    sameSite,
+    // SameSite=None is rejected by browsers without Secure.
+    secure: sameSite === "none" ? true : process.env.NODE_ENV === "production",
     path: "/",
     maxAge: Number(process.env.SESSION_TTL_HOURS ?? 168) * 60 * 60 * 1000,
   };

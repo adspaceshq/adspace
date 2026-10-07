@@ -5,7 +5,7 @@ Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-30 (Devnet USDC: chain executors live, mock copy removed).
+Last updated: 2026-10-07 (Cross-site session cookie: SameSite=None+Secure in production).
 
 ---
 
@@ -654,6 +654,16 @@ docker run -p 8080:8080 adspaces-api
     from `spots JOIN listings` (`42702 ambiguous column`) — the proof
     upload path never worked against Postgres, only against the memory
     store the tests use.
+37. **Cross-site session cookie (2026-10-07).** Deployed frontend
+    (workers.dev) and API (onrender) are cross-site, and browsers never send
+    `SameSite=Lax` cookies on cross-site fetch — every mutation arrived
+    cookieless, `attachUser` minted a throwaway Bearer session per request,
+    and CSRF failed 100% ("invalid CSRF token" on onboarding). Production
+    now defaults to `SameSite=None; Secure` (`SESSION_COOKIE_SAMESITE`
+    override, `lax` still the local default); deploy needs `TRUST_PROXY=1`.
+    Frontend hardens the same symptom class: mutating calls retry once
+    after a session refresh on 403-CSRF, and concurrent `exchange()` calls
+    share one in-flight request so cookie/CSRF can't desync.
 36. **Devnet USDC claim/bid/settlement via chain executors (2026-09-30).**
     Revises 34: purchases and payouts move devnet USDC through the
     on-chain program when the backend is configured for chain
