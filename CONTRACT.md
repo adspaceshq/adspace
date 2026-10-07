@@ -143,8 +143,9 @@ compares stable user IDs, never X handles.
   stamps `artworkSubmittedAt`. Reminders are UI surfacing only.
 - Step 3 (review): reviewers are named in `PLATFORM_REVIEWERS` (X handles,
   `@` optional, or stable user IDs — IDs survive renames). The queue lists
-  `submitted` listings newest-first; approve flips to `active` (visible,
-  buyable) and clears the note; reject closes with `reviewNote` (≤500 chars,
+  `submitted` listings newest-first; approve flips to `approved` (still
+  hidden and unbuyable — the seller then accepts terms per Step 4 to go
+  `active`) and clears the note; reject closes with `reviewNote` (≤500 chars,
   else 400) that the seller sees on the dashboard. Both are 404 on unknown
   slugs, 409 when not awaiting review, 403 for non-reviewers. Self-approval
   is permitted while reviewers are named individuals — revisit with RBAC.
