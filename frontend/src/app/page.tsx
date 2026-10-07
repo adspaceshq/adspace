@@ -16,20 +16,20 @@ import Footer from '@/components/Footer'
 import PageShell from '@/components/PageShell'
 import SellerAvatar from '@/components/SellerAvatar'
 import { cardPhoto, listingUrl, sellerDisplay } from '@/lib/listings'
+import {
+  CTA_GRADIENT_IMAGE,
+  HERO_IMAGE_1,
+  HERO_IMAGE_2,
+  HERO_IMAGE_3,
+  STEP_IMAGE_1,
+  STEP_IMAGE_2,
+  STEP_IMAGE_3,
+} from '@/lib/assets'
 import { useStore } from '@/components/StoreProvider'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
 
-const HERO_IMAGES = [
-  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124082/adspaces/static/landing/hero-1.png',
-  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124086/adspaces/static/landing/hero-2.png',
-  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124090/adspaces/static/landing/hero-3.png',
-]
-const STEP_IMAGES = [
-  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124092/adspaces/static/landing/step-1.jpg',
-  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124094/adspaces/static/landing/step-2.jpg',
-  'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124096/adspaces/static/landing/step-3.jpg',
-]
-const CTA_GRADIENT_IMAGE = 'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124097/adspaces/static/landing/cta-gradient.jpg'
+const HERO_IMAGES = [HERO_IMAGE_1, HERO_IMAGE_2, HERO_IMAGE_3]
+const STEP_IMAGES = [STEP_IMAGE_1, STEP_IMAGE_2, STEP_IMAGE_3]
 
 /**
  * Step panel visual. Cover-crops its image so the BOX can resize freely.

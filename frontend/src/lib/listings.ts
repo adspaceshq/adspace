@@ -1,4 +1,6 @@
 import type { ApiListing, ApiMode, ApiSpot } from "./types";
+import { MAC_HERO_PHOTO, MAC_INSIDE_PHOTO, MAC_LID_PHOTO } from "./assets";
+export { MAC_HERO_PHOTO, MAC_INSIDE_PHOTO, MAC_LID_PHOTO };
 
 export interface Bid {
   bidder: string;
@@ -69,11 +71,8 @@ export function isSignatureLike(value: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]{87,88}$/.test(value);
 }
 
-export function explorerTxUrl(signature: string): string {
-  const cluster = process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? "devnet";
-  const base = `https://explorer.solana.com/tx/${signature}`;
-  return cluster === "mainnet-beta" ? base : `${base}?cluster=${cluster}`;
-}
+/** Explorer tx link (lives in lib/chain-config; re-exported here so existing imports keep working). */
+export { explorerTxUrl } from './chain-config'
 
 /** Lazy 3-day review window from fulfillment (mirrors the API rule). */
 export const REVIEW_WINDOW_MS = 3 * 86_400_000;
@@ -196,10 +195,8 @@ export function normalizeFabric(value: unknown): string {
 }
 
 /* Mac photos. The lid and the top-down deck shot are both sticker surfaces on the gear
- * spec sheet; the open shot is only the card hero. */
-export const MAC_LID_PHOTO = "https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124550/adspaces/static/mac/macbook.png";
-export const MAC_HERO_PHOTO = "https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124551/adspaces/static/mac/macbook-open.webp";
-export const MAC_INSIDE_PHOTO = "https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124556/adspaces/static/mac/mac-inside.png";
+ * spec sheet; the open shot is only the card hero. URLs live in lib/assets (R2),
+ * re-exported at the top of this file so existing `@/lib/listings` imports keep working. */
 
 /**
  * Spec-sheet view ids. A sticker lives on exactly one view — the lid (`LID_VIEW_ID`) or the deck

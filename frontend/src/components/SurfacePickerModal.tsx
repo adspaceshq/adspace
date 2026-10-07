@@ -6,8 +6,7 @@ import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { ArrowRight, X } from 'lucide-react'
 import { MAC_LID_PHOTO } from '@/lib/listings'
-
-const TSHIRT_PREVIEW_IMAGE = 'https://res.cloudinary.com/jvd3gsf7/image/upload/v1791124086/adspaces/static/landing/hero-2.png'
+import { TEE_PREVIEW_IMAGE as TSHIRT_PREVIEW_IMAGE } from '@/lib/assets'
 
 interface SurfacePickerContextType {
   isOpen: boolean
