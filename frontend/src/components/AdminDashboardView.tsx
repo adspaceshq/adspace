@@ -27,6 +27,7 @@ import {
   resolveSpotDispute,
 } from '@/lib/auth-api'
 import { cardPhoto, sellerDisplay, surfaceLabels } from '@/lib/listings'
+import { ADSPACES_CLUSTER, ADSPACES_PROGRAM_ID_STRING, explorerAddressUrl } from '@/lib/chain-config'
 import type { ApiListing, DisputeItem, PayoutItem, ReviewPolicyRequest } from '@/lib/types'
 
 const defaultPolicy = (listing: ApiListing): ReviewPolicyRequest => ({
@@ -44,17 +45,11 @@ const money = (amount: number, currency = 'USD') =>
     maximumFractionDigits: 0,
   }).format(amount)
 
-const SOLANA_CLUSTER = process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet'
-const ADSPACES_PROGRAM_ID =
-  process.env.NEXT_PUBLIC_ADSPACES_PROGRAM_ID ?? '6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW'
+const SOLANA_CLUSTER = ADSPACES_CLUSTER
+const ADSPACES_PROGRAM_ID = ADSPACES_PROGRAM_ID_STRING
 
 const shortAddress = (address: string) =>
   address.length > 12 ? `${address.slice(0, 5)}...${address.slice(-4)}` : address
-
-const explorerAddressUrl = (address: string) => {
-  const base = `https://explorer.solana.com/address/${address}`
-  return SOLANA_CLUSTER === 'mainnet-beta' ? base : `${base}?cluster=${encodeURIComponent(SOLANA_CLUSTER)}`
-}
 
 const relative = (iso: string) => {
   const hours = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 3_600_000))
@@ -404,13 +399,19 @@ export default function AdminDashboardView({ currentTab = 'admin', onTabChange }
                 reason={reasons[listing.slug] ?? ''}
                 onReasonChange={(value) => setReasons((prev) => ({ ...prev, [listing.slug]: value }))}
                 onApprove={() => {
+                  // Single source of truth: derive the modal form from
+                  // defaultPolicy (which mirrors the backend's own fallbacks:
+                  // 2.5% fee, 2.5% auction uplift/max, 48h window,
+                  // delivery = artworkClose + 7d). Never inline separate
+                  // numbers here again — they silently become the stored terms.
+                  const defaults = defaultPolicy(listing)
                   setApproval(listing)
                   setPolicy({
-                    platformFeeBps: 250,
-                    upliftFeeBps: listing.mode === 'auction' ? 1000 : 0,
-                    maxFeeBps: listing.mode === 'auction' ? 1000 : 250,
-                    settlementWindowHours: 48,
-                    deliveryDeadline: new Date(Date.now() + 7 * 86_400_000).toISOString().slice(0, 16),
+                    platformFeeBps: defaults.feeBps ?? 250,
+                    upliftFeeBps: defaults.upliftFeeBps,
+                    maxFeeBps: defaults.maxFeeBps,
+                    settlementWindowHours: Math.round((defaults.reviewWindowSeconds ?? 172800) / 3600),
+                    deliveryDeadline: defaults.deliveryDeadline.slice(0, 16),
                   })
                 }}
                 onReject={() => void act(listing.slug, 'reject')}
