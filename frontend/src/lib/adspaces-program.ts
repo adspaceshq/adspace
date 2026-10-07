@@ -2,20 +2,18 @@ import {
   Connection,
   PublicKey,
 } from '@solana/web3.js';
+import { ADSPACES_CLUSTER, ADSPACES_PROGRAM_ID_STRING, SOLANA_RPC_URL } from './chain-config';
 
-const DEFAULT_PROGRAM_ID = '6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW';
+export { ADSPACES_CLUSTER };
+
 const paymentMint = process.env.NEXT_PUBLIC_ADSPACES_PAYMENT_MINT;
 if (!paymentMint) throw new Error('NEXT_PUBLIC_ADSPACES_PAYMENT_MINT is required');
 
-export const ADSPACES_PROGRAM_ID = new PublicKey(
-  process.env.NEXT_PUBLIC_ADSPACES_PROGRAM_ID ?? DEFAULT_PROGRAM_ID,
-);
+export const ADSPACES_PROGRAM_ID = new PublicKey(ADSPACES_PROGRAM_ID_STRING);
 export const ADSPACES_USDC_MINT = new PublicKey(
   paymentMint,
 );
-export const ADSPACES_RPC_URL =
-  process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com';
-export const ADSPACES_CLUSTER = process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet';
+export const ADSPACES_RPC_URL = SOLANA_RPC_URL;
 
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
@@ -61,9 +59,10 @@ export function authorityTransferPda(): PublicKey {
 }
 
 export async function listingPda(seller: PublicKey, slug: string): Promise<PublicKey> {
-  const digest = new Uint8Array(
-    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(slug)),
-  );
+  const encoded = new TextEncoder().encode(slug);
+  const input = new Uint8Array(encoded.length);
+  input.set(encoded);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', input));
   const slugHash = digest.slice(0, 16);
   return PublicKey.findProgramAddressSync(
     [seed('listing'), seller.toBuffer(), slugHash],
