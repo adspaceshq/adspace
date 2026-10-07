@@ -27,7 +27,16 @@ export async function uploadToCloudinary(file: File | Blob, kind: UploadKind, fi
   body.append('signature', signed.signature)
   body.append('folder', signed.folder)
 
-  const res = await fetch(signed.uploadUrl, { method: 'POST', body })
+  // NOTE: this fetch goes to Cloudinary, not our API. A network-level
+  // failure rejects with a TypeError ("Failed to fetch") — rethrow as a
+  // plain Error with a Cloudinary-specific message so userErrorMessage
+  // doesn't misreport it as "Could not reach the API".
+  let res: Response
+  try {
+    res = await fetch(signed.uploadUrl, { method: 'POST', body })
+  } catch {
+    throw new Error('Could not reach Cloudinary. Check your connection and try again.')
+  }
   const json = (await res.json().catch(() => ({}))) as CloudinaryUploadResponse
   if (!res.ok || !json.secure_url) {
     throw new Error(json.error?.message || `Cloudinary upload failed (${res.status})`)
