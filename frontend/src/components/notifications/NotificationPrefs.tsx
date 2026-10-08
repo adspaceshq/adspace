@@ -49,9 +49,9 @@ export function NotificationPrefs() {
               aria-checked={on}
               aria-label={`email me about ${category.label}`}
               onClick={() => save.mutate({ [category.id]: !on })}
-              className={`relative h-6 w-11 shrink-0 cursor-pointer rounded-full transition-colors ${on ? "bg-ink" : "bg-line"}`}
+              className={`relative block h-6 w-11 shrink-0 cursor-pointer rounded-full p-0 transition-colors ${on ? "bg-ink" : "bg-line-strong"}`}
             >
-              <span className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : "translate-x-0.5"}`} />
+              <span aria-hidden className={`absolute left-0.5 top-0.5 block size-5 rounded-full bg-white shadow transition-transform ${on ? "translate-x-5" : "translate-x-0"}`} />
             </button>
           </li>
         );
