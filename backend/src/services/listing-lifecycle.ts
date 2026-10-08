@@ -7,6 +7,7 @@ import { listingPhotos, listings, mediaAssets, spots, users } from "../db/schema
 import { pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import type { TxSigner } from "../chain/signers.js";
+import { notify } from "./notifications.js";
 
 export class ListingError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -254,6 +255,23 @@ export async function reviewListing(
     .where(and(eq(listings.id, listingId), eq(listings.state, "in_review")))
     .returning();
   if (!updated) throw new ListingError("listing changed during review; reload and try again", 409);
+  const outcome = {
+    approved: { title: `"${updated.title}" was approved`, body: "accept the terms to publish it on-chain." },
+    changes_requested: { title: `changes requested on "${updated.title}"`, body: updated.reviewNote ?? "" },
+    rejected: { title: `"${updated.title}" wasn't approved`, body: updated.reviewNote ?? "" },
+  }[updated.state as "approved" | "changes_requested" | "rejected"];
+  if (outcome) {
+    await notify(db, [
+      {
+        userId: updated.sellerId,
+        type: `listing_${updated.state}`,
+        category: "listings",
+        ...outcome,
+        href: `/sell/listings/${updated.id}`,
+        dedupeKey: `listing:${updated.id}:${updated.state}:${updated.updatedAt.getTime()}`,
+      },
+    ]);
+  }
   return updated;
 }
 

@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { listings, spotMessages, spots, users } from "../db/schema.js";
+import { notify } from "./notifications.js";
 
 export class MessageError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -25,13 +26,30 @@ async function assertParticipant(db: Db, spotId: string, actor: Participant) {
   if (actor.id !== row.buyerId && actor.id !== row.sellerId && !actor.isReviewer) {
     throw new MessageError("this conversation is private", 403);
   }
+  return { buyerId: row.buyerId, sellerId: row.sellerId };
 }
 
 export async function postMessage(db: Db, actor: Participant, spotId: string, body: string) {
   const text = body.trim();
   if (!text || text.length > 2000) throw new MessageError("messages must be 1-2000 characters");
-  await assertParticipant(db, spotId, actor);
+  const parties = await assertParticipant(db, spotId, actor);
   const [message] = await db.insert(spotMessages).values({ spotId, authorId: actor.id, body: text }).returning();
+  // At most one notification per thread, recipient and hour, so a busy chat doesn't flood inboxes.
+  const hour = Math.floor(message.createdAt.getTime() / 3_600_000);
+  await notify(
+    db,
+    [parties.buyerId, parties.sellerId]
+      .filter((userId) => userId !== actor.id)
+      .map((userId) => ({
+        userId,
+        type: "message",
+        category: "messages" as const,
+        title: "new message about your spot",
+        body: text.length > 140 ? `${text.slice(0, 139)}…` : text,
+        href: `/dashboard/spots/${spotId}#messages`,
+        dedupeKey: `message:${spotId}:${userId}:${hour}`,
+      })),
+  );
   return message;
 }
 
