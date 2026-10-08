@@ -69,25 +69,25 @@ export function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
 }
 
+// Mirrors components/Logo.tsx: a white extra-bold "a" bleeding off the right and bottom
+// edges of a pure black square (the brand mark, deliberately not the ink token).
 export function LogoMark({ size = 56 }: { size?: number }) {
   return (
-    <div
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size * 0.24,
-        background: og.ink,
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: size * 0.62,
-        fontWeight: 700,
-        letterSpacing: "-0.04em",
-        paddingBottom: size * 0.06,
-      }}
-    >
-      a
+    <div style={{ width: size, height: size, background: "#000", position: "relative", overflow: "hidden", display: "flex" }}>
+      <div
+        style={{
+          position: "absolute",
+          left: size * 0.5,
+          top: size * 0.3,
+          fontSize: size * 1.03,
+          fontWeight: 700,
+          lineHeight: 1,
+          color: "#fff",
+          display: "flex",
+        }}
+      >
+        a
+      </div>
     </div>
   );
 }
