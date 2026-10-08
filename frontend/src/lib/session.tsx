@@ -1,6 +1,6 @@
 "use client";
 
-import { getAccessToken, getIdentityToken, useLinkAccount, useMfa, useMfaEnrollment, usePrivy, useSigners, useUser } from "@privy-io/react-auth";
+import { getAccessToken, getIdentityToken, useLinkAccount, useMfa, useMfaEnrollment, usePrivy, useSigners, useUpdateAccount, useUser } from "@privy-io/react-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, ApiError, setCsrfToken } from "@/lib/api/v2";
@@ -27,6 +27,8 @@ export interface SessionState {
   refresh: () => Promise<void>;
   // Opens Privy's email code flow; the session picks up the verified email afterwards.
   linkEmail: () => void;
+  // Verifies the new address with a code before it replaces the old one.
+  updateEmail: () => void;
   linkError?: string;
 }
 
@@ -46,6 +48,7 @@ const guest: SessionState = {
   signOut: async () => {},
   refresh: async () => {},
   linkEmail: () => {},
+  updateEmail: () => {},
 };
 
 const SessionContext = createContext<SessionState>(guest);
@@ -141,6 +144,16 @@ function PrivySession({ children }: { children: React.ReactNode }) {
     },
   });
 
+  const { updateEmail } = useUpdateAccount({
+    onSuccess: () => {
+      setLinkError(undefined);
+      void resync();
+    },
+    onError: (code) => {
+      if (code !== "exited_update_flow" && code !== "exited_link_flow") setLinkError("couldn't update your email; try again");
+    },
+  });
+
   const value = useMemo<SessionState>(
     () => ({
       ready: ready && (!authenticated || !query.isPending),
@@ -150,9 +163,10 @@ function PrivySession({ children }: { children: React.ReactNode }) {
       signOut,
       refresh,
       linkEmail,
+      updateEmail,
       linkError,
     }),
-    [ready, authenticated, query.isPending, query.data, wallet, login, signOut, refresh, linkEmail, linkError],
+    [ready, authenticated, query.isPending, query.data, wallet, login, signOut, refresh, linkEmail, updateEmail, linkError],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
