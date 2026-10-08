@@ -616,7 +616,23 @@ export function createV2Router(options: {
       send(res, await creatorEarnings(db, me(req).id, days));
     }),
   );
-  router.get("/me/activity", requireUser, handle(async (req, res) => send(res, await activityFeed(db, me(req).id))));
+  router.get(
+    "/me/activity",
+    requireUser,
+    handle(async (req, res) => {
+      const query = req.query as Record<string, string | undefined>;
+      const before = query.before ? new Date(query.before) : undefined;
+      if (before && Number.isNaN(before.getTime())) throw new BadRequest("before must be a date");
+      send(
+        res,
+        await activityFeed(db, me(req).id, {
+          limit: Math.min(Math.max(Number(query.limit) || 30, 1), 100),
+          before,
+          role: query.role === "creator" || query.role === "sponsor" ? query.role : undefined,
+        }),
+      );
+    }),
+  );
   router.get(
     "/spots/:id",
     requireUser,

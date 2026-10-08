@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/client.js";
 import {
@@ -349,7 +349,17 @@ export async function spotTimeline(db: Db, actor: { id: string; isReviewer: bool
 }
 
 // Recent events on spots the user sells or sponsors, newest first.
-export async function activityFeed(db: Db, userId: string, limit = 30) {
+export interface ActivityOptions {
+  limit?: number;
+  // Cursor: only events older than this.
+  before?: Date;
+  role?: "creator" | "sponsor";
+}
+
+export async function activityFeed(db: Db, userId: string, options: ActivityOptions | number = {}) {
+  const { limit = 30, before, role } = typeof options === "number" ? { limit: options } : options;
+  const mine =
+    role === "creator" ? eq(listings.sellerId, userId) : role === "sponsor" ? eq(spots.buyerId, userId) : or(eq(listings.sellerId, userId), eq(spots.buyerId, userId));
   return db
     .select({
       id: spotEvents.id,
@@ -368,8 +378,8 @@ export async function activityFeed(db: Db, userId: string, limit = 30) {
     .innerJoin(spots, eq(spots.id, spotEvents.spotId))
     .innerJoin(listings, eq(listings.id, spots.listingId))
     .leftJoin(chainTxs, eq(chainTxs.id, spotEvents.chainTxId))
-    .where(or(eq(listings.sellerId, userId), eq(spots.buyerId, userId)))
-    .orderBy(desc(spotEvents.createdAt))
+    .where(and(mine, before ? lt(spotEvents.createdAt, before) : undefined))
+    .orderBy(desc(spotEvents.createdAt), desc(spotEvents.id))
     .limit(limit);
 }
 
