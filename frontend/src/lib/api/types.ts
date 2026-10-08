@@ -430,3 +430,16 @@ export interface WatchItem {
   savedAt: IsoDate;
   listing: PublicListing;
 }
+
+export type NotificationCategory = "sales" | "bidding" | "delivery" | "disputes" | "payments" | "listings" | "messages" | "reminders";
+
+export interface AppNotification {
+  id: string;
+  type: string;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+  href: string | null;
+  readAt: IsoDate | null;
+  createdAt: IsoDate;
+}

@@ -26,6 +26,8 @@ import type {
   TimelineEvent,
   Withdrawal,
   WatchItem,
+  AppNotification,
+  NotificationCategory,
 } from "./types";
 
 const BASE = `${(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/$/, "")}/api/v2`;
@@ -98,6 +100,12 @@ export const api = {
       const query = params.toString();
       return get<ActivityItem[]>(`/me/activity${query ? `?${query}` : ""}`);
     },
+    notifications: (before?: string) =>
+      get<{ items: AppNotification[]; unread: number }>(`/me/notifications${before ? `?before=${enc(before)}` : ""}`),
+    markRead: (ids?: string[]) => post<{ ok: true }>("/me/notifications/read", ids ? { ids } : {}),
+    notificationPrefs: () => get<Record<NotificationCategory, boolean>>("/me/notification-prefs"),
+    setNotificationPrefs: (prefs: Partial<Record<NotificationCategory, boolean>>) =>
+      request<Record<NotificationCategory, boolean>>("PUT", "/me/notification-prefs", prefs),
     watchlist: () => get<WatchItem[]>("/me/watchlist"),
     watch: (listingId: string) => request<{ listingId: string; watching: boolean }>("PUT", `/me/watchlist/${enc(listingId)}`, {}),
     unwatch: (listingId: string) => request<{ listingId: string; watching: boolean }>("DELETE", `/me/watchlist/${enc(listingId)}`),

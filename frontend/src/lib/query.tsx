@@ -38,6 +38,8 @@ export const queryKeys = {
   messages: (spotId: string) => ["messages", spotId] as const,
   withdrawals: ["withdrawals"] as const,
   watchlist: ["me", "watchlist"] as const,
+  notifications: ["me", "notifications"] as const,
+  notificationPrefs: ["me", "notification-prefs"] as const,
   reviewQueue: ["review", "queue"] as const,
   reviewSummary: ["review", "summary"] as const,
   adminStatus: ["admin", "status"] as const,
