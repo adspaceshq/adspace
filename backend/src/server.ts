@@ -21,6 +21,7 @@ import { usdcMintFor } from "./payout.js";
 import { TERMS_VERSION } from "./types.js";
 import { createChainContext } from "./v2/chain-context.js";
 import { createV2Router } from "./v2/router.js";
+import { reconcile } from "./services/reconciler.js";
 
 async function start() {
   const config = loadConfig();
@@ -81,6 +82,18 @@ async function start() {
     metadataBaseUrl: config.frontendUrl,
     withdrawalDailyLimit: BigInt(Math.round(Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000) * 1_000_000)),
   });
+  const reconcileEveryMs = Number(process.env.RECONCILE_INTERVAL_MS ?? 5 * 60 * 1000);
+  if (v2Chain && reconcileEveryMs > 0) {
+    const run = () =>
+      reconcile({ db, signatureOutcomes: v2Chain.signatureOutcomes, readSpotStatus: v2Chain.readSpotStatus })
+        .then((report) => {
+          if (report.confirmedTxs || report.failedTxs || report.withdrawalsUpdated || report.spotDrift.length) {
+            console.log("reconcile:", JSON.stringify(report));
+          }
+        })
+        .catch((error) => console.error("reconcile failed:", error instanceof Error ? error.message : error));
+    setInterval(run, reconcileEveryMs).unref();
+  }
   await auth.migrate();
   await market.migrate();
   await withdrawals.migrate();

@@ -21,6 +21,7 @@ import { payoutSeller } from "../services/settlement.js";
 import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../services/disputes.js";
 import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
 import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
+import { reconcile } from "../services/reconciler.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -498,6 +499,15 @@ export function createV2Router(options: {
         amount,
       );
       send(res, result, 201);
+    }),
+  );
+  router.post(
+    "/review/reconcile",
+    ...mutate,
+    requireReviewer,
+    handle(async (_req, res) => {
+      const context = requireChain();
+      send(res, await reconcile({ db, signatureOutcomes: context.signatureOutcomes, readSpotStatus: context.readSpotStatus }));
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));

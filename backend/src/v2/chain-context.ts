@@ -7,6 +7,7 @@ import { keypairSigner, privyWalletSigner, type TxSigner } from "../chain/signer
 import { loadKeypair } from "../keypair.js";
 import type { SessionUser } from "../types.js";
 import type { ListingSnapshot } from "../services/settlement.js";
+import type { ChainSpotStatus, SignatureOutcome } from "../services/reconciler.js";
 
 export interface ChainContext {
   connection: Connection;
@@ -23,6 +24,8 @@ export interface ChainContext {
   accountExists: (address: PublicKey) => Promise<boolean>;
   readDisputeTimeoutSeconds: () => Promise<number>;
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
+  signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
+  readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
 }
 
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -116,6 +119,31 @@ export function createChainContext(options: {
       if (!(await connection.getAccountInfo(ata, "confirmed"))) return 0n;
       const { value } = await connection.getTokenAccountBalance(ata, "confirmed");
       return BigInt(value.amount);
+    },
+
+    async signatureOutcomes(signatures) {
+      const { value } = await connection.getSignatureStatuses(signatures, { searchTransactionHistory: true });
+      return new Map(
+        signatures.map((signature, index) => {
+          const status = value[index];
+          const outcome: SignatureOutcome = !status
+            ? "missing"
+            : status.err
+              ? "failed"
+              : status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized"
+                ? "confirmed"
+                : "missing";
+          return [signature, outcome] as const;
+        }),
+      );
+    },
+
+    // Spot layout: discriminator(8) + listing(32) + index(1) + price(8), then the status byte.
+    async readSpotStatus(address) {
+      const account = await connection.getAccountInfo(new PublicKey(address), "confirmed");
+      if (!account) return "closed";
+      const statuses: ChainSpotStatus[] = ["open", "funded", "finalized", "cancelled", "disputed"];
+      return statuses[account.data[49]] ?? "closed";
     },
 
     async readDisputeTimeoutSeconds() {
