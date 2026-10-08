@@ -11,12 +11,14 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Field";
 import { ProfileFields, useProfileForm } from "@/components/account/ProfileFields";
+import { NotificationPrefs } from "@/components/notifications/NotificationPrefs";
 import { RoleEditor } from "@/components/onboarding/OnboardingFlow";
 
 const SECTIONS = [
   { id: "profile", label: "profile" },
   { id: "usage", label: "selling & sponsoring" },
   { id: "email", label: "email" },
+  { id: "notifications", label: "notifications" },
   { id: "security", label: "security" },
   { id: "account", label: "account" },
 ];
@@ -45,6 +47,9 @@ export function SettingsView() {
             <RoleEditor key={JSON.stringify(session.onboarding)} session={session} submitLabel="save" />
           </Section>
           <EmailSection session={session} />
+          <Section id="notifications" title="email notifications" description="everything always shows in the bell. choose what also reaches your inbox.">
+            <NotificationPrefs />
+          </Section>
           <SecuritySection />
           <AccountSection session={session} />
         </div>
