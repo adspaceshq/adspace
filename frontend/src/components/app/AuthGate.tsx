@@ -1,7 +1,8 @@
 "use client";
 
-import { Lock, MailCheck, ShieldAlert } from "lucide-react";
+import { Lock, MailCheck, ShieldAlert, UserRoundPen } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -18,6 +19,8 @@ export function AuthGate({
   reason?: string;
 }) {
   const { ready, session, signIn } = useSession();
+  const pathname = usePathname();
+  const setupHref = `/onboarding?next=${encodeURIComponent(pathname)}`;
 
   if (!ready) {
     return (
@@ -42,15 +45,30 @@ export function AuthGate({
     );
   }
 
-  if (!session.email) {
+  if (!session.emailVerified) {
     return (
       <EmptyState
         icon={MailCheck}
         title="verify your email to continue"
         description="we email you when you're outbid, when proof is due and when you get paid."
         action={
-          <Link href="/onboarding" className="text-body font-medium text-accent hover:underline">
-            add your email
+          <Link href={setupHref} className="text-body font-medium text-accent hover:underline">
+            verify your email
+          </Link>
+        }
+      />
+    );
+  }
+
+  if (!session.onboarding) {
+    return (
+      <EmptyState
+        icon={UserRoundPen}
+        title="finish setting up your account"
+        description="pick a handle and tell us whether you sell space, sponsor, or both. it takes a minute."
+        action={
+          <Link href={setupHref} className="text-body font-medium text-accent hover:underline">
+            continue setup
           </Link>
         }
       />
