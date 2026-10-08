@@ -19,6 +19,7 @@ import { listMessages, postMessage } from "../services/spot-messages.js";
 import { submitSpotProof } from "../services/spot-proof.js";
 import { payoutSeller } from "../services/settlement.js";
 import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../services/disputes.js";
+import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -420,6 +421,48 @@ export function createV2Router(options: { db: Db; chain?: ChainContext; reviewer
           decision: typeof body.decision === "string" ? body.decision : "",
         }),
       );
+    }),
+  );
+  const refundDeps = (): RefundDeps => {
+    const context = requireChain();
+    return {
+      db,
+      program: context.program,
+      mint: context.mint,
+      feePayer: context.reviewer,
+      runTx: context.runTx,
+      readVaultBalance: context.readVaultBalance,
+      accountExists: context.accountExists,
+    };
+  };
+  // Creators refund with their own signature; sponsors after a missed delivery need none.
+  router.post(
+    "/spots/:id/refund",
+    ...mutate,
+    handle(async (req, res) => {
+      const context = requireChain();
+      const asSeller = req.body?.asSeller === true;
+      const result = await refundSpot(refundDeps(), req.params.id, {
+        id: me(req).id,
+        sellerSigner: asSeller ? await context.userSigner(me(req)) : undefined,
+      });
+      send(res, result);
+    }),
+  );
+  router.post(
+    "/spots/:id/close",
+    ...mutate,
+    handle(async (req, res) => {
+      const signer = await requireChain().userSigner(me(req));
+      send(res, await closeSpot(refundDeps(), me(req).id, signer, req.params.id));
+    }),
+  );
+  router.post(
+    "/listings/:id/close",
+    ...mutate,
+    handle(async (req, res) => {
+      const signer = await requireChain().userSigner(me(req));
+      send(res, await closeListing(refundDeps(), me(req).id, signer, req.params.id));
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));
