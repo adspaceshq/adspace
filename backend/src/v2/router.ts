@@ -12,7 +12,7 @@ import {
   type DraftInput,
   type ReviewDecision,
 } from "../services/listing-lifecycle.js";
-import { getPublishedListing, listForSeller, listPublished, reviewQueue } from "../services/listing-queries.js";
+import { getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewQueue } from "../services/listing-queries.js";
 import { claimSpot, placeBid } from "../services/spot-purchase.js";
 import { createPost, deletePost, listPosts, recordMetrics } from "../services/listing-posts.js";
 import { listMessages, postMessage } from "../services/spot-messages.js";
@@ -214,7 +214,7 @@ export function createV2Router(options: {
 
   // ---------- listings ----------
 
-  router.get("/listings", handle(async (_req, res) => send(res, await listPublished(db))));
+  router.get("/listings", handle(async (req, res) => send(res, await listPublished(db, parseBrowseFilters(req.query as Record<string, unknown>)))));
   router.get(
     "/listings/:slug",
     handle(async (req, res) => {

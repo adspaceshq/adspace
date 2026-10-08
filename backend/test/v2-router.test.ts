@@ -51,7 +51,7 @@ test("parses USDC amounts into base units", () => {
 test("public listing feed works without a session", async () => {
   const response = await request(app).get("/api/v2/listings");
   assert.equal(response.status, 200);
-  assert.deepEqual(response.body, []);
+  assert.deepEqual(response.body, { items: [], hasMore: false });
 });
 
 test("creating a draft needs a session and a CSRF token", async () => {
