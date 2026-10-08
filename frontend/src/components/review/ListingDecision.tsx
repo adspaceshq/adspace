@@ -152,6 +152,15 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
             </div>
           </div>
 
+          {ownListing && (
+            <div role="note" className="flex gap-3 rounded-panel border border-warning/40 bg-warning-soft p-4 text-small">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <p>
+                <span className="font-semibold">this is your own listing.</span> another reviewer has to approve, reject or request changes. sign in with a
+                different reviewer account to test the decision.
+              </p>
+            </div>
+          )}
           <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-5 shadow-card">
             <p className="text-body font-semibold">fees</p>
             <div className={listing.mode === "auction" ? "grid grid-cols-3 gap-2" : "grid grid-cols-1"}>
@@ -187,23 +196,19 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
                 {error}
               </p>
             )}
-            {ownListing ? (
-              <p className="text-small text-muted">you can&apos;t review your own listing.</p>
-            ) : (
-              <div className="flex flex-col gap-2">
-                <Button onClick={approve} loading={decide.isPending && decide.variables?.action === "approve"} disabled={decide.isPending}>
-                  approve
+            <div className="flex flex-col gap-2">
+              <Button onClick={approve} loading={decide.isPending && decide.variables?.action === "approve"} disabled={decide.isPending || ownListing}>
+                approve
+              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant="secondary" onClick={() => sendBack("request_changes")} disabled={decide.isPending || ownListing}>
+                  request changes
                 </Button>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button variant="secondary" onClick={() => sendBack("request_changes")} disabled={decide.isPending}>
-                    request changes
-                  </Button>
-                  <Button variant="ghost" onClick={() => sendBack("reject")} disabled={decide.isPending}>
-                    reject
-                  </Button>
-                </div>
+                <Button variant="danger" onClick={() => sendBack("reject")} disabled={decide.isPending || ownListing}>
+                  reject
+                </Button>
               </div>
-            )}
+            </div>
           </div>
         </aside>
       </div>
