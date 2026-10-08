@@ -292,7 +292,7 @@ function History({ items, loading }: { items?: Withdrawal[]; loading: boolean })
             <li key={item.id} className="flex items-center gap-3 px-4 py-3 text-small">
               <span className="w-24 shrink-0 font-semibold tabular-nums">{formatUsd(item.amount)}</span>
               <span className="flex min-w-0 flex-1 items-center gap-1 text-muted">
-                to <Address value={item.destination} />
+                to <Address value={item.destination} explorer={false} />
               </span>
               <span className={item.state === "failed" ? "text-danger" : item.state === "confirmed" ? "text-success" : "text-muted"}>{STATE_LABEL[item.state]}</span>
               <span className="hidden shrink-0 text-subtle sm:inline">{new Date(item.createdAt).toLocaleString()}</span>
