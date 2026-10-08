@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { listings, spots, users } from "../db/schema.js";
+import { listingPhotos, listings, mediaAssets, spots, users } from "../db/schema.js";
 
 type ListingRow = typeof listings.$inferSelect;
 type SpotRow = typeof spots.$inferSelect;
+type Surface = ListingRow["surface"];
 
 const sellerColumns = {
   id: users.id,
@@ -11,16 +12,29 @@ const sellerColumns = {
   displayName: users.displayName,
   avatarUrl: users.avatarUrl,
   hasX: users.xUserId,
+  verified: users.verified,
 };
 
-async function withSpots(db: Db, rows: ListingRow[]): Promise<Array<ListingRow & { spots: SpotRow[] }>> {
+type SellerRow = { id: string; handle: string; displayName: string; avatarUrl: string | null; hasX: string | null; verified: boolean };
+const publicSeller = (seller: SellerRow) => ({ ...seller, hasX: Boolean(seller.hasX) });
+
+async function hydrate(db: Db, rows: ListingRow[]) {
   if (rows.length === 0) return [];
-  const all = await db
-    .select()
-    .from(spots)
-    .where(inArray(spots.listingId, rows.map((row) => row.id)))
-    .orderBy(asc(spots.index));
-  return rows.map((row) => ({ ...row, spots: all.filter((spot) => spot.listingId === row.id) }));
+  const ids = rows.map((row) => row.id);
+  const [allSpots, photos] = await Promise.all([
+    db.select().from(spots).where(inArray(spots.listingId, ids)).orderBy(asc(spots.index)),
+    db
+      .select({ listingId: listingPhotos.listingId, url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
+      .from(listingPhotos)
+      .innerJoin(mediaAssets, eq(mediaAssets.id, listingPhotos.assetId))
+      .where(inArray(listingPhotos.listingId, ids))
+      .orderBy(asc(listingPhotos.position)),
+  ]);
+  return rows.map((row) => ({
+    ...row,
+    spots: allSpots.filter((spot) => spot.listingId === row.id),
+    photos: photos.filter((photo) => photo.listingId === row.id).map(({ listingId: _listingId, ...photo }) => photo),
+  }));
 }
 
 // Buyers' identities and wallets are not public; only state and amounts are.
@@ -33,7 +47,7 @@ export function publicSpot(spot: SpotRow) {
     layout: spot.layout,
     state: spot.state,
     amount: spot.amount,
-    taken: spot.state !== "open" && spot.state !== "cancelled",
+    taken: spot.state !== "open" && spot.state !== "cancelled" && spot.state !== "refunded",
   };
 }
 
@@ -44,23 +58,87 @@ export async function getPublishedListing(db: Db, slug: string) {
     .innerJoin(users, eq(users.id, listings.sellerId))
     .where(and(eq(listings.slug, slug), inArray(listings.state, ["published", "closed"])));
   if (!row) return undefined;
-  const [listing] = await withSpots(db, [row.listing]);
-  return { ...listing, spots: listing.spots.map(publicSpot), seller: { ...row.seller, hasX: Boolean(row.seller.hasX) } };
+  const [listing] = await hydrate(db, [row.listing]);
+  return { ...listing, spots: listing.spots.map(publicSpot), seller: publicSeller(row.seller) };
 }
 
-export async function listPublished(db: Db, limit = 50) {
+export interface BrowseFilters {
+  q?: string;
+  surface?: Surface;
+  mode?: "fixed" | "auction";
+  sort?: "closing" | "newest" | "price";
+  includeClosed?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+const SURFACES: readonly Surface[] = ["laptop", "tshirt", "car", "suitcase", "bike", "digital", "other"];
+
+export function parseBrowseFilters(query: Record<string, unknown>): BrowseFilters {
+  const text = (key: string) => (typeof query[key] === "string" ? (query[key] as string).trim() : "");
+  const surface = text("surface") as Surface;
+  const mode = text("mode");
+  const sort = text("sort");
+  return {
+    q: text("q").slice(0, 80) || undefined,
+    surface: SURFACES.includes(surface) ? surface : undefined,
+    mode: mode === "fixed" || mode === "auction" ? mode : undefined,
+    sort: sort === "newest" || sort === "price" ? sort : "closing",
+    includeClosed: text("includeClosed") === "true",
+    limit: Math.min(Math.max(Number(text("limit")) || 24, 1), 48),
+    offset: Math.max(Number(text("offset")) || 0, 0),
+  };
+}
+
+// Public discovery feed; `hasMore` drives "load more".
+export async function listPublished(db: Db, filters: BrowseFilters = {}, now = new Date()) {
+  const limit = filters.limit ?? 24;
+  const conditions: SQL[] = [eq(listings.state, "published")];
+  if (!filters.includeClosed) conditions.push(gt(listings.deadline, now));
+  if (filters.surface) conditions.push(eq(listings.surface, filters.surface));
+  if (filters.mode) conditions.push(eq(listings.mode, filters.mode));
+  if (filters.q) {
+    const pattern = `%${filters.q.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
+    conditions.push(
+      or(
+        ilike(listings.title, pattern),
+        ilike(listings.description, pattern),
+        ilike(users.handle, pattern),
+        sql`${listings.audience}->>'event' ILIKE ${pattern}`,
+        sql`${listings.audience}->>'location' ILIKE ${pattern}`,
+      )!,
+    );
+  }
+  const minPrice = sql`(SELECT min(${spots.price}) FROM ${spots} WHERE ${spots.listingId} = ${listings.id})`;
+  const order =
+    filters.sort === "newest"
+      ? [desc(listings.publishedAt)]
+      : filters.sort === "price"
+        ? [asc(minPrice), asc(listings.deadline)]
+        : [asc(listings.deadline)];
   const rows = await db
-    .select()
+    .select({ listing: listings, seller: sellerColumns })
     .from(listings)
-    .where(eq(listings.state, "published"))
-    .orderBy(asc(listings.deadline))
-    .limit(limit);
-  return (await withSpots(db, rows)).map((listing) => ({ ...listing, spots: listing.spots.map(publicSpot) }));
+    .innerJoin(users, eq(users.id, listings.sellerId))
+    .where(and(...conditions))
+    .orderBy(...order, asc(listings.id))
+    .limit(limit + 1)
+    .offset(filters.offset ?? 0);
+  const page = rows.slice(0, limit);
+  const hydrated = await hydrate(db, page.map((row) => row.listing));
+  return {
+    items: hydrated.map((listing, index) => ({
+      ...listing,
+      spots: listing.spots.map(publicSpot),
+      seller: publicSeller(page[index].seller),
+    })),
+    hasMore: rows.length > limit,
+  };
 }
 
 export async function listForSeller(db: Db, sellerId: string) {
   const rows = await db.select().from(listings).where(eq(listings.sellerId, sellerId)).orderBy(desc(listings.updatedAt));
-  return withSpots(db, rows);
+  return hydrate(db, rows);
 }
 
 export async function reviewQueue(db: Db) {
@@ -70,6 +148,6 @@ export async function reviewQueue(db: Db) {
     .innerJoin(users, eq(users.id, listings.sellerId))
     .where(eq(listings.state, "in_review"))
     .orderBy(asc(listings.updatedAt));
-  const hydrated = await withSpots(db, rows.map((row) => row.listing));
-  return hydrated.map((listing, index) => ({ ...listing, seller: { ...rows[index].seller, hasX: Boolean(rows[index].seller.hasX) } }));
+  const hydrated = await hydrate(db, rows.map((row) => row.listing));
+  return hydrated.map((listing, index) => ({ ...listing, seller: publicSeller(rows[index].seller) }));
 }
