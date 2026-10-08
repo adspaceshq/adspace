@@ -5,6 +5,8 @@ import PrivyAppProvider from "@/components/PrivyAppProvider";
 import AuthSessionProvider from "@/components/AuthSessionProvider";
 import { SurfacePickerProvider } from "@/components/SurfacePickerModal";
 import ToastProvider from "@/components/ToastProvider";
+import { QueryProvider } from "@/lib/query";
+import { SessionProvider } from "@/lib/session";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -21,13 +23,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" className={`h-full ${inter.variable} ${mono.variable}`}>
       <body className="flex min-h-full flex-col">
         <PrivyAppProvider>
-          <ToastProvider>
-            <AuthSessionProvider>
-              <StoreProvider>
-                <SurfacePickerProvider>{children}</SurfacePickerProvider>
-              </StoreProvider>
-            </AuthSessionProvider>
-          </ToastProvider>
+          <QueryProvider>
+            <SessionProvider>
+              <ToastProvider>
+                <AuthSessionProvider>
+                  <StoreProvider>
+                    <SurfacePickerProvider>{children}</SurfacePickerProvider>
+                  </StoreProvider>
+                </AuthSessionProvider>
+              </ToastProvider>
+            </SessionProvider>
+          </QueryProvider>
         </PrivyAppProvider>
       </body>
     </html>
