@@ -6,6 +6,7 @@ import { runChainTx, type ChainTxRequest, type ChainTxResult } from "../chain/ru
 import { keypairSigner, privyWalletSigner, type TxSigner } from "../chain/signers.js";
 import { loadKeypair } from "../keypair.js";
 import type { SessionUser } from "../types.js";
+import type { ListingSnapshot } from "../services/settlement.js";
 
 export interface ChainContext {
   connection: Connection;
@@ -17,6 +18,9 @@ export interface ChainContext {
   ensureSellerFunding: (seller: PublicKey) => Promise<void>;
   fetchListingDeadline: (listing: PublicKey) => Promise<Date>;
   configFeeFloorBps: () => Promise<number>;
+  readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
+  readVaultBalance: (vault: PublicKey) => Promise<bigint>;
+  accountExists: (address: PublicKey) => Promise<boolean>;
 }
 
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -81,6 +85,28 @@ export function createChainContext(options: {
     async configFeeFloorBps() {
       const config = await program.account.config.fetch(pdas(program.programId).config());
       return config.feeBps;
+    },
+
+    async readListingSnapshot(listing) {
+      const account = await program.account.listing.fetch(listing);
+      return {
+        treasury: account.treasury,
+        fees: {
+          mode: account.mode === 1 ? "auction" : "fixed",
+          feeBps: account.feeBps,
+          upliftFeeBps: account.upliftFeeBps,
+          maxFeeBps: account.maxFeeBps,
+        },
+      };
+    },
+
+    async readVaultBalance(vault) {
+      const { value } = await connection.getTokenAccountBalance(vault, "confirmed");
+      return BigInt(value.amount);
+    },
+
+    async accountExists(address) {
+      return (await connection.getAccountInfo(address, "confirmed")) !== null;
     },
   };
 }

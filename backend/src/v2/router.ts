@@ -17,6 +17,7 @@ import { claimSpot, placeBid } from "../services/spot-purchase.js";
 import { createPost, deletePost, listPosts, recordMetrics } from "../services/listing-posts.js";
 import { listMessages, postMessage } from "../services/spot-messages.js";
 import { submitSpotProof } from "../services/spot-proof.js";
+import { payoutSeller } from "../services/settlement.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -335,6 +336,31 @@ export function createV2Router(options: { db: Db; chain?: ChainContext; reviewer
         postIds,
       );
       send(res, result);
+    }),
+  );
+  // Permissionless on-chain; requiring a session just rate-limits and attributes it.
+  router.post(
+    "/spots/:id/payout",
+    ...mutate,
+    handle(async (req, res) => {
+      const context = requireChain();
+      send(
+        res,
+        await payoutSeller(
+          {
+            db,
+            program: context.program,
+            mint: context.mint,
+            caller: context.reviewer,
+            runTx: context.runTx,
+            readListingSnapshot: context.readListingSnapshot,
+            readVaultBalance: context.readVaultBalance,
+            accountExists: context.accountExists,
+          },
+          req.params.id,
+          me(req).id,
+        ),
+      );
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));
