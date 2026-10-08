@@ -228,6 +228,8 @@ export interface NeedsYouItem {
   type: NeedsYouType;
   listingId: string;
   listingTitle: string;
+  listingSlug: string;
+  sellerHandle: string;
   spotId?: string;
   spotIndex?: number;
   dueAt?: IsoDate;
@@ -244,7 +246,7 @@ export interface SponsorDashboard {
   needsYou: NeedsYouItem[];
   spots: Array<
     Spot & {
-      listing: { id: string; slug: string; title: string; mode: PricingMode; deadline: IsoDate; deliveryDueAt: IsoDate };
+      listing: { id: string; slug: string; title: string; mode: PricingMode; deadline: IsoDate; deliveryDueAt: IsoDate; sellerHandle: string };
       reviewUntil: IsoDate | null;
     }
   >;
