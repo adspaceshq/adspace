@@ -2,7 +2,7 @@ import { and, eq, inArray, lt, or } from "drizzle-orm";
 import anchor from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
-import { bids, listings, spotEvents, spots, users } from "../db/schema.js";
+import { bids, listings, spotEvents, spots, users, type SponsorBrand } from "../db/schema.js";
 import { nextSpotState } from "../domain/spot-state.js";
 import { associatedTokenAddress, pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
@@ -31,6 +31,26 @@ export interface Purchaser {
   signer: TxSigner;
 }
 
+// The sponsor tells the creator what to show on the spot; validated before any chain call.
+export function parseBrand(input: unknown): SponsorBrand {
+  const raw = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
+  const text = (key: string, max: number) => {
+    const value = typeof raw[key] === "string" ? (raw[key] as string).trim() : "";
+    if (value.length > max) throw new PurchaseError(`brand ${key} is too long`, 400);
+    return value || undefined;
+  };
+  const name = text("name", 80);
+  if (!name) throw new PurchaseError("tell the creator your brand name", 400);
+  const link = text("link", 200);
+  if (link && !/^https:\/\/[^\s]+\.[^\s]+$/i.test(link)) throw new PurchaseError("brand link must be an https URL", 400);
+  const logoUrl = text("logoUrl", 500);
+  if (logoUrl && !/^https:\/\/res\.cloudinary\.com\/[^/\s]+\/image\/upload\//i.test(logoUrl)) {
+    throw new PurchaseError("upload the logo through adspaces", 400);
+  }
+  const handle = text("handle", 40)?.replace(/^@+/, "");
+  return { name, ...(link ? { link } : {}), ...(handle ? { handle } : {}), ...(logoUrl ? { logoUrl } : {}) };
+}
+
 async function loadSpot(db: Db, spotId: string) {
   const [row] = await db
     .select({ spot: spots, listing: listings })
@@ -49,8 +69,9 @@ function assertPurchaser(listing: { sellerId: string }, purchaser: Purchaser, no
   if (now >= deadline) throw new PurchaseError("this listing has closed");
 }
 
-export async function claimSpot(deps: PurchaseDeps, spotId: string, buyer: Purchaser) {
+export async function claimSpot(deps: PurchaseDeps, spotId: string, buyer: Purchaser, brandInput: unknown) {
   const now = deps.now?.() ?? new Date();
+  const brand = parseBrand(brandInput);
   const { spot, listing } = await loadSpot(deps.db, spotId);
   if (listing.mode !== "fixed") throw new PurchaseError("this spot is an auction; place a bid instead");
   assertPurchaser(listing, buyer, now, listing.deadline);
@@ -93,6 +114,7 @@ export async function claimSpot(deps: PurchaseDeps, spotId: string, buyer: Purch
         buyerId: buyer.id,
         buyerWallet: buyer.signer.publicKey.toBase58(),
         amount: spot.price,
+        brand,
         updatedAt: now,
       })
       .where(and(eq(spots.id, spot.id), eq(spots.state, "open")))
@@ -120,8 +142,9 @@ export function minimumBid(
   return listing.doubleUp ? spot.amount * 2n : spot.amount + listing.minIncrement;
 }
 
-export async function placeBid(deps: PurchaseDeps, spotId: string, bidder: Purchaser, amount: bigint) {
+export async function placeBid(deps: PurchaseDeps, spotId: string, bidder: Purchaser, amount: bigint, brandInput: unknown) {
   const now = deps.now?.() ?? new Date();
+  const brand = parseBrand(brandInput);
   const { spot, listing } = await loadSpot(deps.db, spotId);
   if (listing.mode !== "auction") throw new PurchaseError("this spot is fixed price; claim it instead");
   assertPurchaser(listing, bidder, now, listing.deadline);
@@ -173,6 +196,7 @@ export async function placeBid(deps: PurchaseDeps, spotId: string, bidder: Purch
         buyerId: bidder.id,
         buyerWallet: bidder.signer.publicKey.toBase58(),
         amount,
+        brand,
         updatedAt: now,
       })
       .where(

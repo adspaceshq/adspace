@@ -14,6 +14,7 @@ import { createTestDb } from "./helpers/db.js";
 const USDC = 1_000_000n;
 const NOW = new Date("2026-10-08T12:00:00Z");
 const DEADLINE = new Date("2026-10-10T12:00:00Z");
+const BRAND = { name: "Acme", link: "https://acme.example", handle: "@acme" };
 
 let db: Db;
 let close: () => Promise<void>;
@@ -112,7 +113,7 @@ async function createSpot(mode: "fixed" | "auction", options: { doubleUp?: boole
 test("claim funds a fixed spot and records the event", async () => {
   const { spot } = await createSpot("fixed");
   const { purchaser } = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
-  const result = await claimSpot(deps(), spot.id, purchaser);
+  const result = await claimSpot(deps(), spot.id, purchaser, BRAND);
   assert.equal(result.spot.state, "funded");
   assert.equal(result.spot.amount, 100n * USDC);
   assert.equal(sentTxs.length, 1);
@@ -123,12 +124,12 @@ test("claim funds a fixed spot and records the event", async () => {
 
 test("claim rejects the seller and taken spots before touching the chain", async () => {
   const { spot, seller } = await createSpot("fixed");
-  await assert.rejects(claimSpot(deps(), spot.id, seller.purchaser), PurchaseError);
+  await assert.rejects(claimSpot(deps(), spot.id, seller.purchaser, BRAND), PurchaseError);
   const buyer = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
-  await claimSpot(deps(), spot.id, buyer.purchaser);
+  await claimSpot(deps(), spot.id, buyer.purchaser, BRAND);
   const other = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
   sentTxs = [];
-  await assert.rejects(claimSpot(deps(), spot.id, other.purchaser), /already been taken/);
+  await assert.rejects(claimSpot(deps(), spot.id, other.purchaser, BRAND), /already been taken/);
   assert.equal(sentTxs.length, 0);
 });
 
@@ -136,7 +137,7 @@ test("a failed chain transaction leaves the spot untouched", async () => {
   const { spot } = await createSpot("fixed");
   const { purchaser } = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
   failNextTx = new Error("chain rejected");
-  await assert.rejects(claimSpot(deps(), spot.id, purchaser), /chain rejected/);
+  await assert.rejects(claimSpot(deps(), spot.id, purchaser, BRAND), /chain rejected/);
   const [stored] = await db.select().from(spots).where(eq(spots.id, spot.id));
   assert.equal(stored.state, "open");
   assert.equal(stored.buyerId, null);
@@ -147,11 +148,11 @@ test("bids enforce minimums, keep history, and track the leader", async () => {
   const alice = await createUser(`alice_${randomUUID().slice(0, 8)}`);
   const bob = await createUser(`bob_${randomUUID().slice(0, 8)}`);
 
-  await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 99n * USDC), /at least/);
-  await placeBid(deps(), spot.id, alice.purchaser, 100n * USDC);
-  await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 200n * USDC), /already hold/);
-  await assert.rejects(placeBid(deps(), spot.id, bob.purchaser, 105n * USDC), /at least/);
-  const result = await placeBid(deps(), spot.id, bob.purchaser, 110n * USDC);
+  await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 99n * USDC, BRAND), /at least/);
+  await placeBid(deps(), spot.id, alice.purchaser, 100n * USDC, BRAND);
+  await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 200n * USDC, BRAND), /already hold/);
+  await assert.rejects(placeBid(deps(), spot.id, bob.purchaser, 105n * USDC, BRAND), /at least/);
+  const result = await placeBid(deps(), spot.id, bob.purchaser, 110n * USDC, BRAND);
 
   assert.equal(result.spot.buyerId, bob.user.id);
   assert.equal(result.spot.amount, 110n * USDC);
@@ -174,7 +175,7 @@ test("late bids sync the extended deadline from chain", async () => {
   const { spot, listing } = await createSpot("auction");
   const bidder = await createUser(`late_${randomUUID().slice(0, 8)}`);
   chainDeadline = new Date(DEADLINE.getTime() + 5 * 60 * 1000);
-  const result = await placeBid(deps(), spot.id, bidder.purchaser, 100n * USDC);
+  const result = await placeBid(deps(), spot.id, bidder.purchaser, 100n * USDC, BRAND);
   assert.equal(result.deadline.getTime(), chainDeadline.getTime());
   const [stored] = await db.select().from(listings).where(eq(listings.id, listing.id));
   assert.equal(stored.deadline.getTime(), chainDeadline.getTime());
@@ -183,4 +184,15 @@ test("late bids sync the extended deadline from chain", async () => {
 test("the database rejects a funded spot without a buyer", async () => {
   const { spot } = await createSpot("fixed");
   await assert.rejects(db.update(spots).set({ state: "funded" }).where(eq(spots.id, spot.id)));
+});
+
+test("checkout requires a brand name and validates links", async () => {
+  const { spot } = await createSpot("fixed");
+  const { purchaser } = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
+  await assert.rejects(claimSpot(deps(), spot.id, purchaser, {}), /brand name/);
+  await assert.rejects(claimSpot(deps(), spot.id, purchaser, { name: "Acme", link: "http://insecure.example" }), /https/);
+  await assert.rejects(claimSpot(deps(), spot.id, purchaser, { name: "Acme", logoUrl: "https://evil.example/logo.png" }), /upload/);
+  assert.equal(sentTxs.length, 0);
+  const result = await claimSpot(deps(), spot.id, purchaser, BRAND);
+  assert.deepEqual(result.spot.brand, { name: "Acme", link: "https://acme.example", handle: "acme" });
 });

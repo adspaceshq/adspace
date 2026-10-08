@@ -257,7 +257,7 @@ export function createV2Router(options: { db: Db; chain?: ChainContext; reviewer
     handle(async (req, res) => {
       const deps = purchaseDeps();
       const signer = await requireChain().userSigner(me(req));
-      send(res, await claimSpot(deps, req.params.id, { id: me(req).id, signer }));
+      send(res, await claimSpot(deps, req.params.id, { id: me(req).id, signer }, (req.body ?? {}).brand));
     }),
   );
   router.post(
@@ -267,7 +267,7 @@ export function createV2Router(options: { db: Db; chain?: ChainContext; reviewer
       const deps = purchaseDeps();
       const amount = parseUsdc((req.body ?? {}).amount, "amount");
       const signer = await requireChain().userSigner(me(req));
-      send(res, await placeBid(deps, req.params.id, { id: me(req).id, signer }, amount));
+      send(res, await placeBid(deps, req.params.id, { id: me(req).id, signer }, amount, (req.body ?? {}).brand));
     }),
   );
 
