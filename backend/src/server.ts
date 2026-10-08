@@ -22,6 +22,8 @@ import { TERMS_VERSION } from "./types.js";
 import { createChainContext } from "./v2/chain-context.js";
 import { createV2Router } from "./v2/router.js";
 import { reconcile } from "./services/reconciler.js";
+import { deliverEmails, processSpotEvents, scheduleReminders } from "./services/notifications.js";
+import { renderNotificationEmail, resendSender } from "./email.js";
 
 async function start() {
   const config = loadConfig();
@@ -94,6 +96,28 @@ async function start() {
         })
         .catch((error) => console.error("reconcile failed:", error instanceof Error ? error.message : error));
     setInterval(run, reconcileEveryMs).unref();
+  }
+  // Notifications run without the chain: they read what services already recorded.
+  const resendKey = process.env.RESEND_API_KEY?.trim();
+  const sendEmail = resendKey ? resendSender(resendKey, process.env.NOTIFICATIONS_FROM_EMAIL || undefined) : undefined;
+  if (!sendEmail) console.warn("RESEND_API_KEY not set; notifications are in-app only");
+  const notifyEveryMs = Number(process.env.NOTIFY_INTERVAL_MS ?? 30_000);
+  if (notifyEveryMs > 0) {
+    let running = false;
+    const runNotifier = async () => {
+      if (running) return;
+      running = true;
+      try {
+        await processSpotEvents(db);
+        await scheduleReminders(db);
+        if (sendEmail) await deliverEmails(db, sendEmail, (notification) => renderNotificationEmail(notification, config.frontendUrl));
+      } catch (error) {
+        console.error("notifier failed:", error instanceof Error ? error.message : error);
+      } finally {
+        running = false;
+      }
+    };
+    setInterval(() => void runNotifier(), notifyEveryMs).unref();
   }
   await auth.migrate();
   await market.migrate();

@@ -25,6 +25,7 @@ import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../service
 import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
 import { publicProfilePage } from "../services/profiles.js";
 import { listWatchlist, unwatchListing, watchListing } from "../services/watchlist.js";
+import { getPrefs, listNotifications, markRead, setPrefs } from "../services/notifications.js";
 import { reconcile } from "../services/reconciler.js";
 import { setDisputeTimeout, setPaused, type AdminDeps } from "../services/admin.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
@@ -617,6 +618,25 @@ export function createV2Router(options: {
       send(res, await creatorEarnings(db, me(req).id, days));
     }),
   );
+  router.get(
+    "/me/notifications",
+    requireUser,
+    handle(async (req, res) => {
+      const raw = typeof req.query.before === "string" ? new Date(req.query.before) : undefined;
+      if (raw && Number.isNaN(raw.getTime())) throw new BadRequest("before must be a date");
+      send(res, await listNotifications(db, me(req).id, { before: raw, limit: Number(req.query.limit) || 30 }));
+    }),
+  );
+  router.post(
+    "/me/notifications/read",
+    ...mutate,
+    handle(async (req, res) => {
+      const ids = (req.body as { ids?: unknown } | undefined)?.ids;
+      send(res, await markRead(db, me(req).id, Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : undefined));
+    }),
+  );
+  router.get("/me/notification-prefs", requireUser, handle(async (req, res) => send(res, await getPrefs(db, me(req).id))));
+  router.put("/me/notification-prefs", ...mutate, handle(async (req, res) => send(res, await setPrefs(db, me(req).id, req.body))));
   router.get("/me/watchlist", requireUser, handle(async (req, res) => send(res, await listWatchlist(db, me(req).id))));
   router.put("/me/watchlist/:listingId", ...mutate, handle(async (req, res) => send(res, await watchListing(db, me(req).id, req.params.listingId))));
   router.delete("/me/watchlist/:listingId", ...mutate, handle(async (req, res) => send(res, await unwatchListing(db, me(req).id, req.params.listingId))));
