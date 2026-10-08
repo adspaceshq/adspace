@@ -17,6 +17,7 @@ import type {
   SponsorBrand,
   SponsorDashboard,
   Spot,
+  SpotDetail,
   TimelineEvent,
   Withdrawal,
 } from "./types";
@@ -116,6 +117,7 @@ export const api = {
   },
 
   spots: {
+    detail: (id: string) => get<SpotDetail>(`/spots/${enc(id)}`),
     claim: (id: string, brand: SponsorBrand) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/claim`, { brand }),
     bid: (id: string, amount: string, brand: SponsorBrand) =>
       post<{ spot: Spot; signature: string; deadline: string }>(`/spots/${enc(id)}/bid`, { amount, brand }),

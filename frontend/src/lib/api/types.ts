@@ -321,3 +321,46 @@ export interface ReviewDecision {
   reviewWindowSeconds?: number;
   deliveryDueAt?: IsoDate;
 }
+
+export interface SpotDetail {
+  role: "sponsor" | "creator" | "reviewer";
+  spot: {
+    id: string;
+    index: number;
+    label: string;
+    price: BaseUnits;
+    layout: SpotLayout;
+    state: SpotState;
+    amount: BaseUnits | null;
+    brand: SponsorBrand | null;
+    proofSubmittedAt: IsoDate | null;
+    chainAddress: string | null;
+    buyerIsYou: boolean;
+  };
+  listing: {
+    id: string;
+    slug: string;
+    title: string;
+    mode: PricingMode;
+    surface: Surface;
+    deadline: IsoDate;
+    deliveryDueAt: IsoDate;
+    reviewWindowSeconds: number;
+    chainAddress: string | null;
+    photos: ListingPhoto[];
+  };
+  seller: { id: string; handle: string; displayName: string; avatarUrl: string | null; verified: boolean };
+  proofPosts: Array<{ id: string; kind: PostKind; url: string | null; body: string; createdAt: IsoDate }>;
+  dispute: {
+    id: string;
+    state: "open" | "withdrawn" | "resolved" | "timed_out";
+    reason: string;
+    openedAt: IsoDate;
+    closedAt: IsoDate | null;
+    sellerShareBps: number | null;
+    decision: string | null;
+    timeoutAt: IsoDate;
+  } | null;
+  settlement: Settlement | null;
+  deadlines: { deliveryDueAt: IsoDate; reviewUntil: IsoDate };
+}

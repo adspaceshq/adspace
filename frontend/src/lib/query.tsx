@@ -33,6 +33,7 @@ export const queryKeys = {
   sponsorDashboard: ["dashboard", "sponsor"] as const,
   earnings: (days: number) => ["earnings", days] as const,
   activity: ["activity"] as const,
+  spot: (spotId: string) => ["spot", spotId] as const,
   timeline: (spotId: string) => ["timeline", spotId] as const,
   messages: (spotId: string) => ["messages", spotId] as const,
   withdrawals: ["withdrawals"] as const,
