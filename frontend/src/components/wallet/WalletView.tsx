@@ -1,17 +1,18 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, ExternalLink, ShieldCheck, Wallet, Zap } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, ShieldCheck, Wallet, Zap } from "lucide-react";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api/v2";
 import type { Withdrawal } from "@/lib/api/types";
-import { ADSPACES_CLUSTER, explorerAddressUrl, explorerTxUrl } from "@/lib/chain-config";
+import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { formatUsd, toBaseUnits, toInputValue } from "@/lib/money";
 import { useSession } from "@/lib/session";
 import { useUsdcBalance } from "@/lib/use-balance";
 import { useNow } from "@/lib/use-now";
 import { useTx } from "@/lib/use-tx";
 import { DAILY_WITHDRAWAL_LIMIT, usedInLastDay, validateWithdrawal, withdrawable, type WithdrawErrors } from "@/lib/withdraw";
+import { Address } from "@/components/ui/Address";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -20,7 +21,6 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { TxStatus } from "@/components/ui/TxStatus";
 
-const short = (address: string) => `${address.slice(0, 4)}…${address.slice(-4)}`;
 const STATE_LABEL: Record<Withdrawal["state"], string> = { pending: "queued", submitted: "sending", confirmed: "sent", failed: "failed" };
 
 export function WalletView() {
@@ -69,13 +69,7 @@ function BalanceCard({ address, balance, loading }: { address: string; balance?:
     <Card className="flex flex-col gap-4 p-5">
       <p className="text-small text-muted">available balance</p>
       {loading ? <Skeleton className="h-10 w-40" /> : <p className="text-display font-semibold tabular-nums">{formatUsd(balance ?? "0")}</p>}
-      <div className="flex flex-wrap items-center gap-2 text-small">
-        <span className="font-mono">{short(address)}</span>
-        <CopyButton value={address} label="copy wallet address" />
-        <a href={explorerAddressUrl(address)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-          explorer <ExternalLink className="size-3" aria-hidden />
-        </a>
-      </div>
+      <Address value={address} chars={6} className="text-small" />
     </Card>
   );
 }
@@ -214,7 +208,9 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
           <dt className="text-muted">amount</dt>
           <dd className="font-semibold tabular-nums">{amount ? formatUsd(safeBase(amount)) : "-"}</dd>
           <dt className="text-muted">to</dt>
-          <dd className="break-all font-mono text-small">{destination.trim()}</dd>
+          <dd className="text-small">
+            <Address value={destination.trim()} full explorer={false} />
+          </dd>
           <dt className="text-muted">network fee</dt>
           <dd>paid by adspaces</dd>
         </dl>
@@ -260,14 +256,12 @@ function History({ items, loading }: { items?: Withdrawal[]; loading: boolean })
           {items.map((item) => (
             <li key={item.id} className="flex items-center gap-3 px-4 py-3 text-small">
               <span className="w-24 shrink-0 font-semibold tabular-nums">{formatUsd(item.amount)}</span>
-              <span className="min-w-0 flex-1 truncate font-mono text-muted">to {short(item.destination)}</span>
+              <span className="flex min-w-0 flex-1 items-center gap-1 text-muted">
+                to <Address value={item.destination} />
+              </span>
               <span className={item.state === "failed" ? "text-danger" : item.state === "confirmed" ? "text-success" : "text-muted"}>{STATE_LABEL[item.state]}</span>
               <span className="hidden shrink-0 text-subtle sm:inline">{new Date(item.createdAt).toLocaleString()}</span>
-              {item.chainTxId && (
-                <a href={explorerTxUrl(item.chainTxId)} target="_blank" rel="noreferrer" aria-label="view on explorer" className="text-accent">
-                  <ExternalLink className="size-4" />
-                </a>
-              )}
+              {item.signature && <Address value={item.signature} kind="tx" className="hidden text-subtle md:inline-flex" />}
             </li>
           ))}
         </ul>
