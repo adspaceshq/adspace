@@ -181,7 +181,8 @@ export const listings = app.table(
   (t) => [
     index("listings_state_deadline_idx").on(t.state, t.deadline),
     index("listings_seller_idx").on(t.sellerId),
-    check("listings_dates_ordered", sql`artwork_due_at >= deadline AND delivery_due_at > artwork_due_at`),
+    // deadline <= artwork_due_at holds at creation only: on-chain anti-sniping can extend the deadline later.
+    check("listings_dates_ordered", sql`delivery_due_at > artwork_due_at`),
     check("listings_review_window", sql`review_window_seconds BETWEEN 60 AND 2592000`),
     check(
       "listings_fee_policy",
