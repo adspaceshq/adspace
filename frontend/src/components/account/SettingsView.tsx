@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BadgeCheck, ExternalLink, LogOut, MailCheck, ShieldCheck, Zap } from "lucide-react";
+import { BadgeCheck, Bell, ExternalLink, LogOut, Mail, MailCheck, Settings, ShieldCheck, Store, UserRound, Zap } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api/v2";
 import type { Session } from "@/lib/api/types";
 import { useSession } from "@/lib/session";
@@ -15,43 +15,83 @@ import { NotificationPrefs } from "@/components/notifications/NotificationPrefs"
 import { RoleEditor } from "@/components/onboarding/OnboardingFlow";
 
 const SECTIONS = [
-  { id: "profile", label: "profile" },
-  { id: "usage", label: "selling & sponsoring" },
-  { id: "email", label: "email" },
-  { id: "notifications", label: "notifications" },
-  { id: "security", label: "security" },
-  { id: "account", label: "account" },
-];
+  { id: "profile", label: "profile", icon: UserRound },
+  { id: "usage", label: "selling & sponsoring", icon: Store },
+  { id: "email", label: "email", icon: Mail },
+  { id: "notifications", label: "notifications", icon: Bell },
+  { id: "security", label: "security", icon: ShieldCheck },
+  { id: "account", label: "account", icon: Settings },
+] as const;
+type SectionId = (typeof SECTIONS)[number]["id"];
+
+const fromHash = (hash: string): SectionId => {
+  const id = hash.replace(/^#/, "");
+  return SECTIONS.some((section) => section.id === id) ? (id as SectionId) : "profile";
+};
+
+// One section at a time; the hash keeps deep links like /settings#notifications working.
+function useSection(): [SectionId, (id: SectionId) => void] {
+  const [section, setSection] = useState<SectionId>("profile");
+  useEffect(() => {
+    const sync = () => setSection(fromHash(window.location.hash));
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
+  const select = (id: SectionId) => {
+    window.history.replaceState(null, "", `#${id}`);
+    setSection(id);
+  };
+  return [section, select];
+}
 
 export function SettingsView() {
   const { session } = useSession();
+  const [section, select] = useSection();
   if (!session) return null;
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-title font-semibold sm:text-display">settings</h1>
-      <div className="grid gap-8 lg:grid-cols-[180px_minmax(0,1fr)]">
-        <nav aria-label="settings sections" className="hidden lg:block">
-          <ul className="sticky top-24 flex flex-col gap-1 text-small">
-            {SECTIONS.map((section) => (
-              <li key={section.id}>
-                <a href={`#${section.id}`} className="block rounded-control px-3 py-1.5 text-muted hover:bg-ink/5 hover:text-ink">
-                  {section.label}
-                </a>
-              </li>
-            ))}
+      <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
+        <nav aria-label="settings sections">
+          <ul role="tablist" aria-orientation="vertical" className="flex gap-1 overflow-x-auto text-small lg:sticky lg:top-24 lg:flex-col lg:overflow-visible">
+            {SECTIONS.map(({ id, label, icon: Icon }) => {
+              const active = id === section;
+              return (
+                <li key={id} className="shrink-0">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    aria-controls={`panel-${id}`}
+                    onClick={() => select(id)}
+                    className={`flex w-full cursor-pointer items-center gap-2.5 whitespace-nowrap rounded-control px-3 py-2 text-left transition-colors ${
+                      active ? "bg-surface font-medium text-ink shadow-card" : "text-muted hover:bg-ink/5 hover:text-ink"
+                    }`}
+                  >
+                    <Icon className="size-4" aria-hidden />
+                    {label}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </nav>
-        <div className="flex max-w-2xl flex-col gap-6">
-          <ProfileSection key={`${session.handle}:${session.name}:${session.avatar}`} session={session} />
-          <Section id="usage" title="selling & sponsoring" description="your socials show on your listings; your brand prefills at checkout.">
-            <RoleEditor key={JSON.stringify(session.onboarding)} session={session} submitLabel="save" />
-          </Section>
-          <EmailSection session={session} />
-          <Section id="notifications" title="email notifications" description="everything always shows in the bell. choose what also reaches your inbox.">
-            <NotificationPrefs />
-          </Section>
-          <SecuritySection />
-          <AccountSection session={session} />
+        <div role="tabpanel" id={`panel-${section}`} className="flex max-w-2xl flex-col gap-6">
+          {section === "profile" && <ProfileSection key={`${session.handle}:${session.name}:${session.avatar}`} session={session} />}
+          {section === "usage" && (
+            <Section id="usage" title="selling & sponsoring" description="your socials show on your listings; your brand prefills at checkout.">
+              <RoleEditor key={JSON.stringify(session.onboarding)} session={session} submitLabel="save" />
+            </Section>
+          )}
+          {section === "email" && <EmailSection session={session} />}
+          {section === "notifications" && (
+            <Section id="notifications" title="email notifications" description="everything always shows in the bell. choose what also reaches your inbox.">
+              <NotificationPrefs />
+            </Section>
+          )}
+          {section === "security" && <SecuritySection />}
+          {section === "account" && <AccountSection session={session} />}
         </div>
       </div>
     </div>
@@ -60,7 +100,7 @@ export function SettingsView() {
 
 function Section({ id, title, description, children }: { id: string; title: string; description?: string; children: React.ReactNode }) {
   return (
-    <Card id={id} className="flex scroll-mt-24 flex-col gap-4 p-5">
+    <Card id={id} className="flex flex-col gap-4 p-5">
       <div>
         <h2 className="text-body font-semibold">{title}</h2>
         {description && <p className="text-small text-muted">{description}</p>}
