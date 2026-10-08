@@ -1,24 +1,25 @@
 "use client";
 
-import { Lock, ShieldAlert } from "lucide-react";
-import { useAuthSession } from "@/components/AuthSessionProvider";
+import { Lock, MailCheck, ShieldAlert } from "lucide-react";
+import Link from "next/link";
+import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
 
-// Single gate for every signed-in surface: loading, signed out, and not authorised.
+// Single gate for every signed-in surface: loading, signed out, email missing, not authorised.
 export function AuthGate({
   children,
-  requireReviewer = false,
+  require = "user",
   reason = "sign in to continue",
 }: {
   children: React.ReactNode;
-  requireReviewer?: boolean;
+  require?: "user" | "reviewer" | "admin";
   reason?: string;
 }) {
-  const session = useAuthSession();
+  const { ready, session, signIn } = useSession();
 
-  if (!session.ready) {
+  if (!ready) {
     return (
       <SkeletonGroup label="loading your account">
         <div className="flex flex-col gap-4">
@@ -30,23 +31,38 @@ export function AuthGate({
     );
   }
 
-  if (!session.authenticated) {
+  if (!session) {
     return (
       <EmptyState
         icon={Lock}
         title={reason}
         description="use x, google or email. a wallet is created for you automatically."
-        action={<Button onClick={() => session.login()}>sign in</Button>}
+        action={<Button onClick={signIn}>sign in</Button>}
       />
     );
   }
 
-  if (requireReviewer && !session.isReviewer) {
+  if (!session.email) {
+    return (
+      <EmptyState
+        icon={MailCheck}
+        title="verify your email to continue"
+        description="we email you when you're outbid, when proof is due and when you get paid."
+        action={
+          <Link href="/onboarding" className="text-body font-medium text-accent hover:underline">
+            add your email
+          </Link>
+        }
+      />
+    );
+  }
+
+  if ((require === "reviewer" && !session.isReviewer && !session.isAdmin) || (require === "admin" && !session.isAdmin)) {
     return (
       <EmptyState
         icon={ShieldAlert}
-        title="reviewers only"
-        description="this area is for the adspaces review team. if you think you should have access, contact support."
+        title={require === "admin" ? "admins only" : "reviewers only"}
+        description="this area is for the adspaces team. if you think you should have access, contact support."
       />
     );
   }
