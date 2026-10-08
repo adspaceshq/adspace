@@ -5,15 +5,16 @@ const apiKey = process.env.CLOUDINARY_API_KEY?.trim() ?? "";
 const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim() ?? "";
 const rootFolder = (process.env.CLOUDINARY_UPLOAD_FOLDER?.trim() || "adspaces").replace(/^\/+|\/+$/g, "");
 
-export type CloudinaryUploadKind = "listings" | "logos" | "proofs" | "videos" | "static/landing";
+export type CloudinaryUploadKind = "listings" | "logos" | "proofs" | "videos" | "static/landing" | "posts" | "evidence" | "avatars";
+
+const KINDS: readonly CloudinaryUploadKind[] = ["listings", "logos", "proofs", "videos", "static/landing", "posts", "evidence", "avatars"];
 
 export function cloudinaryConfigured(): boolean {
   return Boolean(cloudName && apiKey && apiSecret);
 }
 
 function safeKind(value: unknown): CloudinaryUploadKind {
-  if (value === "listings" || value === "logos" || value === "proofs" || value === "videos" || value === "static/landing") return value;
-  return "listings";
+  return KINDS.includes(value as CloudinaryUploadKind) ? (value as CloudinaryUploadKind) : "listings";
 }
 
 function signature(params: Record<string, string | number>): string {
@@ -25,20 +26,31 @@ function signature(params: Record<string, string | number>): string {
   return createHash("sha1").update(`${payload}${apiSecret}`).digest("hex");
 }
 
-export function signedUploadPayload(kindInput: unknown) {
+// `allowedFormats` is part of the signature, so Cloudinary rejects any other file type.
+export function signedUploadPayload(kindInput: unknown, options: { allowedFormats?: string[] } = {}) {
   if (!cloudinaryConfigured()) throw Object.assign(new Error("Cloudinary is not configured"), { status: 503 });
   const kind = safeKind(kindInput);
   const timestamp = Math.floor(Date.now() / 1000);
   const folder = `${rootFolder}/${kind}`;
-  const params = { folder, timestamp };
+  const allowedFormats = options.allowedFormats?.join(",") ?? "";
+  const params: Record<string, string | number> = { folder, timestamp, ...(allowedFormats ? { allowed_formats: allowedFormats } : {}) };
   return {
     cloudName,
     apiKey,
     folder,
     timestamp,
+    ...(allowedFormats ? { allowedFormats } : {}),
     signature: signature(params),
-    uploadUrl: `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`,
+    uploadUrl: `https://api.cloudinary.com/v1_1/${cloudName}/${allowedFormats ? "image" : "auto"}/upload`,
   };
+}
+
+// Our own uploads only: right cloud account, image delivery, and the expected folder.
+export function isOwnUpload(url: string, kind: CloudinaryUploadKind): boolean {
+  if (!cloudName) return false;
+  const prefix = `https://res.cloudinary.com/${cloudName}/image/upload/`;
+  if (!url.startsWith(prefix) || url.length > 500 || /\s/.test(url)) return false;
+  return url.slice(prefix.length).includes(`${rootFolder}/${kind}/`);
 }
 
 export function isHostedAssetUrl(value: string | undefined): boolean {
