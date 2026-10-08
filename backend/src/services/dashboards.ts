@@ -40,6 +40,9 @@ export type NeedsYouItem = {
     | "dispute_timeout_ready";
   listingId: string;
   listingTitle: string;
+  // For linking to the public listing page (/@handle/slug).
+  listingSlug: string;
+  sellerHandle: string;
   spotId?: string;
   spotIndex?: number;
   dueAt?: Date;
@@ -56,6 +59,7 @@ export async function creatorDashboard(db: Db, sellerId: string, now = new Date(
     ? await db.select().from(spots).where(inArray(spots.listingId, listingIds)).orderBy(asc(spots.index))
     : [];
   const byId = new Map(owned.map((listing) => [listing.id, listing]));
+  const [owner] = await db.select({ handle: users.handle }).from(users).where(eq(users.id, sellerId));
 
   const [earned, escrow] = listingIds.length
     ? await Promise.all([
@@ -79,7 +83,7 @@ export async function creatorDashboard(db: Db, sellerId: string, now = new Date(
 
   const needsYou: NeedsYouItem[] = [];
   for (const listing of owned) {
-    const base = { listingId: listing.id, listingTitle: listing.title };
+    const base = { listingId: listing.id, listingTitle: listing.title, listingSlug: listing.slug, sellerHandle: owner?.handle ?? "" };
     if (listing.state === "approved") needsYou.push({ ...base, type: "accept_terms", dueAt: listing.deadline });
     if (listing.state === "changes_requested") needsYou.push({ ...base, type: "changes_requested" });
     const listingSpots = ownedSpots.filter((spot) => spot.listingId === listing.id);
@@ -140,9 +144,10 @@ export async function creatorEarnings(db: Db, sellerId: string, days = 90, now =
 
 export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeoutSeconds: number, now = new Date()) {
   const owned = await db
-    .select({ spot: spots, listing: listings })
+    .select({ spot: spots, listing: listings, sellerHandle: users.handle })
     .from(spots)
     .innerJoin(listings, eq(listings.id, spots.listingId))
+    .innerJoin(users, eq(users.id, listings.sellerId))
     .where(eq(spots.buyerId, sponsorId))
     .orderBy(desc(spots.updatedAt));
   const ownedIds = owned.map((row) => row.spot.id);
@@ -157,16 +162,17 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
       ? db.select().from(disputes).where(and(inArray(disputes.spotId, ownedIds), eq(disputes.state, "open")))
       : Promise.resolve([]),
     db
-      .selectDistinct({ spot: spots, listing: listings })
+      .selectDistinct({ spot: spots, listing: listings, sellerHandle: users.handle })
       .from(bids)
       .innerJoin(spots, eq(spots.id, bids.spotId))
       .innerJoin(listings, eq(listings.id, spots.listingId))
+      .innerJoin(users, eq(users.id, listings.sellerId))
       .where(and(eq(bids.bidderId, sponsorId), eq(spots.state, "funded"), gte(listings.deadline, now))),
   ]);
 
   const needsYou: NeedsYouItem[] = [];
-  for (const { spot, listing } of owned) {
-    const item = { listingId: listing.id, listingTitle: listing.title, spotId: spot.id, spotIndex: spot.index };
+  for (const { spot, listing, sellerHandle } of owned) {
+    const item = { listingId: listing.id, listingTitle: listing.title, listingSlug: listing.slug, sellerHandle, spotId: spot.id, spotIndex: spot.index };
     if (spot.state === "delivered" && now < payoutAvailableAt(listing)) {
       needsYou.push({ ...item, type: "review_proof", dueAt: payoutAvailableAt(listing) });
     }
@@ -176,9 +182,18 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
       needsYou.push({ ...item, type: "dispute_timeout_ready" });
     }
   }
-  for (const { spot, listing } of outbidRows) {
+  for (const { spot, listing, sellerHandle } of outbidRows) {
     if (spot.buyerId === sponsorId) continue;
-    needsYou.push({ type: "outbid", listingId: listing.id, listingTitle: listing.title, spotId: spot.id, spotIndex: spot.index, dueAt: listing.deadline });
+    needsYou.push({
+      type: "outbid",
+      listingId: listing.id,
+      listingTitle: listing.title,
+      listingSlug: listing.slug,
+      sellerHandle,
+      spotId: spot.id,
+      spotIndex: spot.index,
+      dueAt: listing.deadline,
+    });
   }
 
   const active = owned.filter((row) => (ACTIVE_SPOT as readonly string[]).includes(row.spot.state));
@@ -190,9 +205,17 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
       delivered: owned.filter((row) => row.spot.state === "settled").length,
     },
     needsYou: needsYou.sort(byDueAt),
-    spots: owned.map(({ spot, listing }) => ({
+    spots: owned.map(({ spot, listing, sellerHandle }) => ({
       ...spot,
-      listing: { id: listing.id, slug: listing.slug, title: listing.title, mode: listing.mode, deadline: listing.deadline, deliveryDueAt: listing.deliveryDueAt },
+      listing: {
+        id: listing.id,
+        slug: listing.slug,
+        title: listing.title,
+        mode: listing.mode,
+        deadline: listing.deadline,
+        deliveryDueAt: listing.deliveryDueAt,
+        sellerHandle,
+      },
       reviewUntil: spot.state === "delivered" ? payoutAvailableAt(listing) : null,
     })),
   };

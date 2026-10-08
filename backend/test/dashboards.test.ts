@@ -77,6 +77,9 @@ test("sponsor: proof review window, missed delivery, outbid, and dispute timeout
   assert.equal(types[delivered.spot.id], "review_proof");
   assert.equal(types[missed.spot.id], "refund_available");
   assert.equal(types[auction.spot.id], "outbid");
+  const outbid = dashboard.needsYou.find((item) => item.spotId === auction.spot.id)!;
+  assert.equal(outbid.sellerHandle, auction.seller.user.handle);
+  assert.equal(outbid.listingSlug, auction.listing.slug);
   assert.equal(types[disputed.spot.id], "dispute_timeout_ready");
   assert.equal(dashboard.stats.active, 3);
   assert.equal(dashboard.stats.inEscrow, 300n * USDC);
