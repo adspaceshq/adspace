@@ -119,3 +119,20 @@ test("dashboards require a session and return bigint money as strings", async ()
   assert.equal(sponsor.body.stats.inEscrow, "0");
   assert.equal((await request(app).get("/api/v2/review/summary").set("Cookie", seller.cookie)).status, 403);
 });
+
+test("creators can edit their draft and read it back; others cannot", async () => {
+  const seller = await signIn("edit_seller");
+  const created = await request(app).post("/api/v2/listings").set("Cookie", seller.cookie).set("X-CSRF-Token", seller.csrf).send(draft);
+  const id = created.body.listing.id;
+  const edited = await request(app)
+    .patch(`/api/v2/listings/${id}`)
+    .set("Cookie", seller.cookie)
+    .set("X-CSRF-Token", seller.csrf)
+    .send({ ...draft, title: "Edited lid", spots: [{ price: "3", layout: { x: 40, y: 40, w: 20 } }] });
+  assert.equal(edited.status, 200);
+  const own = await request(app).get(`/api/v2/me/listings/${id}`).set("Cookie", seller.cookie);
+  assert.equal(own.body.title, "Edited lid");
+  assert.equal(own.body.spots[0].price, "3000000");
+  const stranger = await signIn("edit_stranger");
+  assert.equal((await request(app).get(`/api/v2/me/listings/${id}`).set("Cookie", stranger.cookie)).status, 404);
+});

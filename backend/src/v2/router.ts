@@ -9,10 +9,12 @@ import {
   createDraft,
   reviewListing,
   submitForReview,
+  updateDraft,
   type DraftInput,
   type ReviewDecision,
 } from "../services/listing-lifecycle.js";
-import { getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewQueue } from "../services/listing-queries.js";
+import { getOwnedListing, getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewQueue } from "../services/listing-queries.js";
+import { parseAssetKind, registerMedia, signUpload } from "../services/media.js";
 import { claimSpot, placeBid } from "../services/spot-purchase.js";
 import { createPost, deletePost, listPosts, recordMetrics } from "../services/listing-posts.js";
 import { listMessages, postMessage } from "../services/spot-messages.js";
@@ -88,6 +90,7 @@ function parseDraft(body: Record<string, unknown>): DraftInput {
     deliveryDueAt: parseDate(body.deliveryDueAt, "deliveryDueAt", true),
     minIncrement: body.minIncrement === undefined ? undefined : parseUsdc(body.minIncrement, "minIncrement"),
     doubleUp: body.doubleUp === true,
+    photoAssetIds: Array.isArray(body.photoAssetIds) ? body.photoAssetIds.filter((id): id is string => typeof id === "string") : undefined,
     spots: spots.map((spot, index) => {
       const item = (spot ?? {}) as Record<string, unknown>;
       const layout = (item.layout ?? {}) as DraftInput["spots"][number]["layout"];
@@ -225,6 +228,28 @@ export function createV2Router(options: {
   );
   router.get("/me/listings", requireUser, handle(async (req, res) => send(res, await listForSeller(db, me(req).id))));
   router.post("/listings", ...mutate, handle(async (req, res) => send(res, await createDraft(db, me(req).id, parseDraft(req.body ?? {})), 201)));
+  router.patch("/listings/:id", ...mutate, handle(async (req, res) => send(res, await updateDraft(db, me(req).id, req.params.id, parseDraft(req.body ?? {})))));
+  router.get(
+    "/me/listings/:id",
+    requireUser,
+    handle(async (req, res) => {
+      const listing = await getOwnedListing(db, me(req).id, req.params.id);
+      if (!listing) return void send(res, { error: "listing not found" }, 404);
+      send(res, listing);
+    }),
+  );
+
+  // ---------- media ----------
+
+  router.post("/uploads/sign", ...mutate, handle(async (req, res) => send(res, signUpload(parseAssetKind(req.body?.kind)))));
+  router.post(
+    "/media",
+    ...mutate,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      send(res, await registerMedia(db, me(req).id, parseAssetKind(body.kind), { url: body.url, bytes: body.bytes, width: body.width, height: body.height }), 201);
+    }),
+  );
   router.post("/listings/:id/submit", ...mutate, handle(async (req, res) => send(res, await submitForReview(db, me(req).id, req.params.id))));
   router.post(
     "/listings/:id/publish",

@@ -136,6 +136,13 @@ export async function listPublished(db: Db, filters: BrowseFilters = {}, now = n
   };
 }
 
+export async function getOwnedListing(db: Db, sellerId: string, listingId: string) {
+  const [row] = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, sellerId)));
+  if (!row) return undefined;
+  const [listing] = await hydrate(db, [row]);
+  return listing;
+}
+
 export async function listForSeller(db: Db, sellerId: string) {
   const rows = await db.select().from(listings).where(eq(listings.sellerId, sellerId)).orderBy(desc(listings.updatedAt));
   return hydrate(db, rows);
