@@ -25,6 +25,7 @@ import type {
   SpotDetail,
   TimelineEvent,
   Withdrawal,
+  WatchItem,
 } from "./types";
 
 const BASE = `${(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/$/, "")}/api/v2`;
@@ -97,6 +98,9 @@ export const api = {
       const query = params.toString();
       return get<ActivityItem[]>(`/me/activity${query ? `?${query}` : ""}`);
     },
+    watchlist: () => get<WatchItem[]>("/me/watchlist"),
+    watch: (listingId: string) => request<{ listingId: string; watching: boolean }>("PUT", `/me/watchlist/${enc(listingId)}`, {}),
+    unwatch: (listingId: string) => request<{ listingId: string; watching: boolean }>("DELETE", `/me/watchlist/${enc(listingId)}`),
     withdrawals: () => get<Withdrawal[]>("/me/withdrawals"),
     withdraw: (destination: string, amount: string) =>
       post<{ withdrawal: Withdrawal; signature: string }>("/me/withdrawals", { destination, amount }),

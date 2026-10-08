@@ -425,3 +425,8 @@ export interface ProfilePage {
   stats: { spotsSold: number; spotsSponsored: number; deliveries: number; onTimeRate: number | null; activeListings: number };
   listings: PublicListing[];
 }
+
+export interface WatchItem {
+  savedAt: IsoDate;
+  listing: PublicListing;
+}

@@ -37,6 +37,7 @@ export const queryKeys = {
   timeline: (spotId: string) => ["timeline", spotId] as const,
   messages: (spotId: string) => ["messages", spotId] as const,
   withdrawals: ["withdrawals"] as const,
+  watchlist: ["me", "watchlist"] as const,
   reviewQueue: ["review", "queue"] as const,
   reviewSummary: ["review", "summary"] as const,
   adminStatus: ["admin", "status"] as const,
