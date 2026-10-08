@@ -23,6 +23,7 @@ import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../service
 import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
 import { reconcile } from "../services/reconciler.js";
 import { setDisputeTimeout, setPaused, type AdminDeps } from "../services/admin.js";
+import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -551,6 +552,27 @@ export function createV2Router(options: {
       send(res, { disputeTimeoutSeconds: result.status.disputeTimeoutSeconds, signature: result.signature });
     }),
   );
+  router.get("/me/dashboard/creator", requireUser, handle(async (req, res) => send(res, await creatorDashboard(db, me(req).id))));
+  router.get(
+    "/me/dashboard/sponsor",
+    requireUser,
+    handle(async (req, res) => {
+      // Without chain access, fall back to the program default so the page still renders.
+      const timeout = chain ? await chain.readDisputeTimeoutSeconds() : 3 * 24 * 60 * 60;
+      send(res, await sponsorDashboard(db, me(req).id, timeout));
+    }),
+  );
+  router.get(
+    "/me/earnings",
+    requireUser,
+    handle(async (req, res) => {
+      const days = Math.min(Math.max(Number(req.query.days ?? 90) || 90, 1), 365);
+      send(res, await creatorEarnings(db, me(req).id, days));
+    }),
+  );
+  router.get("/me/activity", requireUser, handle(async (req, res) => send(res, await activityFeed(db, me(req).id))));
+  router.get("/spots/:id/timeline", requireUser, handle(async (req, res) => send(res, await spotTimeline(db, actor(req), req.params.id))));
+  router.get("/review/summary", requireUser, requireReviewer, handle(async (_req, res) => send(res, await reviewSummary(db))));
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));
   router.post(
     "/spots/:id/messages",

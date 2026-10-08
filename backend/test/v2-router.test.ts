@@ -107,3 +107,15 @@ test("protocol admin actions are refused for non-admins", async () => {
     .send({ paused: true });
   assert.equal(response.status, 403);
 });
+
+test("dashboards require a session and return bigint money as strings", async () => {
+  assert.equal((await request(app).get("/api/v2/me/dashboard/creator")).status, 401);
+  const seller = await signIn("dash_seller");
+  const creator = await request(app).get("/api/v2/me/dashboard/creator").set("Cookie", seller.cookie);
+  assert.equal(creator.status, 200);
+  assert.equal(creator.body.stats.earned, "0");
+  const sponsor = await request(app).get("/api/v2/me/dashboard/sponsor").set("Cookie", seller.cookie);
+  assert.equal(sponsor.status, 200);
+  assert.equal(sponsor.body.stats.inEscrow, "0");
+  assert.equal((await request(app).get("/api/v2/review/summary").set("Cookie", seller.cookie)).status, 403);
+});
