@@ -153,6 +153,7 @@ export const api = {
   spots: {
     detail: (id: string) => get<SpotDetail>(`/spots/${enc(id)}`),
     claim: (id: string, brand: SponsorBrand) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/claim`, { brand }),
+    // `amount` is USDC as a decimal string ("1.5"), like withdrawals; never base units.
     bid: (id: string, amount: string, brand: SponsorBrand) =>
       post<{ spot: Spot; signature: string; deadline: string }>(`/spots/${enc(id)}/bid`, { amount, brand }),
     submitProof: (id: string, postIds: string[]) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/proof`, { postIds }),

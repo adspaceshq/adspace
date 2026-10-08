@@ -70,7 +70,8 @@ export function CheckoutModal({
         ...(brand.link?.trim() ? { link: brand.link.trim() } : {}),
         ...(brand.handle?.trim() ? { handle: brand.handle.trim() } : {}),
       },
-      amount: amount.toString(),
+      // The API takes USDC as a decimal string ("1.5"), not base units.
+      amount: toInputValue(amount),
     });
     if (result) {
       await Promise.all([
