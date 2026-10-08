@@ -44,7 +44,7 @@ export default async function Image({ params }: { params: Promise<{ handle: stri
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ fontSize: 60, fontWeight: 700, color: og.ink, letterSpacing: "-0.04em", lineHeight: 1.05 }}>{truncate(name, 22)}</div>
-                <div style={{ fontSize: 30, color: og.muted }}>@{truncate(profile?.handle ?? handle, 28)}</div>
+                <div style={{ fontSize: 30, color: og.muted }}>{`@${truncate(profile?.handle ?? handle, 28)}`}</div>
               </div>
             </div>
             {profile?.bio && <div style={{ fontSize: 28, color: og.inkSoft, lineHeight: 1.35, maxWidth: 580 }}>{truncate(profile.bio, 110)}</div>}
