@@ -1,19 +1,17 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { Camera, Check, Lock, MailCheck, Megaphone, Store, Users } from "lucide-react";
+import { Check, Lock, MailCheck, Megaphone, Store, Users } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api/v2";
+import { ProfileFields, useProfileForm } from "@/components/account/ProfileFields";
 import type { Session } from "@/lib/api/types";
-import { BRAND_CATEGORIES, buildOnboarding, handleError, landingPath, SOCIAL_PLATFORMS, sells, sponsors, type Role, type RoleErrors, type RoleForm } from "@/lib/onboarding";
+import { BRAND_CATEGORIES, buildOnboarding, landingPath, SOCIAL_PLATFORMS, sells, sponsors, type Role, type RoleErrors, type RoleForm } from "@/lib/onboarding";
 import { useSession } from "@/lib/session";
-import { ACCEPT_ATTRIBUTE, uploadImage } from "@/lib/upload";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Field";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { SellerAvatar } from "@/components/market/SellerAvatar";
 
 type Step = "email" | "profile" | "role";
 const STEPS: Array<{ id: Step; label: string }> = [
@@ -62,7 +60,12 @@ export function OnboardingFlow() {
       </ol>
       {step === "email" && <EmailStep />}
       {step === "profile" && <ProfileStep session={session} onDone={() => setProfileDone(true)} />}
-      {step === "role" && <RoleStep session={session} onBack={() => setProfileDone(false)} />}
+      {step === "role" && (
+        <section className="flex flex-col gap-5">
+          <h1 className="text-title font-semibold">how will you use adspaces?</h1>
+          <RoleEditor session={session} onBack={() => setProfileDone(false)} submitLabel="finish" />
+        </section>
+      )}
     </div>
   );
 }
@@ -89,95 +92,12 @@ function EmailStep() {
 }
 
 function ProfileStep({ session, onDone }: { session: Session; onDone: () => void }) {
-  const { refresh } = useSession();
-  const [name, setName] = useState(session.name ?? "");
-  const [handle, setHandle] = useState(session.handle.startsWith("user-") ? "" : session.handle);
-  const [avatar, setAvatar] = useState(session.avatar);
-  const [uploading, setUploading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string>();
-  const fileInput = useRef<HTMLInputElement>(null);
-
-  const clean = handle.trim().replace(/^@+/, "");
-  const localHandleError = session.hasX ? null : handleError(clean);
-  const [debounced, setDebounced] = useState(clean);
-  useEffect(() => {
-    const timer = setTimeout(() => setDebounced(clean), 350);
-    return () => clearTimeout(timer);
-  }, [clean]);
-  const availability = useQuery({
-    queryKey: ["handle-available", debounced],
-    queryFn: () => api.handles.available(debounced),
-    enabled: !session.hasX && !handleError(debounced),
-    staleTime: 30_000,
-  });
-  const taken = availability.data && !availability.data.available ? (availability.data.reason ?? "that handle is taken") : null;
-  const handleMessage = clean ? (localHandleError ?? taken) : null;
-
-  const pickAvatar = async (file: File | undefined) => {
-    if (!file) return;
-    setUploading(true);
-    setError(undefined);
-    try {
-      setAvatar((await uploadImage("avatar", file)).url);
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const save = async () => {
-    if (!name.trim()) return setError("add the name people will see");
-    if (!session.hasX && (localHandleError || taken || !clean)) return setError(localHandleError ?? taken ?? "pick a handle");
-    setSaving(true);
-    setError(undefined);
-    try {
-      await api.me.updateProfile({
-        displayName: name.trim(),
-        ...(avatar !== session.avatar ? { avatar: avatar ?? null } : {}),
-        ...(!session.hasX && clean !== session.handle ? { handle: clean } : {}),
-      });
-      await refresh();
-      onDone();
-    } catch (cause) {
-      setError((cause as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
+  const form = useProfileForm(session);
   return (
     <section className="flex flex-col gap-5">
       <h1 className="text-title font-semibold">your profile</h1>
-      <div className="flex items-center gap-4">
-        <SellerAvatar seller={{ handle: clean || session.handle, displayName: name, avatarUrl: avatar ?? null }} size={72} />
-        <input ref={fileInput} type="file" accept={ACCEPT_ATTRIBUTE} className="sr-only" onChange={(event) => void pickAvatar(event.target.files?.[0])} />
-        <Button variant="secondary" size="sm" loading={uploading} onClick={() => fileInput.current?.click()}>
-          <Camera className="size-4" aria-hidden /> {avatar ? "change photo" : "add photo"}
-        </Button>
-      </div>
-      <Input label="name" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} autoComplete="name" />
-      {session.hasX ? (
-        <Input label="handle" value={session.handle} disabled hint="linked to your X account" />
-      ) : (
-        <Input
-          label="handle"
-          value={handle}
-          onChange={(event) => setHandle(event.target.value)}
-          maxLength={31}
-          autoCapitalize="none"
-          spellCheck={false}
-          error={handleMessage ?? undefined}
-          hint={clean && availability.data?.available && debounced === clean ? `adspaces.fun/${clean} is yours` : "your public page lives at adspaces.fun/handle"}
-        />
-      )}
-      {error && (
-        <p role="alert" className="text-small text-danger">
-          {error}
-        </p>
-      )}
-      <Button onClick={() => void save()} loading={saving} disabled={uploading} className="self-start">
+      <ProfileFields form={form} />
+      <Button onClick={() => void form.save().then((saved) => saved && onDone())} loading={form.saving} disabled={form.uploading} className="self-start">
         continue
       </Button>
     </section>
@@ -190,9 +110,17 @@ const ROLES: Array<{ id: Role; title: string; description: string; icon: typeof 
   { id: "both", title: "both", description: "sell space and sponsor others from one account.", icon: Users },
 ];
 
-function RoleStep({ session, onBack }: { session: Session; onBack: () => void }) {
+// Used by onboarding (first save) and settings (edits); prefilled from saved answers.
+export function RoleEditor({ session, onBack, submitLabel, onSaved }: { session: Session; onBack?: () => void; submitLabel: string; onSaved?: () => void }) {
   const { refresh } = useSession();
-  const [form, setForm] = useState<RoleForm>({ role: null, socials: session.hasX ? { x: session.handle } : {}, brandName: "", category: "", website: "" });
+  const saved = session.onboarding;
+  const [form, setForm] = useState<RoleForm>({
+    role: saved?.accountType ?? null,
+    socials: saved?.creator?.socials ?? (session.hasX ? { x: session.handle } : {}),
+    brandName: saved?.sponsor?.brandName ?? "",
+    category: saved?.sponsor?.category ?? "",
+    website: saved?.sponsor?.website ?? "",
+  });
   const [errors, setErrors] = useState<RoleErrors>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
@@ -207,15 +135,16 @@ function RoleStep({ session, onBack }: { session: Session; onBack: () => void })
     try {
       await api.me.saveOnboarding(built.payload);
       await refresh();
+      onSaved?.();
     } catch (cause) {
       setError((cause as Error).message);
+    } finally {
       setSaving(false);
     }
   };
 
   return (
-    <section className="flex flex-col gap-5">
-      <h1 className="text-title font-semibold">how will you use adspaces?</h1>
+    <div className="flex flex-col gap-5">
       <div role="radiogroup" aria-label="account type" className="grid gap-2 sm:grid-cols-3">
         {ROLES.map(({ id, title, description, icon: Icon }) => {
           const selected = form.role === id;
@@ -291,13 +220,15 @@ function RoleStep({ session, onBack }: { session: Session; onBack: () => void })
         </p>
       )}
       <div className="flex gap-2">
-        <Button variant="ghost" onClick={onBack} disabled={saving}>
-          back
-        </Button>
+        {onBack && (
+          <Button variant="ghost" onClick={onBack} disabled={saving}>
+            back
+          </Button>
+        )}
         <Button onClick={() => void submit()} loading={saving}>
-          finish
+          {submitLabel}
         </Button>
       </div>
-    </section>
+    </div>
   );
 }
