@@ -16,7 +16,8 @@ export interface ChainContext {
   mint: PublicKey;
   reviewer: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
-  userSigner: (user: SessionUser) => Promise<TxSigner>;
+  // `requireMfa` refuses users without two-factor set up in Privy (withdrawals).
+  userSigner: (user: SessionUser, options?: { requireMfa?: boolean }) => Promise<TxSigner>;
   ensureSellerFunding: (seller: PublicKey) => Promise<void>;
   fetchListingDeadline: (listing: PublicKey) => Promise<Date>;
   configFeeFloorBps: () => Promise<number>;
@@ -53,7 +54,7 @@ export function createChainContext(options: {
     reviewer,
     runTx: (request) => runChainTx(options.db, connection, request),
 
-    async userSigner(user) {
+    async userSigner(user, signerOptions = {}) {
       if (!options.privy || !options.privyAuthorizationKey) throw httpError("wallet signing is not configured", 503);
       if (!user.walletAddress) throw httpError("set up your wallet first", 409);
       const privyUser = await options.privy.users()._get(user.did);
@@ -66,6 +67,9 @@ export function createChainContext(options: {
       );
       if (!wallet || !("id" in wallet) || !wallet.id) throw httpError("your embedded wallet was not found", 409);
       if (!("delegated" in wallet) || !wallet.delegated) throw httpError("enable gasless transactions first", 409);
+      if (signerOptions.requireMfa && (privyUser.mfa_methods?.length ?? 0) === 0) {
+        throw httpError("set up two-factor authentication before withdrawing", 403);
+      }
       return privyWalletSigner(options.privy, wallet.id, user.walletAddress, options.privyAuthorizationKey);
     },
 

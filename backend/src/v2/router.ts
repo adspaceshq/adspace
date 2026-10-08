@@ -492,7 +492,7 @@ export function createV2Router(options: {
       const context = requireChain();
       const body = (req.body ?? {}) as { destination?: unknown; amount?: unknown };
       const amount = parseUsdc(body.amount, "amount");
-      const signer = await context.userSigner(me(req));
+      const signer = await context.userSigner(me(req), { requireMfa: true });
       const result = await withdrawUsdc(
         {
           db,
