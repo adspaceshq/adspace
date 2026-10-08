@@ -1,0 +1,148 @@
+import type {
+  ActivityItem,
+  CreatorDashboard,
+  DraftInput,
+  Listing,
+  Message,
+  OwnedListing,
+  Post,
+  ProtocolStatus,
+  PublicListing,
+  PublicProfile,
+  ReviewDecision,
+  Session,
+  Settlement,
+  SponsorBrand,
+  SponsorDashboard,
+  Spot,
+  TimelineEvent,
+  Withdrawal,
+} from "./types";
+
+const BASE = `${(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/$/, "")}/api/v2`;
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+// The CSRF token comes from the session response; mutations must echo it back.
+let csrfToken: string | undefined;
+export function setCsrfToken(token: string | undefined) {
+  csrfToken = token;
+}
+
+type Method = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+async function request<T>(method: Method, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
+  const response = await fetch(`${BASE}${path}`, {
+    method,
+    credentials: "include",
+    headers: {
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...(method !== "GET" && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const text = await response.text();
+  const json = text ? (JSON.parse(text) as unknown) : undefined;
+  if (!response.ok) {
+    const message = (json as { error?: string } | undefined)?.error ?? `request failed (${response.status})`;
+    throw new ApiError(message, response.status);
+  }
+  return json as T;
+}
+
+const get = <T>(path: string) => request<T>("GET", path);
+const post = <T>(path: string, body: unknown = {}) => request<T>("POST", path, body);
+const enc = encodeURIComponent;
+
+export const api = {
+  auth: {
+    exchange: (accessToken: string, identityToken?: string) =>
+      request<Session>("POST", "/auth/session", {}, {
+        Authorization: `Bearer ${accessToken}`,
+        ...(identityToken ? { "privy-id-token": identityToken } : {}),
+      }),
+    me: () => get<Session>("/auth/me"),
+    logout: () => post<{ ok: true }>("/auth/logout"),
+  },
+
+  me: {
+    saveOnboarding: (input: unknown) => request<Session["onboarding"]>("PUT", "/me/onboarding", input),
+    updateProfile: (patch: { bio?: string; payoutWallet?: string }) => request<PublicProfile>("PATCH", "/me", patch),
+    listings: () => get<OwnedListing[]>("/me/listings"),
+    creatorDashboard: () => get<CreatorDashboard>("/me/dashboard/creator"),
+    sponsorDashboard: () => get<SponsorDashboard>("/me/dashboard/sponsor"),
+    earnings: (days = 90) => get<Array<{ day: string; earned: string }>>(`/me/earnings?days=${days}`),
+    activity: () => get<ActivityItem[]>("/me/activity"),
+    withdrawals: () => get<Withdrawal[]>("/me/withdrawals"),
+    withdraw: (destination: string, amount: string) =>
+      post<{ withdrawal: Withdrawal; signature: string }>("/me/withdrawals", { destination, amount }),
+  },
+
+  users: {
+    byHandle: (handle: string) => get<PublicProfile>(`/users/${enc(handle.replace(/^@/, ""))}`),
+  },
+
+  listings: {
+    published: () => get<PublicListing[]>("/listings"),
+    bySlug: (slug: string) => get<PublicListing>(`/listings/${enc(slug)}`),
+    createDraft: (input: DraftInput) => post<{ listing: Listing; spots: Spot[] }>("/listings", input),
+    submit: (id: string) => post<Listing>(`/listings/${enc(id)}/submit`),
+    publish: (id: string) => post<Listing>(`/listings/${enc(id)}/publish`),
+    close: (id: string) => post<{ listing: Listing; signature: string }>(`/listings/${enc(id)}/close`),
+    posts: (id: string) => get<Post[]>(`/listings/${enc(id)}/posts`),
+    createPost: (id: string, input: { url?: string; body?: string; mediaAssetIds?: string[] }) =>
+      post<Post>(`/listings/${enc(id)}/posts`, input),
+  },
+
+  posts: {
+    remove: (id: string) => request<{ ok: true }>("DELETE", `/posts/${enc(id)}`),
+    recordMetrics: (id: string, metrics: Partial<Record<"views" | "likes" | "reposts" | "replies" | "bookmarks", number>>) =>
+      post<unknown>(`/posts/${enc(id)}/metrics`, metrics),
+  },
+
+  spots: {
+    claim: (id: string, brand: SponsorBrand) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/claim`, { brand }),
+    bid: (id: string, amount: string, brand: SponsorBrand) =>
+      post<{ spot: Spot; signature: string; deadline: string }>(`/spots/${enc(id)}/bid`, { amount, brand }),
+    submitProof: (id: string, postIds: string[]) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/proof`, { postIds }),
+    payout: (id: string) => post<{ spot: Spot; settlement: Settlement; signature: string }>(`/spots/${enc(id)}/payout`),
+    refund: (id: string, asSeller: boolean) =>
+      post<{ spot: Spot; settlement: Settlement; signature: string }>(`/spots/${enc(id)}/refund`, { asSeller }),
+    close: (id: string) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/close`),
+    raiseDispute: (id: string, reason: string, evidenceAssetIds?: string[]) =>
+      post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/disputes`, { reason, evidenceAssetIds }),
+    withdrawDispute: (id: string) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/disputes/withdraw`),
+    timeoutDispute: (id: string) =>
+      post<{ spot: Spot; settlement: Settlement; signature: string }>(`/spots/${enc(id)}/disputes/timeout`),
+    timeline: (id: string) => get<{ events: TimelineEvent[]; settlement: Settlement | null }>(`/spots/${enc(id)}/timeline`),
+    messages: (id: string) => get<Message[]>(`/spots/${enc(id)}/messages`),
+    sendMessage: (id: string, body: string) => post<Message>(`/spots/${enc(id)}/messages`, { body }),
+  },
+
+  review: {
+    queue: () => get<Array<PublicListing & { spots: Spot[] }>>("/review/queue"),
+    summary: () => get<unknown>("/review/summary"),
+    decide: (listingId: string, decision: ReviewDecision) => post<Listing>(`/review/listings/${enc(listingId)}`, decision),
+    resolveDispute: (spotId: string, sellerShareBps: number, decision: string) =>
+      post<{ spot: Spot; settlement: Settlement; signature: string }>(`/review/spots/${enc(spotId)}/resolve`, {
+        sellerShareBps,
+        decision,
+      }),
+    reconcile: () => post<unknown>("/review/reconcile"),
+  },
+
+  admin: {
+    status: () => get<ProtocolStatus>("/admin/status"),
+    setPaused: (paused: boolean) => post<{ paused: boolean; signature: string | null }>("/admin/pause", { paused }),
+    setDisputeTimeout: (seconds: number) =>
+      post<{ disputeTimeoutSeconds: number; signature: string | null }>("/admin/dispute-timeout", { seconds }),
+  },
+};
