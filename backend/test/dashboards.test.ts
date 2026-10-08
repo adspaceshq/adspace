@@ -119,3 +119,17 @@ test("spot detail gives the sponsor brand, deadlines and dispute, and stays priv
   const stranger = await seedUser(db);
   await assert.rejects(spotDetail(db, { id: stranger.user.id, isReviewer: false }, spot.id, TIMEOUT), /private/);
 });
+
+test("activity feed pages by cursor and filters by role", async () => {
+  const { seller, spot } = await seedListing(db, { deadline: new Date(Date.now() - HOUR), deliveryDueAt: new Date(Date.now() + HOUR), funded: true });
+  const base = Date.now() - 10 * HOUR;
+  for (let i = 0; i < 3; i += 1) {
+    await db.insert(spotEvents).values({ spotId: spot.id, type: `event_${i}`, createdAt: new Date(base + i * HOUR) });
+  }
+  const first = await activityFeed(db, seller.user.id, { limit: 2 });
+  assert.deepEqual(first.map((event) => event.type), ["event_2", "event_1"]);
+  const next = await activityFeed(db, seller.user.id, { limit: 2, before: new Date(first[1].createdAt) });
+  assert.deepEqual(next.map((event) => event.type), ["event_0"]);
+  assert.equal((await activityFeed(db, seller.user.id, { role: "sponsor" })).length, 0);
+  assert.equal((await activityFeed(db, seller.user.id, { role: "creator" })).length, 3);
+});
