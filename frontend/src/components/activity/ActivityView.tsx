@@ -1,18 +1,18 @@
 "use client";
 
 import { useInfiniteQuery } from "@tanstack/react-query";
-import { ExternalLink, History } from "lucide-react";
+import { History } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { activityLabel, groupByDay } from "@/lib/activity";
 import { api } from "@/lib/api/v2";
-import { explorerTxUrl } from "@/lib/chain-config";
 import { queryKeys } from "@/lib/query";
 import { useNow } from "@/lib/use-now";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
+import { Address } from "@/components/ui/Address";
 
 const PAGE = 30;
 type Role = "creator" | "sponsor" | undefined;
@@ -69,11 +69,7 @@ export function ActivityView() {
                       <time dateTime={item.createdAt} className="shrink-0 text-subtle">
                         {new Date(item.createdAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
                       </time>
-                      {item.signature && (
-                        <a href={explorerTxUrl(item.signature)} target="_blank" rel="noreferrer" aria-label="view transaction on explorer" className="text-subtle hover:text-accent">
-                          <ExternalLink className="size-4" />
-                        </a>
-                      )}
+                      {item.signature && <Address value={item.signature} kind="tx" className="hidden text-subtle sm:inline-flex" />}
                     </div>
                   </li>
                 ))}

@@ -1,7 +1,7 @@
-import { AlertCircle, CheckCircle2, ExternalLink, Loader2, PenLine } from "lucide-react";
-import { explorerTxUrl } from "@/lib/chain-config";
+import { AlertCircle, CheckCircle2, Loader2, PenLine } from "lucide-react";
 import { cx } from "@/lib/cx";
 import { Button } from "./Button";
+import { Address } from "./Address";
 
 export type TxPhase = "idle" | "signing" | "submitted" | "confirmed" | "failed";
 
@@ -63,16 +63,7 @@ export function TxStatus({
         {state.phase === "failed" && state.error && (
           <p className="mt-0.5 text-small text-muted">{state.error}</p>
         )}
-        {state.signature && (
-          <a
-            href={explorerTxUrl(state.signature)}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 inline-flex items-center gap-1 text-small text-accent hover:underline"
-          >
-            view on explorer <ExternalLink className="size-3" aria-hidden />
-          </a>
-        )}
+        {state.signature && <Address value={state.signature} kind="tx" chars={6} prefix="tx " className="mt-1 text-small" />}
       </div>
       {state.phase === "failed" && onRetry && (
         <Button size="sm" variant="secondary" onClick={onRetry}>

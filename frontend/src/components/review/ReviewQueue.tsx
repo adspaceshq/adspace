@@ -4,10 +4,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2, ExternalLink, Settings2 } from "lucide-react";
+import { CheckCircle2, Settings2 } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { ReviewSummary } from "@/lib/api/types";
-import { explorerTxUrl } from "@/lib/chain-config";
 import { queryKeys } from "@/lib/query";
 import { useTx } from "@/lib/use-tx";
 import { Button } from "@/components/ui/Button";
@@ -18,6 +17,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { ResolveDisputeModal } from "./ResolveDisputeModal";
+import { Address } from "@/components/ui/Address";
 
 type Tab = "listings" | "disputes" | "payouts" | "failed";
 const TABS: Tab[] = ["listings", "disputes", "payouts", "failed"];
@@ -138,11 +138,7 @@ function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings">; data: Review
           <span className="w-36 shrink-0 font-mono">{tx.op}</span>
           <span className="min-w-0 flex-1 truncate text-muted">{tx.error ?? "unknown error"}</span>
           <span className="shrink-0 text-subtle">{new Date(tx.updatedAt).toLocaleString()}</span>
-          {tx.signature && (
-            <a href={explorerTxUrl(tx.signature)} target="_blank" rel="noreferrer" aria-label="view on explorer" className="text-accent">
-              <ExternalLink className="size-4" />
-            </a>
-          )}
+          {tx.signature && <Address value={tx.signature} kind="tx" className="text-subtle" />}
         </li>
       ))}
     </ul>

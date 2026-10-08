@@ -2,14 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import { explorerTxUrl } from "@/lib/chain-config";
 import { activityLabel, ago } from "@/lib/activity";
 import { queryKeys } from "@/lib/query";
 import { useNow } from "@/lib/use-now";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { Address } from "@/components/ui/Address";
 
 export function ActivityFeed({ limit = 8 }: { limit?: number }) {
   const query = useQuery({ queryKey: queryKeys.activity, queryFn: () => api.me.activity(), refetchInterval: 30_000 });
@@ -41,11 +40,7 @@ export function ActivityFeed({ limit = 8 }: { limit?: number }) {
               </div>
               <span className="flex shrink-0 items-center gap-1.5 text-subtle">
                 {ago(item.createdAt, now)}
-                {item.signature && (
-                  <a href={explorerTxUrl(item.signature)} target="_blank" rel="noreferrer" aria-label="view on explorer" className="hover:text-accent">
-                    <ExternalLink className="size-3" />
-                  </a>
-                )}
+                {item.signature && <Address value={item.signature} kind="tx" chars={3} />}
               </span>
             </li>
           ))}

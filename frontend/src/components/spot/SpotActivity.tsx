@@ -1,12 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLink } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import { explorerTxUrl } from "@/lib/chain-config";
 import { formatUsd } from "@/lib/money";
 import { queryKeys } from "@/lib/query";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
+import { Address } from "@/components/ui/Address";
 
 const LABELS: Record<string, string> = {
   claimed: "spot claimed",
@@ -53,11 +52,7 @@ export function SpotActivity({ spotId }: { spotId: string }) {
               <p className="flex flex-wrap items-center gap-x-2 text-small text-muted">
                 <time dateTime={event.createdAt}>{new Date(event.createdAt).toLocaleString()}</time>
                 {extra && <span>· {extra}</span>}
-                {event.signature && (
-                  <a href={explorerTxUrl(event.signature)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-                    explorer <ExternalLink className="size-3" aria-hidden />
-                  </a>
-                )}
+                {event.signature && <Address value={event.signature} kind="tx" prefix="tx " />}
               </p>
             </div>
           </li>

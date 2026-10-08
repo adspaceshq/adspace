@@ -3,9 +3,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, ExternalLink, PauseCircle, PlayCircle } from "lucide-react";
+import { ArrowLeft, PauseCircle, PlayCircle } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import { explorerAddressUrl } from "@/lib/chain-config";
 import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
@@ -14,6 +13,7 @@ import { Input } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
+import { Address } from "@/components/ui/Address";
 
 type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
 
@@ -75,9 +75,7 @@ export function OpsPanel() {
         ].map(([label, address]) => (
           <p key={label} className="flex flex-wrap items-center gap-2">
             <span className="w-32 text-muted">{label}</span>
-            <a href={explorerAddressUrl(address)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 font-mono text-accent hover:underline">
-              {address.slice(0, 6)}…{address.slice(-6)} <ExternalLink className="size-3" aria-hidden />
-            </a>
+            <Address value={address} chars={6} />
           </p>
         ))}
       </Card>
