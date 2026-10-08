@@ -141,3 +141,48 @@ export function PhotoTile({
     </div>
   );
 }
+
+export interface MockupSpot {
+  index: number;
+  layout: { x: number; y: number; w: number; h?: number };
+  taken: boolean;
+  highlight?: boolean;
+}
+
+// A listing photo with its ad spots drawn the same way as the in-app SpotMockup
+// (x/y are the spot's centre in %, w/h its size in % of the photo width/height).
+export function MockupTile({ src, width, height, spots, rotate = 0 }: { src: string | null; width: number; height: number; spots: MockupSpot[]; rotate?: number }) {
+  return (
+    <div style={{ display: "flex", position: "relative", width, height, transform: `rotate(${rotate}deg)` }}>
+      <PhotoTile src={src} width={width} height={height} style={{ position: "absolute", left: 0, top: 0 }} />
+      {spots.map((spot) => {
+        const w = (spot.layout.w / 100) * width;
+        const h = spot.layout.h ? (spot.layout.h / 100) * height : w;
+        const fill = spot.highlight ? og.accent : spot.taken ? "rgba(2, 8, 23, 0.55)" : "rgba(255, 255, 255, 0.9)";
+        return (
+          <div
+            key={spot.index}
+            style={{
+              position: "absolute",
+              left: (spot.layout.x / 100) * width - w / 2,
+              top: (spot.layout.y / 100) * height - h / 2,
+              width: w,
+              height: h,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: Math.min(14, w / 5),
+              border: `3px solid ${spot.highlight ? og.surface : spot.taken ? "rgba(2, 8, 23, 0.25)" : og.surface}`,
+              background: fill,
+              color: spot.taken || spot.highlight ? og.surface : og.ink,
+              fontSize: Math.max(14, Math.min(28, w / 3)),
+              fontWeight: 700,
+            }}
+          >
+            {spot.index + 1}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
