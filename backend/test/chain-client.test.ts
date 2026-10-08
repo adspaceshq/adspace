@@ -46,3 +46,14 @@ test("program errors decode to their IDL message", () => {
 test("network expiry maps to a retryable error", () => {
   assert.equal(decodeChainError(new Error("Blockhash not found")).status, 503);
 });
+
+test("Privy authorization failures become user-fixable errors", async () => {
+  const { signingError } = await import("../src/chain/signers.js");
+  const reconnect = signingError(new Error('401 {"error":"No valid authorization keys or user signing keys available"}')) as Error & { status?: number };
+  assert.equal(reconnect.status, 409);
+  assert.match(reconnect.message, /reconnect/);
+  const config = signingError(new Error("Invalid wallet authorization private key")) as Error & { status?: number };
+  assert.equal(config.status, 503);
+  const other = new Error("blockhash not found");
+  assert.equal(signingError(other), other);
+});
