@@ -137,6 +137,7 @@ export interface ListingSeller {
 }
 
 export interface ListingPhoto {
+  id?: string;
   url: string;
   width: number | null;
   height: number | null;
