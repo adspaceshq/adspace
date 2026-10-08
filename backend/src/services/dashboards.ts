@@ -1,7 +1,20 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../db/client.js";
-import { bids, chainTxs, disputes, listings, settlements, spotEvents, spots, users } from "../db/schema.js";
+import {
+  bids,
+  chainTxs,
+  disputes,
+  listingPhotos,
+  listingPosts,
+  listings,
+  mediaAssets,
+  settlements,
+  spotEvents,
+  spotProofPosts,
+  spots,
+  users,
+} from "../db/schema.js";
 import { payoutAvailableAt } from "./settlement.js";
 
 export class DashboardError extends Error {
@@ -182,6 +195,95 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
       listing: { id: listing.id, slug: listing.slug, title: listing.title, mode: listing.mode, deadline: listing.deadline, deliveryDueAt: listing.deliveryDueAt },
       reviewUntil: spot.state === "delivered" ? payoutAvailableAt(listing) : null,
     })),
+  };
+}
+
+// Everything a sponsor, the creator or a reviewer needs on one spot page. Private to them.
+export async function spotDetail(
+  db: Db,
+  actor: { id: string; isReviewer: boolean },
+  spotId: string,
+  disputeTimeoutSeconds: number,
+) {
+  const [row] = await db
+    .select({
+      spot: spots,
+      listing: listings,
+      seller: { id: users.id, handle: users.handle, displayName: users.displayName, avatarUrl: users.avatarUrl, verified: users.verified },
+    })
+    .from(spots)
+    .innerJoin(listings, eq(listings.id, spots.listingId))
+    .innerJoin(users, eq(users.id, listings.sellerId))
+    .where(eq(spots.id, spotId));
+  if (!row) throw new DashboardError("spot not found", 404);
+  const { spot, listing, seller } = row;
+  const role = actor.id === spot.buyerId ? "sponsor" : actor.id === listing.sellerId ? "creator" : actor.isReviewer ? "reviewer" : null;
+  if (!role) throw new DashboardError("this spot is private");
+
+  const [photos, proofPosts, [dispute], [settlement]] = await Promise.all([
+    db
+      .select({ url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
+      .from(listingPhotos)
+      .innerJoin(mediaAssets, eq(mediaAssets.id, listingPhotos.assetId))
+      .where(eq(listingPhotos.listingId, listing.id))
+      .orderBy(asc(listingPhotos.position)),
+    db
+      .select({ id: listingPosts.id, kind: listingPosts.kind, url: listingPosts.url, body: listingPosts.body, createdAt: listingPosts.createdAt })
+      .from(spotProofPosts)
+      .innerJoin(listingPosts, eq(listingPosts.id, spotProofPosts.postId))
+      .where(eq(spotProofPosts.spotId, spot.id))
+      .orderBy(asc(listingPosts.createdAt)),
+    db.select().from(disputes).where(eq(disputes.spotId, spot.id)).orderBy(desc(disputes.openedAt)).limit(1),
+    db.select().from(settlements).where(eq(settlements.spotId, spot.id)),
+  ]);
+
+  const reviewUntil = payoutAvailableAt(listing);
+  return {
+    role,
+    spot: {
+      id: spot.id,
+      index: spot.index,
+      label: spot.label,
+      price: spot.price,
+      layout: spot.layout,
+      state: spot.state,
+      amount: spot.amount,
+      brand: spot.brand,
+      proofSubmittedAt: spot.proofSubmittedAt,
+      chainAddress: spot.chainAddress,
+      buyerIsYou: spot.buyerId === actor.id,
+    },
+    listing: {
+      id: listing.id,
+      slug: listing.slug,
+      title: listing.title,
+      mode: listing.mode,
+      surface: listing.surface,
+      deadline: listing.deadline,
+      deliveryDueAt: listing.deliveryDueAt,
+      reviewWindowSeconds: listing.reviewWindowSeconds,
+      chainAddress: listing.chainAddress,
+      photos,
+    },
+    seller,
+    proofPosts,
+    dispute: dispute
+      ? {
+          id: dispute.id,
+          state: dispute.state,
+          reason: dispute.reason,
+          openedAt: dispute.openedAt,
+          closedAt: dispute.closedAt,
+          sellerShareBps: dispute.sellerShareBps,
+          decision: dispute.decision,
+          timeoutAt: new Date(dispute.openedAt.getTime() + disputeTimeoutSeconds * 1000),
+        }
+      : null,
+    settlement: settlement ?? null,
+    deadlines: {
+      deliveryDueAt: listing.deliveryDueAt,
+      reviewUntil,
+    },
   };
 }
 
