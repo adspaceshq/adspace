@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, Check, Copy, ShieldCheck, Wallet, Zap } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, Check, CircleCheck, Copy, ShieldCheck, Wallet, Zap } from "lucide-react";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api/v2";
 import type { Withdrawal } from "@/lib/api/types";
@@ -106,6 +106,8 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
   const [amount, setAmount] = useState("");
   const [errors, setErrors] = useState<WithdrawErrors>({});
   const [reviewing, setReviewing] = useState(false);
+  // What was actually sent, so the receipt survives the form being cleared.
+  const [sent, setSent] = useState<{ amount: string; destination: string }>();
   const [setupError, setSetupError] = useState<string>();
   const used = usedInLastDay(history, now);
   const max = withdrawable(balance ?? 0n, used);
@@ -119,6 +121,7 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
     [wallet],
   );
   const tx = useTx(send);
+  const done = tx.state.phase === "confirmed";
 
   const review = () => {
     const next = validateWithdrawal({ destination, amount, ownAddress: address, balance: balance ?? 0n, used });
@@ -129,7 +132,9 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
     }
   };
   const confirm = async () => {
-    const result = await tx.execute(destination.trim(), toInputValue(toBaseUnits(amount)));
+    const sending = { amount: toBaseUnits(amount), destination: destination.trim() };
+    setSent(sending);
+    const result = await tx.execute(sending.destination, toInputValue(sending.amount));
     await Promise.all([queryClient.invalidateQueries({ queryKey: ["withdrawals"] }), queryClient.invalidateQueries({ queryKey: ["balance", address] })]);
     if (result) {
       setAmount("");
@@ -187,10 +192,10 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
       <Modal
         open={reviewing}
         onClose={() => !tx.busy && setReviewing(false)}
-        title={tx.state.phase === "confirmed" ? "sent" : "confirm withdrawal"}
-        description={tx.state.phase === "confirmed" ? undefined : "you'll be asked for your two-factor code. transfers on Solana can't be reversed."}
+        title={done ? "withdrawal sent" : "confirm withdrawal"}
+        description={done ? undefined : "you'll be asked for your two-factor code. transfers on Solana can't be reversed."}
         footer={
-          tx.state.phase === "confirmed" ? (
+          done ? (
             <Button onClick={() => setReviewing(false)}>done</Button>
           ) : (
             <>
@@ -204,19 +209,49 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
           )
         }
       >
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-body">
-          <dt className="text-muted">amount</dt>
-          <dd className="font-semibold tabular-nums">{amount ? formatUsd(safeBase(amount)) : "-"}</dd>
-          <dt className="text-muted">to</dt>
-          <dd className="text-small">
-            <Address value={destination.trim()} full explorer={false} />
-          </dd>
-          <dt className="text-muted">network fee</dt>
-          <dd>paid by adspaces</dd>
-        </dl>
-        <div className="mt-4">
-          <TxStatus state={tx.state} action="withdraw" onRetry={tx.retry} />
-        </div>
+        {done && sent ? (
+          <div className="flex flex-col items-center gap-4 py-2 text-center">
+            <span className="flex size-14 items-center justify-center rounded-full bg-success-soft">
+              <CircleCheck className="size-7 text-success" aria-hidden />
+            </span>
+            <div>
+              <p className="text-display font-semibold tabular-nums">{formatUsd(sent.amount)}</p>
+              <p className="text-small text-muted">USDC is on its way. it usually lands within a few seconds.</p>
+            </div>
+            <dl className="grid w-full grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-card bg-canvas p-4 text-left text-small">
+              <dt className="text-muted">to</dt>
+              <dd className="flex justify-end">
+                <Address value={sent.destination} chars={6} />
+              </dd>
+              {tx.state.signature && (
+                <>
+                  <dt className="text-muted">transaction</dt>
+                  <dd className="flex justify-end">
+                    <Address value={tx.state.signature} kind="tx" chars={6} />
+                  </dd>
+                </>
+              )}
+              <dt className="text-muted">network fee</dt>
+              <dd className="text-right">paid by adspaces</dd>
+            </dl>
+          </div>
+        ) : (
+          <>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-body">
+              <dt className="text-muted">amount</dt>
+              <dd className="font-semibold tabular-nums">{amount ? formatUsd(safeBase(amount)) : "-"}</dd>
+              <dt className="text-muted">to</dt>
+              <dd className="text-small">
+                <Address value={destination.trim()} full explorer={false} />
+              </dd>
+              <dt className="text-muted">network fee</dt>
+              <dd>paid by adspaces</dd>
+            </dl>
+            <div className="mt-4">
+              <TxStatus state={tx.state} action="withdraw" onRetry={tx.retry} />
+            </div>
+          </>
+        )}
       </Modal>
     </Card>
   );
