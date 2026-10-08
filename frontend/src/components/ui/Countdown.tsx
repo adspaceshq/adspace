@@ -38,7 +38,9 @@ export function Countdown({
 
   const remaining = target - now;
   return (
+    // Server and browser render at different instants; the client value wins after hydration.
     <time
+      suppressHydrationWarning
       dateTime={new Date(target).toISOString()}
       title={new Date(target).toLocaleString()}
       className={cx(
