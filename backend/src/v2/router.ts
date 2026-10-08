@@ -13,7 +13,7 @@ import {
   type DraftInput,
   type ReviewDecision,
 } from "../services/listing-lifecycle.js";
-import { getOwnedListing, getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewQueue } from "../services/listing-queries.js";
+import { getOwnedListing, getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewQueue, getSponsoredSpot } from "../services/listing-queries.js";
 import { parseAssetKind, registerMedia, signUpload } from "../services/media.js";
 import { claimSpot, placeBid } from "../services/spot-purchase.js";
 import { createPost, deletePost, listPosts, recordMetrics } from "../services/listing-posts.js";
@@ -219,6 +219,14 @@ export function createV2Router(options: {
       } catch (error) {
         send(res, { available: false, reason: (error as Error).message });
       }
+    }),
+  );
+  router.get(
+    "/listings/:slug/spots/:index/sponsor",
+    handle(async (req, res) => {
+      const sponsored = await getSponsoredSpot(db, req.params.slug, Number(req.params.index));
+      if (!sponsored) return void send(res, { error: "sponsored spot not found" }, 404);
+      send(res, sponsored);
     }),
   );
   router.get(

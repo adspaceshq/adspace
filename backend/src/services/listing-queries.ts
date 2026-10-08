@@ -158,3 +158,19 @@ export async function reviewQueue(db: Db) {
   const hydrated = await hydrate(db, rows.map((row) => row.listing));
   return hydrated.map((listing, index) => ({ ...listing, seller: publicSeller(rows[index].seller) }));
 }
+
+const SPONSORED = ["funded", "delivered", "disputed", "settled"];
+
+// Public "sponsored by" data for a sold spot: the brand the sponsor chose to display.
+// The sponsor's account and wallet stay private.
+export async function getSponsoredSpot(db: Db, slug: string, index: number) {
+  if (!Number.isInteger(index) || index < 0) return undefined;
+  const listing = await getPublishedListing(db, slug);
+  if (!listing) return undefined;
+  const [row] = await db
+    .select({ id: spots.id, index: spots.index, state: spots.state, brand: spots.brand })
+    .from(spots)
+    .where(and(eq(spots.listingId, listing.id), eq(spots.index, index)));
+  if (!row || !SPONSORED.includes(row.state) || !row.brand) return undefined;
+  return { listing, spot: { id: row.id, index: row.index, state: row.state }, brand: row.brand };
+}
