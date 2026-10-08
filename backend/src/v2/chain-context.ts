@@ -21,6 +21,7 @@ export interface ChainContext {
   readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
+  readDisputeTimeoutSeconds: () => Promise<number>;
 }
 
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -107,6 +108,11 @@ export function createChainContext(options: {
 
     async accountExists(address) {
       return (await connection.getAccountInfo(address, "confirmed")) !== null;
+    },
+
+    async readDisputeTimeoutSeconds() {
+      const config = await program.account.config.fetch(pdas(program.programId).config());
+      return config.disputeTimeoutSeconds.toNumber();
     },
   };
 }

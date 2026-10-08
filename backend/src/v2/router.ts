@@ -18,6 +18,7 @@ import { createPost, deletePost, listPosts, recordMetrics } from "../services/li
 import { listMessages, postMessage } from "../services/spot-messages.js";
 import { submitSpotProof } from "../services/spot-proof.js";
 import { payoutSeller } from "../services/settlement.js";
+import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../services/disputes.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -360,6 +361,64 @@ export function createV2Router(options: { db: Db; chain?: ChainContext; reviewer
           req.params.id,
           me(req).id,
         ),
+      );
+    }),
+  );
+  const disputeDeps = (): DisputeDeps => {
+    const context = requireChain();
+    return {
+      db,
+      program: context.program,
+      mint: context.mint,
+      feePayer: context.reviewer,
+      resolver: context.reviewer,
+      runTx: context.runTx,
+      ensureRent: context.ensureSellerFunding,
+      readListingSnapshot: context.readListingSnapshot,
+      readVaultBalance: context.readVaultBalance,
+      accountExists: context.accountExists,
+      readDisputeTimeoutSeconds: context.readDisputeTimeoutSeconds,
+      listingBaseUrl: options.metadataBaseUrl,
+    };
+  };
+  router.post(
+    "/spots/:id/disputes",
+    ...mutate,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as { reason?: unknown; evidenceAssetIds?: unknown };
+      const signer = await requireChain().userSigner(me(req));
+      const result = await raiseDispute(disputeDeps(), me(req).id, signer, req.params.id, {
+        reason: typeof body.reason === "string" ? body.reason : "",
+        evidenceAssetIds: Array.isArray(body.evidenceAssetIds) ? body.evidenceAssetIds.filter((id): id is string => typeof id === "string") : undefined,
+      });
+      send(res, result, 201);
+    }),
+  );
+  router.post(
+    "/spots/:id/disputes/withdraw",
+    ...mutate,
+    handle(async (req, res) => {
+      const signer = await requireChain().userSigner(me(req));
+      send(res, await withdrawDispute(disputeDeps(), me(req).id, signer, req.params.id));
+    }),
+  );
+  router.post(
+    "/spots/:id/disputes/timeout",
+    ...mutate,
+    handle(async (req, res) => send(res, await timeoutDispute(disputeDeps(), req.params.id, me(req).id))),
+  );
+  router.post(
+    "/review/spots/:id/resolve",
+    ...mutate,
+    requireReviewer,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as { sellerShareBps?: unknown; decision?: unknown };
+      send(
+        res,
+        await resolveDispute(disputeDeps(), me(req).id, req.params.id, {
+          sellerShareBps: Number(body.sellerShareBps),
+          decision: typeof body.decision === "string" ? body.decision : "",
+        }),
       );
     }),
   );
