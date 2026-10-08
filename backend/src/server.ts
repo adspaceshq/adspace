@@ -78,6 +78,7 @@ async function start() {
     db,
     chain: v2Chain,
     reviewers: config.platformReviewers,
+    admins: (process.env.PLATFORM_ADMINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
     termsVersion: TERMS_VERSION,
     metadataBaseUrl: config.frontendUrl,
     withdrawalDailyLimit: BigInt(Math.round(Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000) * 1_000_000)),

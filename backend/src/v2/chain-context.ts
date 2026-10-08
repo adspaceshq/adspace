@@ -8,6 +8,7 @@ import { loadKeypair } from "../keypair.js";
 import type { SessionUser } from "../types.js";
 import type { ListingSnapshot } from "../services/settlement.js";
 import type { ChainSpotStatus, SignatureOutcome } from "../services/reconciler.js";
+import type { ProtocolStatus } from "../services/admin.js";
 
 export interface ChainContext {
   connection: Connection;
@@ -26,6 +27,7 @@ export interface ChainContext {
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
   readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
+  readProtocolStatus: () => Promise<ProtocolStatus>;
 }
 
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -144,6 +146,17 @@ export function createChainContext(options: {
       if (!account) return "closed";
       const statuses: ChainSpotStatus[] = ["open", "funded", "finalized", "cancelled", "disputed"];
       return statuses[account.data[49]] ?? "closed";
+    },
+
+    async readProtocolStatus() {
+      const config = await program.account.config.fetch(pdas(program.programId).config());
+      return {
+        authority: config.authority,
+        treasury: config.treasury,
+        feeBps: config.feeBps,
+        paused: config.paused,
+        disputeTimeoutSeconds: config.disputeTimeoutSeconds.toNumber(),
+      };
     },
 
     async readDisputeTimeoutSeconds() {

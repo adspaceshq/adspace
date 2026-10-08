@@ -22,6 +22,7 @@ import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type Dis
 import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
 import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
 import { reconcile } from "../services/reconciler.js";
+import { setDisputeTimeout, setPaused, type AdminDeps } from "../services/admin.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -117,6 +118,8 @@ export function createV2Router(options: {
   db: Db;
   chain?: ChainContext;
   reviewers: readonly string[];
+  // Can pause the protocol and change protocol settings; matched like reviewers (handle or user id).
+  admins?: readonly string[];
   termsVersion: string;
   metadataBaseUrl: string;
   withdrawalDailyLimit?: bigint;
@@ -154,6 +157,11 @@ export function createV2Router(options: {
     if (!req.v2Session || !isReviewer(req.v2Session.user, reviewers)) return void send(res, { error: "reviewers only" }, 403);
     next();
   };
+  const admins = options.admins ?? [];
+  const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
+    if (!req.v2Session || !isReviewer(req.v2Session.user, admins)) return void send(res, { error: "admins only" }, 403);
+    next();
+  };
   const me = (req: Request) => req.v2Session!.user;
   const mutate = [mutationLimiter, requireUser, requireCsrf];
 
@@ -166,6 +174,7 @@ export function createV2Router(options: {
     csrfToken: session.csrfToken,
     expiresAt: session.expiresAt.toISOString(),
     isReviewer: isReviewer(session.user, reviewers),
+    isAdmin: isReviewer(session.user, admins),
     onboarding: await auth.getOnboarding(session.user.id),
   });
 
@@ -508,6 +517,38 @@ export function createV2Router(options: {
     handle(async (_req, res) => {
       const context = requireChain();
       send(res, await reconcile({ db, signatureOutcomes: context.signatureOutcomes, readSpotStatus: context.readSpotStatus }));
+    }),
+  );
+  const adminDeps = (): AdminDeps => {
+    const context = requireChain();
+    return { db, program: context.program, authority: context.reviewer, runTx: context.runTx, readProtocolStatus: context.readProtocolStatus };
+  };
+  router.get(
+    "/admin/status",
+    requireUser,
+    handle(async (req, res) => {
+      if (!isReviewer(me(req), admins) && !isReviewer(me(req), reviewers)) return void send(res, { error: "reviewers only" }, 403);
+      const status = await requireChain().readProtocolStatus();
+      send(res, { ...status, authority: status.authority.toBase58(), treasury: status.treasury.toBase58() });
+    }),
+  );
+  router.post(
+    "/admin/pause",
+    ...mutate,
+    requireAdmin,
+    handle(async (req, res) => {
+      if (typeof req.body?.paused !== "boolean") throw new BadRequest("paused must be true or false");
+      const result = await setPaused(adminDeps(), me(req).id, req.body.paused);
+      send(res, { paused: result.status.paused, signature: result.signature });
+    }),
+  );
+  router.post(
+    "/admin/dispute-timeout",
+    ...mutate,
+    requireAdmin,
+    handle(async (req, res) => {
+      const result = await setDisputeTimeout(adminDeps(), me(req).id, Number(req.body?.seconds));
+      send(res, { disputeTimeoutSeconds: result.status.disputeTimeoutSeconds, signature: result.signature });
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));

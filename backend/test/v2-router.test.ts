@@ -97,3 +97,13 @@ test("on-chain actions report 503 when the chain is not configured", async () =>
     .set("X-CSRF-Token", seller.csrf);
   assert.equal(response.status, 503);
 });
+
+test("protocol admin actions are refused for non-admins", async () => {
+  const reviewer = await signIn("reviewer_one");
+  const response = await request(app)
+    .post("/api/v2/admin/pause")
+    .set("Cookie", reviewer.cookie)
+    .set("X-CSRF-Token", reviewer.csrf)
+    .send({ paused: true });
+  assert.equal(response.status, 403);
+});
