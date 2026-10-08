@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit";
 import { cookieOptions, userFromAccessToken } from "../auth.js";
 import { csrfMatches, isReviewer, type StoredSession } from "../db.js";
 import type { Db } from "../db/client.js";
-import { AppAuthRepository } from "../repositories/app-auth.js";
+import { AppAuthRepository, parseHandle } from "../repositories/app-auth.js";
 import {
   acceptTermsAndPublish,
   createDraft,
@@ -206,6 +206,18 @@ export function createV2Router(options: {
   );
   router.put("/me/onboarding", ...mutate, handle(async (req, res) => send(res, await auth.saveOnboarding(me(req).id, req.body))));
   router.patch("/me", ...mutate, handle(async (req, res) => send(res, await auth.updateProfile(me(req).id, req.body ?? {}))));
+  router.get(
+    "/handles/:handle/available",
+    requireUser,
+    handle(async (req, res) => {
+      try {
+        const clean = parseHandle(req.params.handle);
+        send(res, { handle: clean, available: await auth.isHandleAvailable(clean, me(req).id) });
+      } catch (error) {
+        send(res, { available: false, reason: (error as Error).message });
+      }
+    }),
+  );
   router.get(
     "/users/:handle",
     handle(async (req, res) => {
