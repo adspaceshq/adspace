@@ -83,7 +83,7 @@ export const api = {
 
   me: {
     saveOnboarding: (input: unknown) => request<Session["onboarding"]>("PUT", "/me/onboarding", input),
-    updateProfile: (patch: { bio?: string; payoutWallet?: string }) => request<PublicProfile>("PATCH", "/me", patch),
+    updateProfile: (patch: { displayName?: string; handle?: string; avatar?: string | null; bio?: string; payoutWallet?: string }) => request<PublicProfile>("PATCH", "/me", patch),
     listings: () => get<OwnedListing[]>("/me/listings"),
     listing: (id: string) => get<OwnedListing>(`/me/listings/${enc(id)}`),
     creatorDashboard: () => get<CreatorDashboard>("/me/dashboard/creator"),
@@ -95,6 +95,9 @@ export const api = {
       post<{ withdrawal: Withdrawal; signature: string }>("/me/withdrawals", { destination, amount }),
   },
 
+  handles: {
+    available: (handle: string) => get<{ handle?: string; available: boolean; reason?: string }>(`/handles/${enc(handle.replace(/^@/, ""))}/available`),
+  },
   users: {
     byHandle: (handle: string) => get<PublicProfile>(`/users/${enc(handle.replace(/^@/, ""))}`),
   },

@@ -18,7 +18,7 @@ export type ListingState =
 export type SpotState = "open" | "funded" | "delivered" | "disputed" | "settled" | "refunded" | "cancelled";
 
 export interface Onboarding {
-  accountType: "creator" | "sponsor";
+  accountType: "creator" | "sponsor" | "both";
   creator?: { socials: Partial<Record<"x" | "instagram" | "youtube" | "tiktok", string>> };
   sponsor?: { brandName: string; category: string; website?: string };
 }
@@ -32,6 +32,7 @@ export interface Session {
   email?: string;
   walletAddress?: string;
   hasX: boolean;
+  emailVerified?: boolean;
   csrfToken: string;
   expiresAt: IsoDate;
   isReviewer: boolean;
