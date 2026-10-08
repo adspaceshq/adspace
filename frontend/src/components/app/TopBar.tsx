@@ -6,6 +6,7 @@ import Logo from "@/components/Logo";
 import { Button } from "@/components/ui/Button";
 import { useSession } from "@/lib/session";
 import { cx } from "@/lib/cx";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { AccountMenu } from "./AccountMenu";
 import { WalletChip } from "./WalletChip";
 
@@ -47,6 +48,7 @@ export function TopBar() {
               <span className="hidden sm:block">
                 <WalletChip address={session.walletAddress} />
               </span>
+              <NotificationBell />
               <AccountMenu session={session} onSignOut={() => void signOut()} />
             </>
           ) : (
