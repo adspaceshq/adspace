@@ -1411,6 +1411,53 @@ export type Adspaces = {
       ]
     },
     {
+      "name": "setDisputeTimeout",
+      "discriminator": [
+        98,
+        240,
+        248,
+        196,
+        183,
+        236,
+        131,
+        111
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "seconds",
+          "type": "i64"
+        }
+      ]
+    },
+    {
       "name": "submitProof",
       "discriminator": [
         54,
@@ -1522,6 +1569,24 @@ export type Adspaces = {
         {
           "name": "caller",
           "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "listing",
@@ -2170,6 +2235,19 @@ export type Adspaces = {
       ]
     },
     {
+      "name": "disputeTimeoutUpdated",
+      "discriminator": [
+        92,
+        173,
+        201,
+        161,
+        197,
+        205,
+        163,
+        224
+      ]
+    },
+    {
       "name": "disputeWithdrawn",
       "discriminator": [
         147,
@@ -2543,6 +2621,11 @@ export type Adspaces = {
       "code": 6045,
       "name": "disputeNotTimedOut",
       "msg": "Dispute has not timed out yet."
+    },
+    {
+      "code": 6046,
+      "name": "invalidDisputeTimeout",
+      "msg": "Dispute timeout is outside the allowed range."
     }
   ],
   "types": [
@@ -2649,6 +2732,13 @@ export type Adspaces = {
               "Appended after `bump` so pre-pause config accounts migrate by realloc alone."
             ],
             "type": "bool"
+          },
+          {
+            "name": "disputeTimeoutSeconds",
+            "docs": [
+              "Appended last; how long an unresolved dispute stays open before the buyer can be refunded."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -2949,6 +3039,22 @@ export type Adspaces = {
           {
             "name": "amount",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "disputeTimeoutUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "previousSeconds",
+            "type": "i64"
+          },
+          {
+            "name": "newSeconds",
+            "type": "i64"
           }
         ]
       }
@@ -3434,6 +3540,11 @@ export type Adspaces = {
       "value": "[99, 111, 110, 102, 105, 103]"
     },
     {
+      "name": "defaultDisputeTimeoutSeconds",
+      "type": "i64",
+      "value": "259200"
+    },
+    {
       "name": "defaultReviewWindowSeconds",
       "type": "i64",
       "value": "172800"
@@ -3442,11 +3553,6 @@ export type Adspaces = {
       "name": "disputeSeed",
       "type": "bytes",
       "value": "[100, 105, 115, 112, 117, 116, 101]"
-    },
-    {
-      "name": "disputeTimeoutSeconds",
-      "type": "i64",
-      "value": "1209600"
     },
     {
       "name": "listingClosed",
@@ -3464,6 +3570,11 @@ export type Adspaces = {
       "value": "[108, 105, 115, 116, 105, 110, 103]"
     },
     {
+      "name": "maxDisputeTimeoutSeconds",
+      "type": "i64",
+      "value": "2592000"
+    },
+    {
       "name": "maxReviewWindowSeconds",
       "type": "i64",
       "value": "2592000"
@@ -3472,6 +3583,11 @@ export type Adspaces = {
       "name": "maxSpotsPerListing",
       "type": "u8",
       "value": "60"
+    },
+    {
+      "name": "minDisputeTimeoutSeconds",
+      "type": "i64",
+      "value": "3600"
     },
     {
       "name": "minReviewWindowSeconds",

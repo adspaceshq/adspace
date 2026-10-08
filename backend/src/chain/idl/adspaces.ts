@@ -1408,6 +1408,53 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "set_dispute_timeout",
+      "discriminator": [
+        98,
+        240,
+        248,
+        196,
+        183,
+        236,
+        131,
+        111
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "seconds",
+          "type": "i64"
+        }
+      ]
+    },
+    {
       "name": "submit_proof",
       "discriminator": [
         54,
@@ -1519,6 +1566,24 @@ export const ADSPACES_IDL = {
         {
           "name": "caller",
           "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "listing",
@@ -2167,6 +2232,19 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "DisputeTimeoutUpdated",
+      "discriminator": [
+        92,
+        173,
+        201,
+        161,
+        197,
+        205,
+        163,
+        224
+      ]
+    },
+    {
       "name": "DisputeWithdrawn",
       "discriminator": [
         147,
@@ -2540,6 +2618,11 @@ export const ADSPACES_IDL = {
       "code": 6045,
       "name": "DisputeNotTimedOut",
       "msg": "Dispute has not timed out yet."
+    },
+    {
+      "code": 6046,
+      "name": "InvalidDisputeTimeout",
+      "msg": "Dispute timeout is outside the allowed range."
     }
   ],
   "types": [
@@ -2646,6 +2729,13 @@ export const ADSPACES_IDL = {
               "Appended after `bump` so pre-pause config accounts migrate by realloc alone."
             ],
             "type": "bool"
+          },
+          {
+            "name": "dispute_timeout_seconds",
+            "docs": [
+              "Appended last; how long an unresolved dispute stays open before the buyer can be refunded."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -2946,6 +3036,22 @@ export const ADSPACES_IDL = {
           {
             "name": "amount",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisputeTimeoutUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "previous_seconds",
+            "type": "i64"
+          },
+          {
+            "name": "new_seconds",
+            "type": "i64"
           }
         ]
       }
@@ -3431,6 +3537,11 @@ export const ADSPACES_IDL = {
       "value": "[99, 111, 110, 102, 105, 103]"
     },
     {
+      "name": "DEFAULT_DISPUTE_TIMEOUT_SECONDS",
+      "type": "i64",
+      "value": "259200"
+    },
+    {
       "name": "DEFAULT_REVIEW_WINDOW_SECONDS",
       "type": "i64",
       "value": "172800"
@@ -3439,11 +3550,6 @@ export const ADSPACES_IDL = {
       "name": "DISPUTE_SEED",
       "type": "bytes",
       "value": "[100, 105, 115, 112, 117, 116, 101]"
-    },
-    {
-      "name": "DISPUTE_TIMEOUT_SECONDS",
-      "type": "i64",
-      "value": "1209600"
     },
     {
       "name": "LISTING_CLOSED",
@@ -3461,6 +3567,11 @@ export const ADSPACES_IDL = {
       "value": "[108, 105, 115, 116, 105, 110, 103]"
     },
     {
+      "name": "MAX_DISPUTE_TIMEOUT_SECONDS",
+      "type": "i64",
+      "value": "2592000"
+    },
+    {
       "name": "MAX_REVIEW_WINDOW_SECONDS",
       "type": "i64",
       "value": "2592000"
@@ -3469,6 +3580,11 @@ export const ADSPACES_IDL = {
       "name": "MAX_SPOTS_PER_LISTING",
       "type": "u8",
       "value": "60"
+    },
+    {
+      "name": "MIN_DISPUTE_TIMEOUT_SECONDS",
+      "type": "i64",
+      "value": "3600"
     },
     {
       "name": "MIN_REVIEW_WINDOW_SECONDS",
