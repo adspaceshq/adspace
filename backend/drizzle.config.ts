@@ -10,6 +10,7 @@ export default defineConfig({
   schema: "./src/db/schema.ts",
   out: process.env.DRIZZLE_OUT ?? "./drizzle",
   dbCredentials: { url },
+  schemaFilter: ["app"],
   strict: true,
   verbose: true,
 });
