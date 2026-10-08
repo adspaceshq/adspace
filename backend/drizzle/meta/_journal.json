@@ -22,6 +22,20 @@
       "when": 1791452043495,
       "tag": "0002_user_profile_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791453118348,
+      "tag": "0003_drop_artwork_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791453127397,
+      "tag": "0004_listing_posts_and_messages",
+      "breakpoints": true
     }
   ]
 }

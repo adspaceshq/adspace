@@ -74,7 +74,16 @@ export const chainOp = app.enum("chain_op", [
 ]);
 export const chainTxStatus = app.enum("chain_tx_status", ["pending", "submitted", "confirmed", "failed"]);
 
-export const assetKind = app.enum("asset_kind", ["avatar", "listing_photo", "artwork", "proof", "evidence"]);
+export const assetKind = app.enum("asset_kind", ["avatar", "listing_photo", "post_media", "brand_logo", "evidence"]);
+export const postKind = app.enum("post_kind", ["x", "instagram", "tiktok", "youtube", "link", "photo", "text"]);
+export const metricsSource = app.enum("metrics_source", ["manual", "x_api", "instagram_api", "tiktok_api", "youtube_api"]);
+
+export interface SponsorBrand {
+  name: string;
+  link?: string;
+  handle?: string;
+  logoUrl?: string;
+}
 export const withdrawalState = app.enum("withdrawal_state", ["pending", "submitted", "confirmed", "failed"]);
 
 // ---------- identity ----------
@@ -237,9 +246,9 @@ export const spots = app.table(
     buyerWallet: text("buyer_wallet"),
     amount: usdc("amount"),
 
-    artworkAssetId: uuid("artwork_asset_id").references(() => mediaAssets.id, { onDelete: "set null" }),
-    artworkSubmittedAt: at("artwork_submitted_at"),
-    proofPostUrl: text("proof_post_url"),
+    // Sponsor brand given at checkout; the creator puts this on the spot.
+    brand: jsonb("brand").$type<SponsorBrand>(),
+    proofHash: text("proof_hash"),
     proofSubmittedAt: at("proof_submitted_at"),
     buyerConfirmedAt: at("buyer_confirmed_at"),
 
@@ -263,18 +272,98 @@ export const spots = app.table(
   ],
 );
 
-export const spotProofPhotos = app.table(
-  "spot_proof_photos",
+// ---------- listing posts (creator updates, delivery proof, insights) ----------
+
+// Only the creator and reviewers post; posts are public on the listing page.
+export const listingPosts = app.table(
+  "listing_posts",
   {
-    spotId: uuid("spot_id")
+    id: uuid("id").primaryKey().defaultRandom(),
+    listingId: uuid("listing_id")
       .notNull()
-      .references(() => spots.id, { onDelete: "cascade" }),
+      .references(() => listings.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    kind: postKind("kind").notNull(),
+    url: text("url"),
+    externalId: text("external_id"),
+    body: text("body").notNull().default(""),
+    createdAt: createdAt(),
+    deletedAt: at("deleted_at"),
+  },
+  (t) => [
+    index("listing_posts_listing_idx").on(t.listingId, t.createdAt),
+    check("listing_posts_has_content", sql`url IS NOT NULL OR length(body) > 0 OR kind = 'photo'`),
+    check("listing_posts_link_kinds_have_url", sql`kind IN ('photo', 'text') OR url IS NOT NULL`),
+  ],
+);
+
+export const postMedia = app.table(
+  "post_media",
+  {
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => listingPosts.id, { onDelete: "cascade" }),
     assetId: uuid("asset_id")
       .notNull()
       .references(() => mediaAssets.id, { onDelete: "restrict" }),
     position: smallint("position").notNull(),
   },
-  (t) => [primaryKey({ columns: [t.spotId, t.position] })],
+  (t) => [primaryKey({ columns: [t.postId, t.position] })],
+);
+
+// Posts tagged as delivery proof for a spot; their hash is what goes on-chain.
+export const spotProofPosts = app.table(
+  "spot_proof_posts",
+  {
+    spotId: uuid("spot_id")
+      .notNull()
+      .references(() => spots.id, { onDelete: "cascade" }),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => listingPosts.id, { onDelete: "restrict" }),
+  },
+  (t) => [primaryKey({ columns: [t.spotId, t.postId] })],
+);
+
+// Point-in-time snapshots; the latest per post is what the UI shows.
+export const postMetrics = app.table(
+  "post_metrics",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    postId: uuid("post_id")
+      .notNull()
+      .references(() => listingPosts.id, { onDelete: "cascade" }),
+    source: metricsSource("source").notNull(),
+    views: bigint("views", { mode: "number" }),
+    likes: bigint("likes", { mode: "number" }),
+    reposts: bigint("reposts", { mode: "number" }),
+    replies: bigint("replies", { mode: "number" }),
+    bookmarks: bigint("bookmarks", { mode: "number" }),
+    capturedAt: createdAt(),
+  },
+  (t) => [index("post_metrics_post_idx").on(t.postId, t.capturedAt)],
+);
+
+// Private thread per spot between sponsor and creator; reviewers can read and post.
+export const spotMessages = app.table(
+  "spot_messages",
+  {
+    id: bigserial("id", { mode: "bigint" }).primaryKey(),
+    spotId: uuid("spot_id")
+      .notNull()
+      .references(() => spots.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("spot_messages_spot_idx").on(t.spotId, t.createdAt),
+    check("spot_messages_body_length", sql`length(body) BETWEEN 1 AND 2000`),
+  ],
 );
 
 // Append-only; bids are never deleted.
