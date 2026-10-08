@@ -20,6 +20,7 @@ import { submitSpotProof } from "../services/spot-proof.js";
 import { payoutSeller } from "../services/settlement.js";
 import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../services/disputes.js";
 import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
+import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -111,7 +112,14 @@ function parseDecision(body: Record<string, unknown>): ReviewDecision {
   throw new BadRequest("action must be approve, request_changes or reject");
 }
 
-export function createV2Router(options: { db: Db; chain?: ChainContext; reviewers: readonly string[]; termsVersion: string; metadataBaseUrl: string }) {
+export function createV2Router(options: {
+  db: Db;
+  chain?: ChainContext;
+  reviewers: readonly string[];
+  termsVersion: string;
+  metadataBaseUrl: string;
+  withdrawalDailyLimit?: bigint;
+}) {
   const { db, chain, reviewers } = options;
   const auth = new AppAuthRepository(db);
   const router = Router();
@@ -463,6 +471,33 @@ export function createV2Router(options: { db: Db; chain?: ChainContext; reviewer
     handle(async (req, res) => {
       const signer = await requireChain().userSigner(me(req));
       send(res, await closeListing(refundDeps(), me(req).id, signer, req.params.id));
+    }),
+  );
+  router.get("/me/withdrawals", requireUser, handle(async (req, res) => send(res, await listWithdrawals(db, me(req).id))));
+  router.post(
+    "/me/withdrawals",
+    ...mutate,
+    handle(async (req, res) => {
+      const context = requireChain();
+      const body = (req.body ?? {}) as { destination?: unknown; amount?: unknown };
+      const amount = parseUsdc(body.amount, "amount");
+      const signer = await context.userSigner(me(req));
+      const result = await withdrawUsdc(
+        {
+          db,
+          mint: context.mint,
+          feePayer: context.reviewer,
+          runTx: context.runTx,
+          readTokenBalance: context.readTokenBalance,
+          accountExists: context.accountExists,
+          dailyLimit: options.withdrawalDailyLimit ?? 1_000n * 1_000_000n,
+        },
+        me(req).id,
+        signer,
+        typeof body.destination === "string" ? body.destination : "",
+        amount,
+      );
+      send(res, result, 201);
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));

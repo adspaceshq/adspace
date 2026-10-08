@@ -1,7 +1,7 @@
 import type { PrivyClient } from "@privy-io/node";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
-import { createProgram, pdas, type AdspacesProgram } from "../chain/program.js";
+import { associatedTokenAddress, createProgram, pdas, type AdspacesProgram } from "../chain/program.js";
 import { runChainTx, type ChainTxRequest, type ChainTxResult } from "../chain/runner.js";
 import { keypairSigner, privyWalletSigner, type TxSigner } from "../chain/signers.js";
 import { loadKeypair } from "../keypair.js";
@@ -22,6 +22,7 @@ export interface ChainContext {
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
   readDisputeTimeoutSeconds: () => Promise<number>;
+  readTokenBalance: (owner: PublicKey) => Promise<bigint>;
 }
 
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -108,6 +109,13 @@ export function createChainContext(options: {
 
     async accountExists(address) {
       return (await connection.getAccountInfo(address, "confirmed")) !== null;
+    },
+
+    async readTokenBalance(owner) {
+      const ata = associatedTokenAddress(owner, new PublicKey(options.mint));
+      if (!(await connection.getAccountInfo(ata, "confirmed"))) return 0n;
+      const { value } = await connection.getTokenAccountBalance(ata, "confirmed");
+      return BigInt(value.amount);
     },
 
     async readDisputeTimeoutSeconds() {

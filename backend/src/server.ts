@@ -79,6 +79,7 @@ async function start() {
     reviewers: config.platformReviewers,
     termsVersion: TERMS_VERSION,
     metadataBaseUrl: config.frontendUrl,
+    withdrawalDailyLimit: BigInt(Math.round(Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000) * 1_000_000)),
   });
   await auth.migrate();
   await market.migrate();
