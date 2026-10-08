@@ -10,6 +10,7 @@ const row = (amount: string, hoursAgo: number, state: Withdrawal["state"] = "con
   destination: "d",
   state,
   chainTxId: null,
+  signature: null,
   createdAt: new Date(now - hoursAgo * 3_600_000).toISOString(),
   updatedAt: new Date(now).toISOString(),
 });

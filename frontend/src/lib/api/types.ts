@@ -285,6 +285,7 @@ export interface Withdrawal {
   destination: string;
   state: "pending" | "submitted" | "confirmed" | "failed";
   chainTxId: string | null;
+  signature: string | null;
   createdAt: IsoDate;
   updatedAt: IsoDate;
 }

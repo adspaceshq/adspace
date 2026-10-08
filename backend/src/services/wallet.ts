@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
 import { PublicKey, TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
-import { users, withdrawals } from "../db/schema.js";
+import { chainTxs, users, withdrawals } from "../db/schema.js";
 import { associatedTokenAddress, TOKEN_PROGRAM_ID } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import type { TxSigner } from "../chain/signers.js";
@@ -117,11 +117,14 @@ export async function withdrawUsdc(deps: WalletDeps, userId: string, owner: TxSi
   }
 }
 
+// Includes the Solana signature (from the chain tx log) so the UI can link to the explorer.
 export async function listWithdrawals(db: Db, userId: string, limit = 50) {
-  return db
-    .select()
+  const rows = await db
+    .select({ withdrawal: withdrawals, signature: chainTxs.signature })
     .from(withdrawals)
+    .leftJoin(chainTxs, eq(chainTxs.id, withdrawals.chainTxId))
     .where(eq(withdrawals.userId, userId))
     .orderBy(desc(withdrawals.createdAt))
     .limit(limit);
+  return rows.map((row) => ({ ...row.withdrawal, signature: row.signature }));
 }
