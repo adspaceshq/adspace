@@ -197,8 +197,8 @@ function SecuritySection() {
         icon={Zap}
         title="gasless transactions"
         status={wallet.delegated ? "on" : "off"}
-        description="adspaces pays Solana fees and submits your claims, bids and payouts. withdrawals still need your two-factor code."
-        action={wallet.delegated ? undefined : "turn on"}
+        description="adspaces pays Solana fees and submits your claims, bids and payouts. withdrawals still need your two-factor code. if transactions fail with an authorization error, reconnect."
+        action={wallet.delegated ? "reconnect" : "turn on"}
         onClick={() => void run(wallet.enableGasless)}
       />
       {error && (
