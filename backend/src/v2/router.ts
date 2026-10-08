@@ -24,6 +24,7 @@ import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type Dis
 import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
 import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
 import { publicProfilePage } from "../services/profiles.js";
+import { listWatchlist, unwatchListing, watchListing } from "../services/watchlist.js";
 import { reconcile } from "../services/reconciler.js";
 import { setDisputeTimeout, setPaused, type AdminDeps } from "../services/admin.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
@@ -616,6 +617,9 @@ export function createV2Router(options: {
       send(res, await creatorEarnings(db, me(req).id, days));
     }),
   );
+  router.get("/me/watchlist", requireUser, handle(async (req, res) => send(res, await listWatchlist(db, me(req).id))));
+  router.put("/me/watchlist/:listingId", ...mutate, handle(async (req, res) => send(res, await watchListing(db, me(req).id, req.params.listingId))));
+  router.delete("/me/watchlist/:listingId", ...mutate, handle(async (req, res) => send(res, await unwatchListing(db, me(req).id, req.params.listingId))));
   router.get(
     "/me/activity",
     requireUser,
