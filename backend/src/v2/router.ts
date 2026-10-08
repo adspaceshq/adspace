@@ -23,7 +23,7 @@ import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../service
 import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
 import { reconcile } from "../services/reconciler.js";
 import { setDisputeTimeout, setPaused, type AdminDeps } from "../services/admin.js";
-import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
+import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -571,6 +571,14 @@ export function createV2Router(options: {
     }),
   );
   router.get("/me/activity", requireUser, handle(async (req, res) => send(res, await activityFeed(db, me(req).id))));
+  router.get(
+    "/spots/:id",
+    requireUser,
+    handle(async (req, res) => {
+      const timeout = chain ? await chain.readDisputeTimeoutSeconds() : 3 * 24 * 60 * 60;
+      send(res, await spotDetail(db, actor(req), req.params.id, timeout));
+    }),
+  );
   router.get("/spots/:id/timeline", requireUser, handle(async (req, res) => send(res, await spotTimeline(db, actor(req), req.params.id))));
   router.get("/review/summary", requireUser, requireReviewer, handle(async (_req, res) => send(res, await reviewSummary(db))));
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));

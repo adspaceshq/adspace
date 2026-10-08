@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Db } from "../src/db/client.js";
 import { bids, chainTxs, disputes, settlements, spotEvents, spots } from "../src/db/schema.js";
-import { activityFeed, creatorDashboard, reviewSummary, spotTimeline, sponsorDashboard } from "../src/services/dashboards.js";
+import { activityFeed, creatorDashboard, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../src/services/dashboards.js";
 import { createTestDb } from "./helpers/db.js";
 import { seedListing, seedUser, USDC } from "./helpers/seed.js";
 
@@ -100,4 +100,19 @@ test("review summary counts open disputes and failed transactions", async () => 
   assert.ok(summary.counts.openDisputes >= 1);
   assert.equal(summary.counts.openDisputes, summary.disputes.length);
   assert.equal(typeof summary.counts.listingsInReview, "number");
+});
+
+test("spot detail gives the sponsor brand, deadlines and dispute, and stays private", async () => {
+  const { seller, buyer, spot } = await seedListing(db, { deadline: new Date(Date.now() - 48 * HOUR), deliveryDueAt: new Date(Date.now() - HOUR), funded: true });
+  await db.update(spots).set({ brand: { name: "Acme", link: "https://acme.example" } }).where(eq(spots.id, spot.id));
+  await db.insert(disputes).values({ spotId: spot.id, buyerId: buyer!.user.id, reason: "never delivered at all" });
+  const asSponsor = await spotDetail(db, { id: buyer!.user.id, isReviewer: false }, spot.id, TIMEOUT);
+  assert.equal(asSponsor.role, "sponsor");
+  assert.equal(asSponsor.spot.buyerIsYou, true);
+  assert.equal(asSponsor.spot.brand?.name, "Acme");
+  assert.equal(asSponsor.dispute?.state, "open");
+  assert.equal(asSponsor.dispute!.timeoutAt.getTime() - asSponsor.dispute!.openedAt.getTime(), TIMEOUT * 1000);
+  assert.equal((await spotDetail(db, { id: seller.user.id, isReviewer: false }, spot.id, TIMEOUT)).role, "creator");
+  const stranger = await seedUser(db);
+  await assert.rejects(spotDetail(db, { id: stranger.user.id, isReviewer: false }, spot.id, TIMEOUT), /private/);
 });
