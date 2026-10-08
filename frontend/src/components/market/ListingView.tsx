@@ -20,6 +20,7 @@ import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { CheckoutModal } from "./CheckoutModal";
 import { ListingTimeline } from "./ListingTimeline";
 import { PostFeed } from "./PostFeed";
+import { WatchButton } from "@/components/watchlist/WatchButton";
 import { SellerAvatar } from "./SellerAvatar";
 
 export function ListingView({ initial }: { initial: PublicListing }) {
@@ -161,6 +162,7 @@ function SellerCard({ listing, onShare }: { listing: PublicListing; onShare: () 
           </Link>
           <p className="truncate text-small text-muted">@{listing.seller.handle}</p>
         </div>
+        <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="shadow-none" />
         <button type="button" onClick={onShare} aria-label="share listing" className="cursor-pointer rounded-full p-2 text-muted hover:bg-ink/5 hover:text-ink">
           <Share2 className="size-4" />
         </button>

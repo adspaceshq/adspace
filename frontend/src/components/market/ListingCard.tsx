@@ -1,3 +1,4 @@
+import { WatchButton } from "@/components/watchlist/WatchButton";
 import Link from "next/link";
 import { BadgeCheck, MapPin, Users } from "lucide-react";
 import type { PublicListing } from "@/lib/api/types";
@@ -14,6 +15,7 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
   const place = listing.audience.event ?? listing.audience.location;
   const cover = listing.photos[0]?.url;
   return (
+    <div className="relative">
     <Link
       href={listingHref(listing.seller.handle, listing.slug)}
       className="group flex flex-col gap-3 rounded-panel p-2 transition-colors hover:bg-surface focus-visible:bg-surface"
@@ -69,6 +71,8 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
         </div>
       </div>
     </Link>
+    <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="absolute right-4 top-4" />
+    </div>
   );
 }
 
