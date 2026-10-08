@@ -55,9 +55,17 @@ const byDueAt = (a: NeedsYouItem, b: NeedsYouItem) =>
 export async function creatorDashboard(db: Db, sellerId: string, now = new Date()) {
   const owned = await db.select().from(listings).where(eq(listings.sellerId, sellerId)).orderBy(desc(listings.updatedAt));
   const listingIds = owned.map((listing) => listing.id);
-  const ownedSpots = listingIds.length
-    ? await db.select().from(spots).where(inArray(spots.listingId, listingIds)).orderBy(asc(spots.index))
-    : [];
+  const [ownedSpots, photos] = listingIds.length
+    ? await Promise.all([
+        db.select().from(spots).where(inArray(spots.listingId, listingIds)).orderBy(asc(spots.index)),
+        db
+          .select({ listingId: listingPhotos.listingId, url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
+          .from(listingPhotos)
+          .innerJoin(mediaAssets, eq(mediaAssets.id, listingPhotos.assetId))
+          .where(inArray(listingPhotos.listingId, listingIds))
+          .orderBy(asc(listingPhotos.position)),
+      ])
+    : [[], []];
   const byId = new Map(owned.map((listing) => [listing.id, listing]));
   const [owner] = await db.select({ handle: users.handle }).from(users).where(eq(users.id, sellerId));
 
@@ -120,6 +128,7 @@ export async function creatorDashboard(db: Db, sellerId: string, now = new Date(
         spotCount: listingSpots.length,
         soldCount: listingSpots.filter((spot) => spot.buyerId !== null).length,
         spots: listingSpots,
+        photos: photos.filter((photo) => photo.listingId === listing.id).map(({ listingId: _listingId, ...photo }) => photo),
       };
     }),
   };
