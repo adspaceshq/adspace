@@ -63,6 +63,11 @@ export function parsePayoutWallet(value: unknown): string {
 export function parseOnboarding(value: unknown): Onboarding {
   const bad = (message: string) => Object.assign(new Error(message), { status: 400 });
   const body = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  if (body.accountType === "both") {
+    const creator = parseOnboarding({ ...body, accountType: "creator" }).creator!;
+    const sponsor = parseOnboarding({ ...body, accountType: "sponsor" }).sponsor!;
+    return { accountType: "both", creator, sponsor };
+  }
   if (body.accountType === "creator") {
     const raw = (body.creator && typeof body.creator === "object" ? (body.creator as { socials?: unknown }).socials : undefined);
     const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -85,7 +90,7 @@ export function parseOnboarding(value: unknown): Onboarding {
     if (website && (website.length > 200 || !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(website))) throw bad("website must be a valid http(s) URL");
     return { accountType: "sponsor", sponsor: { brandName, category: raw.category as BrandCategory, ...(website ? { website } : {}) } };
   }
-  throw bad("accountType must be creator or sponsor");
+  throw bad("accountType must be creator, sponsor or both");
 }
 
 /** In-memory ProfileRepository for tests and the demo adapter. */
