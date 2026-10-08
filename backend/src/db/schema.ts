@@ -518,3 +518,19 @@ export const withdrawals = app.table(
     check("withdrawals_amount_positive", sql`amount > 0`),
   ],
 );
+
+// ---------- watchlist ----------
+
+export const watchlist = app.table(
+  "watchlist",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    listingId: uuid("listing_id")
+      .notNull()
+      .references(() => listings.id, { onDelete: "cascade" }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.listingId] }), index("watchlist_listing_idx").on(t.listingId)],
+);

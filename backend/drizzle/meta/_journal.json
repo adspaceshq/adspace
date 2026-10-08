@@ -50,6 +50,13 @@
       "when": 1791475115335,
       "tag": "0006_onboarding_email_verification",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791477613235,
+      "tag": "0007_watchlist",
+      "breakpoints": true
     }
   ]
 }
