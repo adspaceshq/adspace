@@ -14,6 +14,9 @@ import {
 } from "../services/listing-lifecycle.js";
 import { getPublishedListing, listForSeller, listPublished, reviewQueue } from "../services/listing-queries.js";
 import { claimSpot, placeBid } from "../services/spot-purchase.js";
+import { createPost, deletePost, listPosts, recordMetrics } from "../services/listing-posts.js";
+import { listMessages, postMessage } from "../services/spot-messages.js";
+import { submitSpotProof } from "../services/spot-proof.js";
 import type { ChainContext } from "./chain-context.js";
 
 // Separate from the legacy cookie: v2 sessions live in the app schema.
@@ -268,6 +271,79 @@ export function createV2Router(options: { db: Db; chain?: ChainContext; reviewer
       const amount = parseUsdc((req.body ?? {}).amount, "amount");
       const signer = await requireChain().userSigner(me(req));
       send(res, await placeBid(deps, req.params.id, { id: me(req).id, signer }, amount, (req.body ?? {}).brand));
+    }),
+  );
+
+  // ---------- posts, proof, messages ----------
+
+  const actor = (req: Request) => ({ id: me(req).id, isReviewer: isReviewer(me(req), reviewers) });
+
+  router.get("/listings/:id/posts", handle(async (req, res) => send(res, await listPosts(db, req.params.id))));
+  router.post(
+    "/listings/:id/posts",
+    ...mutate,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as { url?: unknown; body?: unknown; mediaAssetIds?: unknown };
+      const post = await createPost(db, actor(req), req.params.id, {
+        url: typeof body.url === "string" ? body.url : undefined,
+        body: typeof body.body === "string" ? body.body : undefined,
+        mediaAssetIds: Array.isArray(body.mediaAssetIds) ? body.mediaAssetIds.filter((id): id is string => typeof id === "string") : undefined,
+      });
+      send(res, post, 201);
+    }),
+  );
+  router.delete(
+    "/posts/:id",
+    ...mutate,
+    handle(async (req, res) => {
+      await deletePost(db, actor(req), req.params.id);
+      send(res, { ok: true });
+    }),
+  );
+  // Manual entry until the X / Instagram metric fetchers are enabled.
+  router.post(
+    "/posts/:id/metrics",
+    ...mutate,
+    requireReviewer,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const number = (key: string) => (body[key] === undefined ? undefined : Number(body[key]));
+      send(
+        res,
+        await recordMetrics(db, req.params.id, "manual", {
+          views: number("views"),
+          likes: number("likes"),
+          reposts: number("reposts"),
+          replies: number("replies"),
+          bookmarks: number("bookmarks"),
+        }),
+        201,
+      );
+    }),
+  );
+  router.post(
+    "/spots/:id/proof",
+    ...mutate,
+    handle(async (req, res) => {
+      const context = requireChain();
+      const postIds = Array.isArray(req.body?.postIds) ? (req.body.postIds as unknown[]).filter((id): id is string => typeof id === "string") : [];
+      const result = await submitSpotProof(
+        { db, program: context.program, feePayer: context.reviewer, runTx: context.runTx, listingBaseUrl: options.metadataBaseUrl },
+        me(req).id,
+        await context.userSigner(me(req)),
+        req.params.id,
+        postIds,
+      );
+      send(res, result);
+    }),
+  );
+  router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));
+  router.post(
+    "/spots/:id/messages",
+    ...mutate,
+    handle(async (req, res) => {
+      const text = typeof req.body?.body === "string" ? req.body.body : "";
+      send(res, await postMessage(db, actor(req), req.params.id, text), 201);
     }),
   );
 
