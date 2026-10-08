@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt, lte, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { sessions, users } from "../db/schema.js";
+import { isOwnUpload } from "../cloudinary.js";
 import {
   parseBio,
   parseOnboarding,
@@ -15,6 +16,14 @@ import type { AuthenticatedIdentity, Onboarding, PublicProfile, SessionUser, Upd
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const stripAt = (handle: string) => handle.trim().replace(/^@+/, "");
+const RESERVED_HANDLES = new Set(["admin", "api", "browse", "dashboard", "review", "sell", "settings", "wallet", "onboarding", "activity", "notifications", "watchlist", "adspaces", "support", "help"]);
+
+export function parseHandle(value: unknown): string {
+  const handle = stripAt(String(value ?? ""));
+  if (!/^[A-Za-z0-9_]{3,30}$/.test(handle)) throw new HttpError("handles are 3-30 letters, numbers or underscores", 400);
+  if (RESERVED_HANDLES.has(handle.toLowerCase())) throw new HttpError("that handle is reserved", 400);
+  return handle;
+}
 
 class HttpError extends Error {
   constructor(message: string, readonly status: number) {
@@ -36,6 +45,7 @@ function toSessionUser(row: UserRow): SessionUser {
     email: row.email ?? undefined,
     walletAddress: row.walletAddress ?? undefined,
     hasX,
+    emailVerified: Boolean(row.email && row.emailVerifiedAt),
   };
 }
 
@@ -72,6 +82,7 @@ export class AppAuthRepository implements AuthRepository, ProfileRepository {
           displayName: identity.name ?? stripAt(identity.handle),
           avatarUrl: identity.avatar ?? null,
           email: identity.email ?? null,
+          emailVerifiedAt: identity.email ? new Date() : null,
           walletAddress: identity.walletAddress ?? null,
         };
         const [row] = await trx
@@ -81,10 +92,16 @@ export class AppAuthRepository implements AuthRepository, ProfileRepository {
             target: users.privyDid,
             set: {
               xUserId: sql`COALESCE(EXCLUDED.x_user_id, ${users.xUserId})`,
-              handle: values.handle,
-              displayName: identity.name ? values.displayName : sql`${users.displayName}`,
-              avatarUrl: sql`COALESCE(EXCLUDED.avatar_url, ${users.avatarUrl})`,
+              // X users keep their X username; everyone else keeps the handle they picked.
+              handle: identity.xUserId ? values.handle : sql`${users.handle}`,
+              // Profile edits win over the identity provider after the first sign-in.
+              displayName: sql`${users.displayName}`,
+              avatarUrl: sql`COALESCE(${users.avatarUrl}, EXCLUDED.avatar_url)`,
               email: sql`COALESCE(EXCLUDED.email, ${users.email})`,
+              emailVerifiedAt: sql`CASE
+                WHEN EXCLUDED.email IS NULL THEN ${users.emailVerifiedAt}
+                WHEN EXCLUDED.email = ${users.email} AND ${users.emailVerifiedAt} IS NOT NULL THEN ${users.emailVerifiedAt}
+                ELSE now() END`,
               walletAddress: sql`COALESCE(EXCLUDED.wallet_address, ${users.walletAddress})`,
               updatedAt: new Date(),
             },
@@ -129,11 +146,32 @@ export class AppAuthRepository implements AuthRepository, ProfileRepository {
 
   async updateProfile(userId: string, patch: UpdateProfileRequest): Promise<PublicProfile> {
     const changes: Partial<typeof users.$inferInsert> = { updatedAt: new Date() };
+    if (patch.displayName !== undefined) {
+      const name = String(patch.displayName).trim();
+      if (!name || name.length > 60) throw new HttpError("display name must be 1-60 characters", 400);
+      changes.displayName = name;
+    }
+    if (patch.avatar !== undefined) {
+      if (patch.avatar !== null && !isOwnUpload(String(patch.avatar), "avatars")) throw new HttpError("avatar must be an uploaded image", 400);
+      changes.avatarUrl = patch.avatar;
+    }
+    if (patch.handle !== undefined) {
+      const [current] = await this.db.select({ xUserId: users.xUserId }).from(users).where(eq(users.id, userId));
+      if (current?.xUserId) throw new HttpError("your handle follows your X username", 400);
+      const handle = parseHandle(patch.handle);
+      if (!(await this.isHandleAvailable(handle, userId))) throw new HttpError("that handle is taken", 409);
+      changes.handle = handle;
+    }
     if (patch.bio !== undefined) changes.bio = parseBio(patch.bio);
     if (patch.payoutWallet !== undefined) changes.payoutWallet = parsePayoutWallet(patch.payoutWallet) || null;
     const [row] = await this.db.update(users).set(changes).where(eq(users.id, userId)).returning();
     if (!row) throw new HttpError("user not found", 404);
     return toProfile(row, true);
+  }
+
+  async isHandleAvailable(handle: string, exceptUserId?: string): Promise<boolean> {
+    const [row] = await this.db.select({ id: users.id }).from(users).where(sql`lower(${users.handle}) = ${handle.toLowerCase()}`);
+    return !row || row.id === exceptUserId;
   }
 
   async getOnboarding(userId: string): Promise<Onboarding | null> {
@@ -143,11 +181,14 @@ export class AppAuthRepository implements AuthRepository, ProfileRepository {
 
   async saveOnboarding(userId: string, input: unknown): Promise<Onboarding> {
     const onboarding = parseOnboarding(input);
+    const [user] = await this.db.select({ email: users.email, emailVerifiedAt: users.emailVerifiedAt }).from(users).where(eq(users.id, userId));
+    if (!user) throw new HttpError("user not found", 404);
+    if (!user.email || !user.emailVerifiedAt) throw new HttpError("verify your email first", 403);
     const [row] = await this.db
       .update(users)
       .set({
         onboarding: onboarding as unknown as Record<string, unknown>,
-        intent: onboarding.accountType === "creator" ? "sell" : "sponsor",
+        intent: onboarding.accountType === "creator" ? "sell" : onboarding.accountType,
         onboardedAt: new Date(),
         updatedAt: new Date(),
       })
