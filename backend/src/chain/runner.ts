@@ -80,9 +80,14 @@ export async function runChainTx(db: Db, connection: Connection, request: ChainT
   } catch (error) {
     const decoded =
       error instanceof ChainError ? error : decodeChainError(error, (error as { logs?: string[] }).logs);
+    if (decoded.raw) console.error(`chain tx ${request.op} failed:`, decoded.raw);
     await db
       .update(chainTxs)
-      .set({ status: "failed", error: decoded.programError ?? decoded.message, updatedAt: new Date() })
+      .set({
+        status: "failed",
+        error: [decoded.programError ?? decoded.message, decoded.raw?.slice(0, 1500)].filter(Boolean).join("\n---\n"),
+        updatedAt: new Date(),
+      })
       .where(eq(chainTxs.id, row.id));
     throw decoded;
   }
