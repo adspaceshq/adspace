@@ -67,13 +67,33 @@ test("profiles resolve by handle case-insensitively and hide the payout wallet",
   assert.equal(viaHandle?.payoutWallet, undefined);
 });
 
-test("onboarding is validated and sets the user's intent", async () => {
+test("onboarding needs a verified email, is validated and sets the user's intent", async () => {
   const { session } = await repo.createSession(xIdentity);
+  const sponsor = { accountType: "sponsor", sponsor: { brandName: "Acme", category: "crypto" } };
+  await assert.rejects(repo.saveOnboarding(session.user.id, sponsor), /verify your email/);
+  const verified = await repo.createSession({ ...xIdentity, email: "alice@example.com" });
+  assert.equal(verified.session.user.emailVerified, true);
   await assert.rejects(repo.saveOnboarding(session.user.id, { accountType: "creator", creator: { socials: {} } }));
-  const saved = await repo.saveOnboarding(session.user.id, {
-    accountType: "sponsor",
-    sponsor: { brandName: "Acme", category: "crypto" },
-  });
+  const saved = await repo.saveOnboarding(session.user.id, sponsor);
   assert.equal(saved.accountType, "sponsor");
   assert.deepEqual(await repo.getOnboarding(session.user.id), saved);
+  const both = await repo.saveOnboarding(session.user.id, { ...sponsor, accountType: "both", creator: { socials: { x: "@alice" } } });
+  assert.equal(both.accountType, "both");
+  assert.equal(both.creator?.socials.x, "@alice");
+});
+
+test("profile edits survive sign-in and handles are validated and unique", async () => {
+  const { session } = await repo.createSession({ did: "did:privy:handles01", handle: "user-handles01", hasX: false });
+  await repo.updateProfile(session.user.id, { displayName: "Bo", handle: "bo_rides" });
+  const again = await repo.createSession({ did: "did:privy:handles01", handle: "user-handles01", name: "Ignored", hasX: false });
+  assert.equal(again.session.user.handle, "bo_rides");
+  assert.equal(again.session.user.name, "Bo");
+  assert.equal(await repo.isHandleAvailable("BO_RIDES"), false);
+  assert.equal(await repo.isHandleAvailable("bo_rides", session.user.id), true);
+  const other = await repo.createSession({ did: "did:privy:handles02", handle: "user-handles02", hasX: false });
+  await assert.rejects(repo.updateProfile(other.session.user.id, { handle: "Bo_Rides" }), /taken/);
+  await assert.rejects(repo.updateProfile(other.session.user.id, { handle: "dashboard" }), /reserved/);
+  await assert.rejects(repo.updateProfile(other.session.user.id, { handle: "a b" }), /letters/);
+  const x = await repo.createSession(xIdentity);
+  await assert.rejects(repo.updateProfile(x.session.user.id, { handle: "renamed" }), /X username/);
 });
