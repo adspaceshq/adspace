@@ -36,7 +36,7 @@ export function Address({
   const label = kind === "tx" ? "transaction" : "address";
   return (
     <span className={`inline-flex min-w-0 items-center gap-1 font-mono ${className}`}>
-      <span title={value} className={full ? "break-all" : "truncate"}>
+      <span title={value} className={full ? "min-w-0 overflow-x-auto whitespace-nowrap" : "truncate"}>
         {prefix}
         {full ? value : shortKey(value, chars)}
       </span>

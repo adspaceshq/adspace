@@ -237,12 +237,12 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
           </div>
         ) : (
           <>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-body">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2 text-body">
               <dt className="text-muted">amount</dt>
               <dd className="font-semibold tabular-nums">{amount ? formatUsd(safeBase(amount)) : "-"}</dd>
               <dt className="text-muted">to</dt>
-              <dd className="text-small">
-                <Address value={destination.trim()} full explorer={false} />
+              <dd className="min-w-0 text-caption">
+                <Address value={destination.trim()} full explorer={false} className="max-w-full" />
               </dd>
               <dt className="text-muted">network fee</dt>
               <dd>paid by adspaces</dd>
