@@ -3,7 +3,7 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import anchor from "@coral-xyz/anchor";
 import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
-import { listings, spots, users } from "../db/schema.js";
+import { listingPhotos, listings, mediaAssets, spots, users } from "../db/schema.js";
 import { pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import type { TxSigner } from "../chain/signers.js";
@@ -42,6 +42,7 @@ export interface DraftInput {
   minIncrement?: bigint;
   doubleUp?: boolean;
   spots: DraftSpotInput[];
+  photoAssetIds?: string[];
 }
 
 export interface FeePolicy {
@@ -98,11 +99,18 @@ async function loadOwned(db: Db, listingId: string, sellerId: string): Promise<L
   return listing;
 }
 
-export async function createDraft(db: Db, sellerId: string, input: DraftInput, now = new Date()) {
+const MAX_PHOTOS = 6;
+
+function normalizeDraft(input: DraftInput, now: Date) {
   const title = input.title.trim();
   if (!title || title.length > 80) throw new ListingError("title is required (max 80 characters)");
+  if ((input.description ?? "").length > 2000) throw new ListingError("keep the description under 2000 characters");
   if (input.spots.length === 0 || input.spots.length > MAX_SPOTS) throw new ListingError(`add 1-${MAX_SPOTS} spots`);
   if (input.spots.some((spot) => spot.price <= 0n)) throw new ListingError("every spot needs a price above zero");
+  const inRange = (value: number, min: number, max: number) => Number.isFinite(value) && value >= min && value <= max;
+  if (input.spots.some(({ layout }) => !inRange(layout.x, 0, 100) || !inRange(layout.y, 0, 100) || !inRange(layout.w, 2, 60))) {
+    throw new ListingError("spots must sit on the photo (position 0-100%, size 2-60%)");
+  }
   const artworkDueAt = input.artworkDueAt ?? input.deadline;
   const deliveryDueAt =
     input.deliveryDueAt ?? new Date(artworkDueAt.getTime() + DEFAULT_DELIVERY_DAYS * 24 * 60 * 60 * 1000);
@@ -112,44 +120,87 @@ export async function createDraft(db: Db, sellerId: string, input: DraftInput, n
   if (input.mode === "auction" && !doubleUp && minIncrement <= 0n) {
     throw new ListingError("auctions need a minimum bid increment, or double-up bidding");
   }
+  const photoIds = [...new Set(input.photoAssetIds ?? [])];
+  if (photoIds.length > MAX_PHOTOS) throw new ListingError(`add at most ${MAX_PHOTOS} photos`);
+  return {
+    fields: {
+      surface: input.surface,
+      title,
+      description: input.description?.trim() ?? "",
+      audience: input.audience ?? {},
+      mode: input.mode,
+      deadline: input.deadline,
+      artworkDueAt,
+      deliveryDueAt,
+      minIncrement,
+      doubleUp,
+    },
+    spots: input.spots.map((spot, index) => ({ index, label: spot.label?.trim() ?? "", price: spot.price, layout: spot.layout })),
+    photoIds,
+  };
+}
 
+type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+// Photos must be the seller's own listing-photo uploads; order is the order given.
+async function replacePhotos(trx: Tx, listingId: string, sellerId: string, photoIds: string[]) {
+  if (photoIds.length > 0) {
+    const owned = await trx
+      .select({ id: mediaAssets.id })
+      .from(mediaAssets)
+      .where(and(inArray(mediaAssets.id, photoIds), eq(mediaAssets.ownerId, sellerId), eq(mediaAssets.kind, "listing_photo")));
+    if (owned.length !== photoIds.length) throw new ListingError("one of the photos isn't yours or doesn't exist");
+  }
+  await trx.delete(listingPhotos).where(eq(listingPhotos.listingId, listingId));
+  if (photoIds.length > 0) {
+    await trx.insert(listingPhotos).values(photoIds.map((assetId, position) => ({ listingId, assetId, position })));
+  }
+}
+
+export async function createDraft(db: Db, sellerId: string, input: DraftInput, now = new Date()) {
+  const draft = normalizeDraft(input, now);
   return db.transaction(async (trx) => {
     const [listing] = await trx
       .insert(listings)
-      .values({
-        slug: slugify(title),
-        sellerId,
-        surface: input.surface,
-        title,
-        description: input.description?.trim() ?? "",
-        audience: input.audience ?? {},
-        mode: input.mode,
-        state: "draft",
-        deadline: input.deadline,
-        artworkDueAt,
-        deliveryDueAt,
-        minIncrement,
-        doubleUp,
-      })
+      .values({ ...draft.fields, slug: slugify(draft.fields.title), sellerId, state: "draft" })
       .returning();
     const created = await trx
       .insert(spots)
-      .values(
-        input.spots.map((spot, index) => ({
-          listingId: listing.id,
-          index,
-          label: spot.label?.trim() ?? "",
-          price: spot.price,
-          layout: spot.layout,
-        })),
-      )
+      .values(draft.spots.map((spot) => ({ ...spot, listingId: listing.id })))
       .returning();
+    await replacePhotos(trx, listing.id, sellerId, draft.photoIds);
     return { listing, spots: created };
+  });
+}
+
+// Drafts and listings sent back for changes are fully editable; nothing is on-chain yet.
+export async function updateDraft(db: Db, sellerId: string, listingId: string, input: DraftInput, now = new Date()) {
+  const listing = await loadOwned(db, listingId, sellerId);
+  if (listing.state !== "draft" && listing.state !== "changes_requested") {
+    throw new ListingError("only drafts and listings with requested changes can be edited", 409);
+  }
+  const draft = normalizeDraft(input, now);
+  return db.transaction(async (trx) => {
+    const [updated] = await trx
+      .update(listings)
+      .set({ ...draft.fields, updatedAt: now })
+      .where(and(eq(listings.id, listingId), inArray(listings.state, ["draft", "changes_requested"])))
+      .returning();
+    if (!updated) throw new ListingError("listing changed while saving; reload and try again", 409);
+    await trx.delete(spots).where(eq(spots.listingId, listingId));
+    const created = await trx
+      .insert(spots)
+      .values(draft.spots.map((spot) => ({ ...spot, listingId })))
+      .returning();
+    await replacePhotos(trx, listingId, sellerId, draft.photoIds);
+    return { listing: updated, spots: created };
   });
 }
 
 export async function submitForReview(db: Db, sellerId: string, listingId: string) {
   const listing = await loadOwned(db, listingId, sellerId);
+  const [photo] = await db.select({ id: listingPhotos.assetId }).from(listingPhotos).where(eq(listingPhotos.listingId, listingId)).limit(1);
+  if (!photo) throw new ListingError("add at least one photo before submitting");
   if (listing.state !== "draft" && listing.state !== "changes_requested") {
     throw new ListingError("only drafts can be submitted for review", 409);
   }

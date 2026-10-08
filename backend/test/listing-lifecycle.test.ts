@@ -7,13 +7,14 @@ import { createProgram } from "../src/chain/program.js";
 import type { ChainTxRequest } from "../src/chain/runner.js";
 import { keypairSigner } from "../src/chain/signers.js";
 import type { Db } from "../src/db/client.js";
-import { chainTxs, listings, spots, users } from "../src/db/schema.js";
+import { chainTxs, listings, mediaAssets, spots, users } from "../src/db/schema.js";
 import {
   acceptTermsAndPublish,
   createDraft,
   ListingError,
   reviewListing,
   submitForReview,
+  updateDraft,
   validateFeePolicy,
   type DraftInput,
   type PublishDeps,
@@ -86,6 +87,14 @@ const draftInput = (overrides: Partial<DraftInput> = {}): DraftInput => ({
   ...overrides,
 });
 
+async function photoFor(ownerId: string) {
+  const [asset] = await db
+    .insert(mediaAssets)
+    .values({ ownerId, kind: "listing_photo", url: `https://res.cloudinary.com/demo/image/upload/adspaces/listings/${randomUUID()}.jpg`, bytes: 1000 })
+    .returning();
+  return asset.id;
+}
+
 const approve = { action: "approve" as const, fees: { feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 } };
 
 test("drafts validate schedule, spots and auction rules", async () => {
@@ -110,7 +119,7 @@ test("fee policy mirrors the program rules", () => {
 test("review: no self-review, requires a note for changes, approval stores fees", async () => {
   const seller = await createUser();
   const reviewer = await createUser();
-  const { listing } = await createDraft(db, seller.id, draftInput(), NOW);
+  const { listing } = await createDraft(db, seller.id, draftInput({ photoAssetIds: [await photoFor(seller.id)] }), NOW);
   await assert.rejects(reviewListing(db, reviewer.id, listing.id, approve, FLOOR, NOW), /not waiting/);
   await submitForReview(db, seller.id, listing.id);
   await assert.rejects(reviewListing(db, seller.id, listing.id, approve, FLOOR, NOW), /own listing/);
@@ -134,7 +143,7 @@ test("only the seller can submit their draft", async () => {
 async function approvedListing() {
   const seller = await createUser();
   const reviewer = await createUser();
-  const { listing } = await createDraft(db, seller.id, draftInput(), NOW);
+  const { listing } = await createDraft(db, seller.id, draftInput({ photoAssetIds: [await photoFor(seller.id)] }), NOW);
   await submitForReview(db, seller.id, listing.id);
   await reviewListing(db, reviewer.id, listing.id, approve, FLOOR, NOW);
   return { seller, listing, sellerSigner: keypairSigner(Keypair.generate()) };
@@ -184,4 +193,35 @@ test("unapproved listings cannot be published", async () => {
   const { listing } = await createDraft(db, seller.id, draftInput(), NOW);
   await assert.rejects(acceptTermsAndPublish(publishDeps(), seller.id, listing.id, keypairSigner(Keypair.generate())), /approved/);
   assert.equal(sent.length, 0);
+});
+
+test("submitting needs a photo; photos must be the seller's own", async () => {
+  const seller = await createUser();
+  const other = await createUser();
+  const { listing } = await createDraft(db, seller.id, draftInput(), NOW);
+  await assert.rejects(submitForReview(db, seller.id, listing.id), /at least one photo/);
+  await assert.rejects(createDraft(db, seller.id, draftInput({ photoAssetIds: [await photoFor(other.id)] }), NOW), /isn't yours/);
+});
+
+test("drafts can be edited until submitted, and again when changes are requested", async () => {
+  const seller = await createUser();
+  const reviewer = await createUser();
+  const photo = await photoFor(seller.id);
+  const { listing } = await createDraft(db, seller.id, draftInput({ photoAssetIds: [photo] }), NOW);
+  const edited = await updateDraft(
+    db,
+    seller.id,
+    listing.id,
+    draftInput({ title: "Updated lid", photoAssetIds: [photo], spots: [{ price: 9n * USDC, layout: { x: 50, y: 50, w: 20 } }] }),
+    NOW,
+  );
+  assert.equal(edited.listing.title, "Updated lid");
+  assert.equal(edited.listing.slug, listing.slug);
+  assert.equal(edited.spots.length, 1);
+  await assert.rejects(updateDraft(db, seller.id, listing.id, draftInput({ spots: [{ price: USDC, layout: { x: 150, y: 0, w: 10 } }] }), NOW), /sit on the photo/);
+  await submitForReview(db, seller.id, listing.id);
+  await assert.rejects(updateDraft(db, seller.id, listing.id, draftInput(), NOW), /can be edited/);
+  await reviewListing(db, reviewer.id, listing.id, { action: "request_changes", note: "show the whole lid" }, FLOOR, NOW);
+  const fixed = await updateDraft(db, seller.id, listing.id, draftInput({ photoAssetIds: [photo] }), NOW);
+  assert.equal(fixed.listing.state, "changes_requested");
 });
