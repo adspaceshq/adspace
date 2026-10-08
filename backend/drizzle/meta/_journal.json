@@ -36,6 +36,13 @@
       "when": 1791453127397,
       "tag": "0004_listing_posts_and_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791455480865,
+      "tag": "0005_admin_chain_ops",
+      "breakpoints": true
     }
   ]
 }

@@ -71,6 +71,8 @@ export const chainOp = app.enum("chain_op", [
   "close_spot",
   "close_listing",
   "wallet_withdrawal",
+  "pause_protocol",
+  "set_dispute_timeout",
 ]);
 export const chainTxStatus = app.enum("chain_tx_status", ["pending", "submitted", "confirmed", "failed"]);
 
