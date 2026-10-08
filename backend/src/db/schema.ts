@@ -28,7 +28,7 @@ const at = (name: string) => timestamp(name, { withTimezone: true });
 
 // ---------- enums ----------
 
-export const userIntent = app.enum("user_intent", ["sell", "sponsor", "browse"]);
+export const userIntent = app.enum("user_intent", ["sell", "sponsor", "both", "browse"]);
 export const surface = app.enum("surface", ["laptop", "tshirt", "car", "suitcase", "bike", "digital", "other"]);
 export const pricingMode = app.enum("pricing_mode", ["fixed", "auction"]);
 
@@ -101,6 +101,8 @@ export const users = app.table(
     avatarUrl: text("avatar_url"),
     bio: text("bio").notNull().default(""),
     email: text("email"),
+    // Set when Privy reports a linked (OTP-verified) email; required before onboarding.
+    emailVerifiedAt: at("email_verified_at"),
     walletAddress: text("wallet_address").unique(),
     intent: userIntent("intent"),
     onboarding: jsonb("onboarding").$type<Record<string, unknown>>(),
