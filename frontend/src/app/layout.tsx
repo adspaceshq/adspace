@@ -9,10 +9,15 @@ import { QueryProvider } from "@/lib/query";
 import { SessionProvider } from "@/lib/session";
 import "./globals.css";
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://adspaces.fun";
+
 export const metadata: Metadata = {
-  title: "Adspaces — peer-to-peer ad space",
-  description: "Sell ad space on anything. Buyers claim spots and fund what you are building.",
+  metadataBase: new URL(siteUrl),
+  title: { default: "adspaces — sell ad space on anything", template: "%s · adspaces" },
+  description: "Sell ad space on anything people see. Sponsors pay in USDC, held in escrow until delivery.",
   icons: { icon: "/logo.svg" },
+  openGraph: { type: "website", siteName: "adspaces", url: "/" },
+  twitter: { card: "summary_large_image", site: "@adspacesfun" },
 };
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
