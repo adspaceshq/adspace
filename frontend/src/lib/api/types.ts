@@ -133,15 +133,38 @@ export interface ListingSeller {
   displayName: string;
   avatarUrl: string | null;
   hasX: boolean;
+  verified: boolean;
+}
+
+export interface ListingPhoto {
+  url: string;
+  width: number | null;
+  height: number | null;
 }
 
 export interface PublicListing extends Listing {
   spots: PublicSpot[];
-  seller?: ListingSeller;
+  photos: ListingPhoto[];
+  seller: ListingSeller;
+}
+
+export interface BrowseFilters {
+  q?: string;
+  surface?: Surface;
+  mode?: PricingMode;
+  sort?: "closing" | "newest" | "price";
+  limit?: number;
+  offset?: number;
+}
+
+export interface BrowsePage {
+  items: PublicListing[];
+  hasMore: boolean;
 }
 
 export interface OwnedListing extends Listing {
   spots: Spot[];
+  photos?: ListingPhoto[];
   spotCount?: number;
   soldCount?: number;
 }

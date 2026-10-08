@@ -1,5 +1,7 @@
 import type {
   ActivityItem,
+  BrowseFilters,
+  BrowsePage,
   CreatorDashboard,
   DraftInput,
   Listing,
@@ -91,7 +93,12 @@ export const api = {
   },
 
   listings: {
-    published: () => get<PublicListing[]>("/listings"),
+    published: (filters: BrowseFilters = {}) => {
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(filters)) if (value !== undefined && value !== "") params.set(key, String(value));
+      const query = params.toString();
+      return get<BrowsePage>(`/listings${query ? `?${query}` : ""}`);
+    },
     bySlug: (slug: string) => get<PublicListing>(`/listings/${enc(slug)}`),
     createDraft: (input: DraftInput) => post<{ listing: Listing; spots: Spot[] }>("/listings", input),
     submit: (id: string) => post<Listing>(`/listings/${enc(id)}/submit`),
@@ -128,7 +135,7 @@ export const api = {
   },
 
   review: {
-    queue: () => get<Array<PublicListing & { spots: Spot[] }>>("/review/queue"),
+    queue: () => get<Array<Omit<PublicListing, "spots"> & { spots: Spot[] }>>("/review/queue"),
     summary: () => get<unknown>("/review/summary"),
     decide: (listingId: string, decision: ReviewDecision) => post<Listing>(`/review/listings/${enc(listingId)}`, decision),
     resolveDispute: (spotId: string, sellerShareBps: number, decision: string) =>
