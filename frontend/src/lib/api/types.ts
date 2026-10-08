@@ -411,3 +411,17 @@ export interface ReviewSummary {
 }
 
 export type ReviewQueueItem = Omit<PublicListing, "spots"> & { spots: Spot[] };
+
+export interface ProfilePage {
+  id: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  bio: string;
+  verified: boolean;
+  hasX: boolean;
+  memberSince: IsoDate;
+  socials: Partial<Record<"x" | "instagram" | "tiktok" | "youtube", string>>;
+  stats: { spotsSold: number; spotsSponsored: number; deliveries: number; onTimeRate: number | null; activeListings: number };
+  listings: PublicListing[];
+}
