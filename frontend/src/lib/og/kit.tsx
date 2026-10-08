@@ -78,7 +78,7 @@ export function LogoMark({ size = 56 }: { size?: number }) {
         style={{
           position: "absolute",
           left: size * 0.5,
-          top: size * 0.3,
+          top: size * 0.16,
           fontSize: size * 1.03,
           fontWeight: 700,
           lineHeight: 1,
