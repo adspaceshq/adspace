@@ -92,6 +92,9 @@ export const users = app.table(
     email: text("email"),
     walletAddress: text("wallet_address").unique(),
     intent: userIntent("intent"),
+    onboarding: jsonb("onboarding").$type<Record<string, unknown>>(),
+    payoutWallet: text("payout_wallet"),
+    verified: boolean("verified").notNull().default(false),
     isReviewer: boolean("is_reviewer").notNull().default(false),
     gaslessEnabledAt: at("gasless_enabled_at"),
     onboardedAt: at("onboarded_at"),
@@ -100,7 +103,8 @@ export const users = app.table(
   },
   (t) => [
     uniqueIndex("users_handle_lower_idx").on(sql`lower(handle)`),
-    check("users_handle_format", sql`handle ~ '^[A-Za-z0-9_]{1,30}$'`),
+    // X usernames, or `user-xxxxxxxx` for accounts without X; stored without the leading @.
+    check("users_handle_format", sql`handle ~ '^[A-Za-z0-9_-]{1,40}$'`),
   ],
 );
 
