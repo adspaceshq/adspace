@@ -443,3 +443,9 @@ export interface AppNotification {
   readAt: IsoDate | null;
   createdAt: IsoDate;
 }
+
+export interface SponsoredSpot {
+  listing: PublicListing;
+  spot: { id: string; index: number; state: SpotState };
+  brand: SponsorBrand;
+}

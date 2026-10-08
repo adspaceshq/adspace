@@ -1,4 +1,4 @@
-import type { ProfilePage, PublicListing } from "./types";
+import type { ProfilePage, PublicListing, SponsoredSpot } from "./types";
 
 const BASE = `${(process.env.API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/$/, "")}/api/v2`;
 
@@ -15,4 +15,11 @@ export async function fetchProfilePage(handle: string): Promise<ProfilePage | nu
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`profile request failed (${response.status})`);
   return (await response.json()) as ProfilePage;
+}
+
+export async function fetchSponsoredSpot(slug: string, index: number): Promise<SponsoredSpot | null> {
+  const response = await fetch(`${BASE}/listings/${encodeURIComponent(slug)}/spots/${index}/sponsor`, { next: { revalidate: 300 } });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`sponsored spot request failed (${response.status})`);
+  return (await response.json()) as SponsoredSpot;
 }
