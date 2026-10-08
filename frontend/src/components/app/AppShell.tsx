@@ -1,23 +1,32 @@
-import Link from "next/link";
-import Header from "@/components/Header";
+import { AppSidebar, BottomTabs } from "./AppNav";
+import { CompactFooter, SiteFooter } from "./SiteFooter";
+import { TopBar } from "./TopBar";
 
-// Shell for every rebuilt page. The landing page keeps its own layout and curtain footer.
-export function AppShell({ children }: { children: React.ReactNode }) {
+// "public": browse, listings, profiles — full footer, no sidebar.
+// "app": signed-in work areas — sidebar on desktop, bottom tabs on mobile, compact footer.
+export function AppShell({ children, variant = "public" }: { children: React.ReactNode; variant?: "public" | "app" }) {
+  if (variant === "public") {
+    return (
+      <div className="flex min-h-screen flex-col bg-canvas">
+        <TopBar />
+        <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
+          {children}
+        </main>
+        <SiteFooter />
+      </div>
+    );
+  }
   return (
     <div className="flex min-h-screen flex-col bg-canvas">
-      <Header />
-      <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 py-8 sm:px-6 lg:py-10">
-        {children}
-      </main>
-      <footer className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 py-6 text-small text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <span>© {new Date().getFullYear()} adspaces</span>
-          <nav className="flex gap-4">
-            <Link href="/browse" className="hover:text-ink">browse</Link>
-            <a href="mailto:support@adspaces.fun" className="hover:text-ink">support</a>
-          </nav>
-        </div>
-      </footer>
+      <TopBar />
+      <div className="mx-auto flex w-full max-w-7xl flex-1 gap-8 px-4 py-8 pb-24 sm:px-6 lg:pb-10">
+        <AppSidebar />
+        <main id="main" className="min-w-0 flex-1">
+          {children}
+        </main>
+      </div>
+      <CompactFooter />
+      <BottomTabs />
     </div>
   );
 }
