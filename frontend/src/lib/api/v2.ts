@@ -1,5 +1,8 @@
 import type {
   ActivityItem,
+  AssetKind,
+  MediaAsset,
+  UploadSignature,
   BrowseFilters,
   BrowsePage,
   CreatorDashboard,
@@ -80,6 +83,7 @@ export const api = {
     saveOnboarding: (input: unknown) => request<Session["onboarding"]>("PUT", "/me/onboarding", input),
     updateProfile: (patch: { bio?: string; payoutWallet?: string }) => request<PublicProfile>("PATCH", "/me", patch),
     listings: () => get<OwnedListing[]>("/me/listings"),
+    listing: (id: string) => get<OwnedListing>(`/me/listings/${enc(id)}`),
     creatorDashboard: () => get<CreatorDashboard>("/me/dashboard/creator"),
     sponsorDashboard: () => get<SponsorDashboard>("/me/dashboard/sponsor"),
     earnings: (days = 90) => get<Array<{ day: string; earned: string }>>(`/me/earnings?days=${days}`),
@@ -102,12 +106,18 @@ export const api = {
     },
     bySlug: (slug: string) => get<PublicListing>(`/listings/${enc(slug)}`),
     createDraft: (input: DraftInput) => post<{ listing: Listing; spots: Spot[] }>("/listings", input),
+    update: (id: string, input: DraftInput) => request<{ listing: Listing; spots: Spot[] }>("PATCH", `/listings/${enc(id)}`, input),
     submit: (id: string) => post<Listing>(`/listings/${enc(id)}/submit`),
     publish: (id: string) => post<Listing>(`/listings/${enc(id)}/publish`),
     close: (id: string) => post<{ listing: Listing; signature: string }>(`/listings/${enc(id)}/close`),
     posts: (id: string) => get<Post[]>(`/listings/${enc(id)}/posts`),
     createPost: (id: string, input: { url?: string; body?: string; mediaAssetIds?: string[] }) =>
       post<Post>(`/listings/${enc(id)}/posts`, input),
+  },
+
+  media: {
+    sign: (kind: AssetKind) => post<UploadSignature>("/uploads/sign", { kind }),
+    register: (input: { kind: AssetKind; url: string; bytes: number; width?: number; height?: number }) => post<MediaAsset>("/media", input),
   },
 
   posts: {

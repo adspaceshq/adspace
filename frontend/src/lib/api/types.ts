@@ -314,6 +314,7 @@ export interface DraftInput {
   minIncrement?: string;
   doubleUp?: boolean;
   spots: Array<{ label?: string; price: string; layout: SpotLayout }>;
+  photoAssetIds?: string[];
 }
 
 export interface ReviewDecision {
@@ -365,4 +366,28 @@ export interface SpotDetail {
   } | null;
   settlement: Settlement | null;
   deadlines: { deliveryDueAt: IsoDate; reviewUntil: IsoDate };
+}
+
+export type AssetKind = "listing_photo" | "post_media" | "brand_logo" | "evidence" | "avatar";
+
+export interface UploadSignature {
+  kind: AssetKind;
+  cloudName: string;
+  apiKey: string;
+  folder: string;
+  timestamp: number;
+  allowedFormats?: string;
+  signature: string;
+  uploadUrl: string;
+}
+
+export interface MediaAsset {
+  id: string;
+  ownerId: string;
+  kind: AssetKind;
+  url: string;
+  bytes: number;
+  width: number | null;
+  height: number | null;
+  createdAt: IsoDate;
 }
