@@ -24,7 +24,7 @@ async function hydrate(db: Db, rows: ListingRow[]) {
   const [allSpots, photos] = await Promise.all([
     db.select().from(spots).where(inArray(spots.listingId, ids)).orderBy(asc(spots.index)),
     db
-      .select({ listingId: listingPhotos.listingId, url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
+      .select({ listingId: listingPhotos.listingId, id: mediaAssets.id, url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
       .from(listingPhotos)
       .innerJoin(mediaAssets, eq(mediaAssets.id, listingPhotos.assetId))
       .where(inArray(listingPhotos.listingId, ids))
