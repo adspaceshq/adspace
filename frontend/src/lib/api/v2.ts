@@ -89,7 +89,14 @@ export const api = {
     creatorDashboard: () => get<CreatorDashboard>("/me/dashboard/creator"),
     sponsorDashboard: () => get<SponsorDashboard>("/me/dashboard/sponsor"),
     earnings: (days = 90) => get<Array<{ day: string; earned: string }>>(`/me/earnings?days=${days}`),
-    activity: () => get<ActivityItem[]>("/me/activity"),
+    activity: (options: { before?: string; role?: "creator" | "sponsor"; limit?: number } = {}) => {
+      const params = new URLSearchParams();
+      if (options.before) params.set("before", options.before);
+      if (options.role) params.set("role", options.role);
+      if (options.limit) params.set("limit", String(options.limit));
+      const query = params.toString();
+      return get<ActivityItem[]>(`/me/activity${query ? `?${query}` : ""}`);
+    },
     withdrawals: () => get<Withdrawal[]>("/me/withdrawals"),
     withdraw: (destination: string, amount: string) =>
       post<{ withdrawal: Withdrawal; signature: string }>("/me/withdrawals", { destination, amount }),
