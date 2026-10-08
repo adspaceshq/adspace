@@ -10,6 +10,7 @@ import { useNow } from "@/lib/use-now";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
 import { SpotMockup } from "@/components/ui/SpotMockup";
+import { ShareSpotButton } from "./ShareSpotButton";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { MessagesPanel } from "./MessagesPanel";
 import { SponsorActions } from "./SponsorActions";
@@ -66,6 +67,9 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
               @{seller.handle}
               {seller.verified && <BadgeCheck className="size-4 text-accent" aria-label="verified" />}
             </Link>
+            {detail.role === "sponsor" && (
+              <ShareSpotButton handle={seller.handle} slug={listing.slug} index={spot.index} state={spot.state} brandName={spot.brand?.name} />
+            )}
           </div>
           {photo && (
             <SpotMockup
