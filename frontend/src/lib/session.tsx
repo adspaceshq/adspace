@@ -1,8 +1,8 @@
 "use client";
 
-import { getAccessToken, getIdentityToken, useMfa, useMfaEnrollment, usePrivy, useSigners, useUser } from "@privy-io/react-auth";
+import { getAccessToken, getIdentityToken, useLinkAccount, useMfa, useMfaEnrollment, usePrivy, useSigners, useUser } from "@privy-io/react-auth";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, ApiError, setCsrfToken } from "@/lib/api/v2";
 import type { Session } from "@/lib/api/types";
 import { PRIVY_APP_ID } from "@/lib/privy";
@@ -25,6 +25,9 @@ export interface SessionState {
   signIn: () => void;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
+  // Opens Privy's email code flow; the session picks up the verified email afterwards.
+  linkEmail: () => void;
+  linkError?: string;
 }
 
 const noWallet: WalletAccess = {
@@ -42,6 +45,7 @@ const guest: SessionState = {
   signIn: () => {},
   signOut: async () => {},
   refresh: async () => {},
+  linkEmail: () => {},
 };
 
 const SessionContext = createContext<SessionState>(guest);
@@ -50,17 +54,23 @@ export function useSession(): SessionState {
   return useContext(SessionContext);
 }
 
-// Reuse the v2 cookie session when present; otherwise trade the Privy tokens for one.
-async function loadSession(): Promise<Session> {
-  try {
-    return await api.auth.me();
-  } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 401) throw error;
-  }
+async function exchangeSession(): Promise<Session> {
   const accessToken = await getAccessToken();
   if (!accessToken) throw new ApiError("sign in again", 401);
   const identityToken = (await getIdentityToken().catch(() => null)) ?? undefined;
   return api.auth.exchange(accessToken, identityToken);
+}
+
+// Reuse the v2 cookie session when present; otherwise trade the Privy tokens for one.
+// Re-exchange when Privy holds an email the session hasn't seen (linked in another tab).
+async function loadSession(privyEmail: string | undefined): Promise<Session> {
+  try {
+    const existing = await api.auth.me();
+    if (!privyEmail || (existing.emailVerified && existing.email === privyEmail)) return existing;
+  } catch (error) {
+    if (!(error instanceof ApiError) || error.status !== 401) throw error;
+  }
+  return exchangeSession();
 }
 
 function PrivySession({ children }: { children: React.ReactNode }) {
@@ -92,9 +102,10 @@ function PrivySession({ children }: { children: React.ReactNode }) {
     [delegated, mfaEnabled, enableGasless, showMfaEnrollmentModal, promptMfa],
   );
 
+  const privyEmail = user?.email?.address;
   const query = useQuery({
     queryKey: queryKeys.session,
-    queryFn: loadSession,
+    queryFn: () => loadSession(privyEmail),
     enabled: ready && authenticated,
     staleTime: 5 * 60_000,
   });
@@ -114,6 +125,22 @@ function PrivySession({ children }: { children: React.ReactNode }) {
     await queryClient.invalidateQueries({ queryKey: queryKeys.session });
   }, [queryClient]);
 
+  const [linkError, setLinkError] = useState<string>();
+  const resync = useCallback(async () => {
+    queryClient.setQueryData(queryKeys.session, await exchangeSession());
+  }, [queryClient]);
+  const { linkEmail } = useLinkAccount({
+    onSuccess: () => {
+      setLinkError(undefined);
+      void resync();
+    },
+    onError: (code) => {
+      // Already linked in Privy: the session just needs to pull it in.
+      if (code === "cannot_link_more_of_type") return void resync();
+      if (code !== "exited_link_flow") setLinkError("couldn't verify that email; try again");
+    },
+  });
+
   const value = useMemo<SessionState>(
     () => ({
       ready: ready && (!authenticated || !query.isPending),
@@ -122,8 +149,10 @@ function PrivySession({ children }: { children: React.ReactNode }) {
       signIn: () => login(),
       signOut,
       refresh,
+      linkEmail,
+      linkError,
     }),
-    [ready, authenticated, query.isPending, query.data, wallet, login, signOut, refresh],
+    [ready, authenticated, query.isPending, query.data, wallet, login, signOut, refresh, linkEmail, linkError],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
