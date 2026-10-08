@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  Bookmark,
   Compass,
   LayoutDashboard,
   ListChecks,
@@ -38,6 +39,7 @@ const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
       { href: "/sell", label: "new listing", icon: Plus, match: "/sell" },
       { href: "/wallet", label: "wallet", icon: Wallet },
       { href: "/activity", label: "activity", icon: Activity },
+      { href: "/watchlist", label: "saved", icon: Bookmark },
       { href: "/settings", label: "settings", icon: Settings },
     ],
   },
