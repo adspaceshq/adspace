@@ -106,6 +106,8 @@ export const users = app.table(
     walletAddress: text("wallet_address").unique(),
     intent: userIntent("intent"),
     onboarding: jsonb("onboarding").$type<Record<string, unknown>>(),
+    // Email opt-outs by notification category ({ bidding: false }); missing means on.
+    notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
     payoutWallet: text("payout_wallet"),
     verified: boolean("verified").notNull().default(false),
     isReviewer: boolean("is_reviewer").notNull().default(false),
@@ -494,9 +496,14 @@ export const spotEvents = app.table(
     actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
     chainTxId: uuid("chain_tx_id").references(() => chainTxs.id, { onDelete: "set null" }),
     data: jsonb("data").notNull().default({}),
+    // Set once the notifier has turned this event into notifications.
+    notifiedAt: at("notified_at"),
     createdAt: createdAt(),
   },
-  (t) => [index("spot_events_spot_idx").on(t.spotId, t.createdAt)],
+  (t) => [
+    index("spot_events_spot_idx").on(t.spotId, t.createdAt),
+    index("spot_events_unnotified_idx").on(t.createdAt).where(sql`notified_at is null`),
+  ],
 );
 
 export const withdrawals = app.table(
@@ -533,4 +540,33 @@ export const watchlist = app.table(
     createdAt: createdAt(),
   },
   (t) => [primaryKey({ columns: [t.userId, t.listingId] }), index("watchlist_listing_idx").on(t.listingId)],
+);
+
+// ---------- notifications ----------
+
+export const emailState = app.enum("email_state", ["pending", "sent", "skipped", "failed"]);
+
+export const notifications = app.table(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    category: text("category").notNull(),
+    title: text("title").notNull(),
+    body: text("body").notNull().default(""),
+    href: text("href"),
+    // One notification per (cause, recipient); makes the notifier safe to re-run.
+    dedupeKey: text("dedupe_key").notNull().unique(),
+    readAt: at("read_at"),
+    emailState: emailState("email_state").notNull().default("pending"),
+    emailAttempts: integer("email_attempts").notNull().default(0),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("notifications_user_created_idx").on(t.userId, t.createdAt),
+    index("notifications_email_pending_idx").on(t.createdAt).where(sql`email_state = 'pending'`),
+  ],
 );

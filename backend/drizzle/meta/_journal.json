@@ -57,6 +57,13 @@
       "when": 1791477613235,
       "tag": "0007_watchlist",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791478075158,
+      "tag": "0008_notifications",
+      "breakpoints": true
     }
   ]
 }
