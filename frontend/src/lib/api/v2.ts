@@ -14,6 +14,8 @@ import type {
   ProtocolStatus,
   PublicListing,
   PublicProfile,
+  ReviewQueueItem,
+  ReviewSummary,
   ReviewDecision,
   Session,
   Settlement,
@@ -147,8 +149,8 @@ export const api = {
   },
 
   review: {
-    queue: () => get<Array<Omit<PublicListing, "spots"> & { spots: Spot[] }>>("/review/queue"),
-    summary: () => get<unknown>("/review/summary"),
+    queue: () => get<ReviewQueueItem[]>("/review/queue"),
+    summary: () => get<ReviewSummary>("/review/summary"),
     decide: (listingId: string, decision: ReviewDecision) => post<Listing>(`/review/listings/${enc(listingId)}`, decision),
     resolveDispute: (spotId: string, sellerShareBps: number, decision: string) =>
       post<{ spot: Spot; settlement: Settlement; signature: string }>(`/review/spots/${enc(spotId)}/resolve`, {

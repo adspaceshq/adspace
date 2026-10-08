@@ -392,3 +392,21 @@ export interface MediaAsset {
   height: number | null;
   createdAt: IsoDate;
 }
+
+export interface ReviewSummary {
+  counts: { listingsInReview: number; openDisputes: number; payoutsReady: number; failedTxs: number };
+  disputes: Array<{
+    dispute: { id: string; spotId: string; buyerId: string; state: string; reason: string; openedAt: IsoDate };
+    spotId: string;
+    spotIndex: number;
+    amount: BaseUnits | null;
+    listingId: string;
+    listingTitle: string;
+    sellerHandle: string;
+    buyerHandle: string;
+  }>;
+  payoutsReady: Array<{ spotId: string; spotIndex: number; amount: BaseUnits | null; listingId: string; listingTitle: string }>;
+  failedTxs: Array<{ id: string; op: string; error: string | null; signature: string | null; updatedAt: IsoDate; spotId: string | null }>;
+}
+
+export type ReviewQueueItem = Omit<PublicListing, "spots"> & { spots: Spot[] };
