@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { TxStatus } from "@/components/ui/TxStatus";
+import { GaslessPrompt } from "@/components/app/GaslessPrompt";
 
 export function CheckoutModal({
   listing,
@@ -29,7 +30,7 @@ export function CheckoutModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { session } = useSession();
+  const { session, wallet } = useSession();
   const queryClient = useQueryClient();
   const router = useRouter();
   const balance = useUsdcBalance(session?.walletAddress);
@@ -53,6 +54,7 @@ export function CheckoutModal({
   }
   const insufficient = balance.data !== undefined && amount !== null && BigInt(balance.data) < amount;
   const done = tx.state.phase === "confirmed";
+  const needsGasless = !wallet.delegated && !done;
 
   const submit = async () => {
     const next: Record<string, string> = {};
@@ -93,7 +95,7 @@ export function CheckoutModal({
       title={title}
       description={done ? undefined : `${listing.title} · @${listing.seller.handle}`}
       footer={
-        done ? (
+        needsGasless ? undefined : done ? (
           <>
             <Button variant="secondary" onClick={onClose}>
               close
@@ -112,7 +114,9 @@ export function CheckoutModal({
         )
       }
     >
-      {done ? (
+      {needsGasless ? (
+        <GaslessPrompt action={auction ? "bid" : "claim spots"} />
+      ) : done ? (
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <CheckCircle2 className="size-10 text-success" aria-hidden />
           <p className="text-body text-muted">
