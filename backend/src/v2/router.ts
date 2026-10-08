@@ -23,6 +23,7 @@ import { payoutSeller } from "../services/settlement.js";
 import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../services/disputes.js";
 import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
 import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
+import { publicProfilePage } from "../services/profiles.js";
 import { reconcile } from "../services/reconciler.js";
 import { setDisputeTimeout, setPaused, type AdminDeps } from "../services/admin.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
@@ -216,6 +217,14 @@ export function createV2Router(options: {
       } catch (error) {
         send(res, { available: false, reason: (error as Error).message });
       }
+    }),
+  );
+  router.get(
+    "/users/:handle/page",
+    handle(async (req, res) => {
+      const page = await publicProfilePage(db, req.params.handle);
+      if (!page) return void send(res, { error: "user not found" }, 404);
+      send(res, page);
     }),
   );
   router.get(
