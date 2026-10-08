@@ -15,6 +15,12 @@ import { ProgramDisputeResolutionExecutor } from "./dispute-resolution-chain.js"
 import { PrivyRefundChainExecutor } from "./refund-chain.js";
 import { PrivyCloseSpotsChainExecutor } from "./close-spots-chain.js";
 import { SolanaChainReconciler } from "./chain-reconciliation.js";
+import { privy } from "./auth.js";
+import { createDb } from "./db/client.js";
+import { usdcMintFor } from "./payout.js";
+import { TERMS_VERSION } from "./types.js";
+import { createChainContext } from "./v2/chain-context.js";
+import { createV2Router } from "./v2/router.js";
 
 async function start() {
   const config = loadConfig();
@@ -55,6 +61,25 @@ async function start() {
   const refundChainExecutor=config.solana.reviewerWalletPath?new PrivyRefundChainExecutor(pool,config.solana.rpcUrl,config.solana.programId,config.solana.reviewerWalletPath):undefined;
   const closeSpotsChainExecutor=config.solana.reviewerWalletPath?new PrivyCloseSpotsChainExecutor(pool,config.solana.rpcUrl,config.solana.programId,config.solana.reviewerWalletPath):undefined;
   const chainReconciler=new SolanaChainReconciler(pool,config.solana.rpcUrl);
+  const db = createDb(pool);
+  const v2Chain = config.solana.reviewerWalletPath
+    ? createChainContext({
+        db,
+        privy,
+        rpcUrl: config.solana.rpcUrl,
+        mint: usdcMintFor(config.solana.cluster, process.env.USDC_MINT),
+        reviewerKeypairPath: config.solana.reviewerWalletPath,
+        privyAuthorizationKey: process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY,
+        sellerRentFloorLamports: config.solana.cluster === "devnet" ? 50_000_000 : 10_000_000,
+      })
+    : undefined;
+  const v2Router = createV2Router({
+    db,
+    chain: v2Chain,
+    reviewers: config.platformReviewers,
+    termsVersion: TERMS_VERSION,
+    metadataBaseUrl: config.frontendUrl,
+  });
   await auth.migrate();
   await market.migrate();
   await withdrawals.migrate();
@@ -79,6 +104,7 @@ async function start() {
     refundChainExecutor,
     closeSpotsChainExecutor,
     chainReconciler,
+    v2Router,
   }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on)`));
 }
 
