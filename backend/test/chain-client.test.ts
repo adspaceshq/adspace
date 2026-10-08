@@ -57,3 +57,12 @@ test("Privy authorization failures become user-fixable errors", async () => {
   const other = new Error("blockhash not found");
   assert.equal(signingError(other), other);
 });
+
+test("balance failures say whether SOL or USDC is short and keep the raw error", () => {
+  const sol = decodeChainError(new Error("Transfer: insufficient lamports 0, need 2039280"));
+  assert.match(sol.message, /not enough SOL/);
+  assert.match(sol.raw ?? "", /insufficient lamports/);
+  const usdc = decodeChainError(new Error("failed"), ["Program log: Error: insufficient funds"]);
+  assert.match(usdc.message, /not enough USDC/);
+  assert.match(decodeChainError(new Error("Attempt to debit an account but found no record of a prior credit.")).message, /not enough SOL/);
+});
