@@ -82,11 +82,12 @@ export class PrivyAuctionBidExecutor implements AuctionBidExecutor {
       programId: this.programId,
       keys: [
         { pubkey: bidderKey, isSigner: true, isWritable: true },
-        { pubkey: new PublicKey(row.listing_address), isSigner: false, isWritable: false },
+        { pubkey: new PublicKey(row.listing_address), isSigner: false, isWritable: true },
         { pubkey: new PublicKey(row.chain_address), isSigner: false, isWritable: true },
         { pubkey: new PublicKey(row.chain_vault_address), isSigner: false, isWritable: true },
         { pubkey: bidderAta, isSigner: false, isWritable: true },
         { pubkey: previousAta, isSigner: false, isWritable: Boolean(row.previous_wallet) },
+        { pubkey: PublicKey.findProgramAddressSync([Buffer.from("config")], this.programId)[0], isSigner: false, isWritable: false },
         { pubkey: this.mint, isSigner: false, isWritable: false },
         { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       ],
