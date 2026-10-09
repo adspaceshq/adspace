@@ -1,4 +1,4 @@
-import express, { type NextFunction, type Request, type Response } from "express";
+import express, { type NextFunction, type Request, type Response, type Router } from "express";
 import cookieParser from "cookie-parser";
 import { rateLimit } from "express-rate-limit";
 import { Store } from "./store.js";
@@ -49,6 +49,8 @@ export interface AppDependencies {
   refundChainExecutor?: RefundChainExecutor;
   closeSpotsChainExecutor?: CloseSpotsChainExecutor;
   chainReconciler?: ChainReconciler;
+  /** Rebuilt API on the app schema; mounted at /api/v2 alongside the legacy routes. */
+  v2Router?: Router;
 }
 
 const sendErr = (res: Response, e: unknown) => {
@@ -91,6 +93,7 @@ export function createApp({
   refundChainExecutor,
   closeSpotsChainExecutor,
   chainReconciler,
+  v2Router,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
@@ -163,6 +166,8 @@ export function createApp({
     if (!req.user || !isReviewer(req.user, reviewers)) return void res.status(403).json({ error: "reviewer access required" });
     next();
   };
+
+  if (v2Router) app.use("/api/v2", v2Router);
 
   app.get("/health", (_req, res) => res.json({
     status: "ok",

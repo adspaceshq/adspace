@@ -79,6 +79,7 @@ export class PrivyFixedClaimExecutor implements FixedClaimExecutor {
         { pubkey: new PublicKey(row.chain_address), isSigner: false, isWritable: true },
         { pubkey: new PublicKey(row.chain_vault_address), isSigner: false, isWritable: true },
         { pubkey: buyerAta, isSigner: false, isWritable: true },
+        { pubkey: PublicKey.findProgramAddressSync([Buffer.from("config")], this.programId)[0], isSigner: false, isWritable: false },
         { pubkey: this.mint, isSigner: false, isWritable: false },
         { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       ],

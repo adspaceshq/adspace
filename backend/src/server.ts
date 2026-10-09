@@ -15,6 +15,15 @@ import { ProgramDisputeResolutionExecutor } from "./dispute-resolution-chain.js"
 import { PrivyRefundChainExecutor } from "./refund-chain.js";
 import { PrivyCloseSpotsChainExecutor } from "./close-spots-chain.js";
 import { SolanaChainReconciler } from "./chain-reconciliation.js";
+import { privy } from "./auth.js";
+import { createDb } from "./db/client.js";
+import { usdcMintFor } from "./payout.js";
+import { TERMS_VERSION } from "./types.js";
+import { createChainContext } from "./v2/chain-context.js";
+import { createV2Router } from "./v2/router.js";
+import { reconcile } from "./services/reconciler.js";
+import { deliverEmails, processSpotEvents, scheduleReminders } from "./services/notifications.js";
+import { renderNotificationEmail, resendSender } from "./email.js";
 
 async function start() {
   const config = loadConfig();
@@ -55,6 +64,61 @@ async function start() {
   const refundChainExecutor=config.solana.reviewerWalletPath?new PrivyRefundChainExecutor(pool,config.solana.rpcUrl,config.solana.programId,config.solana.reviewerWalletPath):undefined;
   const closeSpotsChainExecutor=config.solana.reviewerWalletPath?new PrivyCloseSpotsChainExecutor(pool,config.solana.rpcUrl,config.solana.programId,config.solana.reviewerWalletPath):undefined;
   const chainReconciler=new SolanaChainReconciler(pool,config.solana.rpcUrl);
+  const db = createDb(pool);
+  const v2Chain = config.solana.reviewerWalletPath
+    ? createChainContext({
+        db,
+        privy,
+        rpcUrl: config.solana.rpcUrl,
+        mint: usdcMintFor(config.solana.cluster, process.env.USDC_MINT),
+        reviewerKeypairPath: config.solana.reviewerWalletPath,
+        privyAuthorizationKey: process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY,
+        sellerRentFloorLamports: config.solana.cluster === "devnet" ? 50_000_000 : 10_000_000,
+      })
+    : undefined;
+  const v2Router = createV2Router({
+    db,
+    chain: v2Chain,
+    reviewers: config.platformReviewers,
+    admins: (process.env.PLATFORM_ADMINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
+    termsVersion: TERMS_VERSION,
+    metadataBaseUrl: config.frontendUrl,
+    withdrawalDailyLimit: BigInt(Math.round(Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000) * 1_000_000)),
+  });
+  const reconcileEveryMs = Number(process.env.RECONCILE_INTERVAL_MS ?? 5 * 60 * 1000);
+  if (v2Chain && reconcileEveryMs > 0) {
+    const run = () =>
+      reconcile({ db, signatureOutcomes: v2Chain.signatureOutcomes, readSpotStatus: v2Chain.readSpotStatus })
+        .then((report) => {
+          if (report.confirmedTxs || report.failedTxs || report.withdrawalsUpdated || report.spotDrift.length) {
+            console.log("reconcile:", JSON.stringify(report));
+          }
+        })
+        .catch((error) => console.error("reconcile failed:", error instanceof Error ? error.message : error));
+    setInterval(run, reconcileEveryMs).unref();
+  }
+  // Notifications run without the chain: they read what services already recorded.
+  const resendKey = process.env.RESEND_API_KEY?.trim();
+  const sendEmail = resendKey ? resendSender(resendKey, process.env.NOTIFICATIONS_FROM_EMAIL || undefined) : undefined;
+  if (!sendEmail) console.warn("RESEND_API_KEY not set; notifications are in-app only");
+  const notifyEveryMs = Number(process.env.NOTIFY_INTERVAL_MS ?? 30_000);
+  if (notifyEveryMs > 0) {
+    let running = false;
+    const runNotifier = async () => {
+      if (running) return;
+      running = true;
+      try {
+        await processSpotEvents(db);
+        await scheduleReminders(db);
+        if (sendEmail) await deliverEmails(db, sendEmail, (notification) => renderNotificationEmail(notification, config.frontendUrl));
+      } catch (error) {
+        console.error("notifier failed:", error instanceof Error ? error.message : error);
+      } finally {
+        running = false;
+      }
+    };
+    setInterval(() => void runNotifier(), notifyEveryMs).unref();
+  }
   await auth.migrate();
   await market.migrate();
   await withdrawals.migrate();
@@ -79,6 +143,7 @@ async function start() {
     refundChainExecutor,
     closeSpotsChainExecutor,
     chainReconciler,
+    v2Router,
   }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on)`));
 }
 

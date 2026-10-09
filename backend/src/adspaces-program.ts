@@ -130,6 +130,7 @@ export function createListingInstructions(input: {
         { pubkey: addresses.listing, isSigner: false, isWritable: true },
         { pubkey: address.spot, isSigner: false, isWritable: true },
         { pubkey: address.vault, isSigner: false, isWritable: true },
+        { pubkey: config, isSigner: false, isWritable: false },
         { pubkey: usdcMint, isSigner: false, isWritable: false },
         { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
         { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },

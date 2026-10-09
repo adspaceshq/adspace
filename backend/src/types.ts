@@ -208,6 +208,7 @@ export interface SessionUser {
   email?: string;
   walletAddress?: string;
   hasX: boolean;
+  emailVerified?: boolean;
 }
 
 export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId?: string }
@@ -224,7 +225,7 @@ export interface PublicProfile {
   verified: boolean;
 }
 
-export type AccountType = "creator" | "sponsor";
+export type AccountType = "creator" | "sponsor" | "both";
 export const SOCIAL_PLATFORMS = ["x", "instagram", "youtube", "tiktok"] as const;
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
 export const BRAND_CATEGORIES = ["crypto", "fintech", "gaming", "consumer", "saas", "fitness", "media", "other"] as const;
@@ -238,6 +239,9 @@ export interface Onboarding {
 }
 
 export interface UpdateProfileRequest {
+  displayName?: string;
+  handle?: string;
+  avatar?: string | null;
   bio?: string;
   payoutWallet?: string;
 }

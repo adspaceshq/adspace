@@ -1,0 +1,2 @@
+ALTER TABLE "app"."listings" DROP CONSTRAINT "listings_dates_ordered";--> statement-breakpoint
+ALTER TABLE "app"."listings" ADD CONSTRAINT "listings_dates_ordered" CHECK (delivery_due_at > artwork_due_at);

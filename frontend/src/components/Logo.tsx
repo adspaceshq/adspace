@@ -8,8 +8,8 @@ type LogoProps = {
 
 /**
  * Adspaces mark: white extra-bold "a" bleeding off the right and bottom
- * edges of a black square. Pure #000 is faithful to the source artwork
- * (deliberately not the #020817 ink token).
+ * edges of a black square. Keep these coordinates aligned with public/logo.svg
+ * so the header and browser icon render the same artwork.
  */
 export default function Logo({ size = 32, className, label = 'Adspaces home' }: LogoProps) {
   return (
@@ -24,10 +24,10 @@ export default function Logo({ size = 32, className, label = 'Adspaces home' }: 
       <rect width="64" height="64" fill="#000" />
       <text
         x="50"
-        y="78"
+        y="65"
         textAnchor="middle"
-        fontFamily="Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif"
-        fontWeight={800}
+        fontFamily="Arial Black, Inter, 'Helvetica Neue', Arial, sans-serif"
+        fontWeight={900}
         fontSize="66"
         fill="#fff"
       >
