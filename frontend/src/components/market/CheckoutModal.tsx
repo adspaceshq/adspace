@@ -81,6 +81,7 @@ export function CheckoutModal({
         queryClient.invalidateQueries({ queryKey: queryKeys.listings() }),
         queryClient.invalidateQueries({ queryKey: queryKeys.sponsorDashboard }),
         queryClient.invalidateQueries({ queryKey: ["balance"] }),
+        queryClient.invalidateQueries({ queryKey: ["bids", spot.id] }),
       ]);
       router.refresh();
     }

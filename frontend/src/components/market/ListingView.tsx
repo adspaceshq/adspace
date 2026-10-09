@@ -18,6 +18,7 @@ import { Money } from "@/components/ui/Money";
 import { SpotMockup } from "@/components/ui/SpotMockup";
 import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { CheckoutModal } from "./CheckoutModal";
+import { BidHistory } from "./BidHistory";
 import { ListingTimeline } from "./ListingTimeline";
 import { PostFeed } from "./PostFeed";
 import { WatchButton } from "@/components/watchlist/WatchButton";
@@ -101,7 +102,7 @@ export function ListingView({ initial }: { initial: PublicListing }) {
           )}
         </div>
 
-        <SpotList listing={listing} selectedId={selected?.id} onSelect={setSelectedId} />
+        <SpotList listing={listing} selectedId={selected?.id} onSelect={setSelectedId} now={now} />
 
         {listing.description && (
           <section aria-labelledby="about" className="flex flex-col gap-2">
@@ -224,7 +225,7 @@ function PurchasePanel({
           spot {spot.index + 1}
           {spot.label && <span className="font-normal text-muted"> · {spot.label}</span>}
         </p>
-        <SpotStateBadge state={spot.state} />
+        <SpotStateBadge state={spot.state} bidding={listing.mode === "auction" && canPurchase(listing, spot, now)} />
       </div>
       {spot.brand && <SponsorLine brand={spot.brand} leading={listing.mode === "auction" && spot.state === "funded"} />}
       <div>
@@ -248,6 +249,7 @@ function PurchasePanel({
       <p className="text-small text-muted">
         your USDC is held in escrow until delivery is proven. no fees for sponsors.
       </p>
+      {listing.mode === "auction" && <BidHistory spotId={spot.id} live={available} />}
     </div>
   );
 }
@@ -286,7 +288,7 @@ function MobilePurchaseBar({
   );
 }
 
-function SpotList({ listing, selectedId, onSelect }: { listing: PublicListing; selectedId?: string; onSelect: (id: string) => void }) {
+function SpotList({ listing, selectedId, onSelect, now }: { listing: PublicListing; selectedId?: string; onSelect: (id: string) => void; now: number }) {
   return (
     <section aria-labelledby="spots" className="flex flex-col gap-3">
       <h2 id="spots" className="text-lead font-semibold">
@@ -322,7 +324,7 @@ function SpotList({ listing, selectedId, onSelect }: { listing: PublicListing; s
                     {headline.label} <Money value={headline.amount} />
                   </span>
                 </span>
-                <SpotStateBadge state={spot.state} />
+                <SpotStateBadge state={spot.state} bidding={listing.mode === "auction" && canPurchase(listing, spot, now)} />
               </button>
             </li>
           );

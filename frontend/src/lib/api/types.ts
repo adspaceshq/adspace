@@ -429,6 +429,12 @@ export interface ProfilePage {
   listings: PublicListing[];
 }
 
+export interface BidHistory {
+  spotId: string;
+  bidders: number;
+  items: Array<{ id: string; amount: BaseUnits; createdAt: IsoDate; signature: string | null; bidder: string; isYou: boolean; isTop: boolean }>;
+}
+
 export interface WatchItem {
   savedAt: IsoDate;
   listing: PublicListing;
