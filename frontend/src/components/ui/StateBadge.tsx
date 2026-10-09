@@ -33,7 +33,15 @@ export function ListingStateBadge({ state }: { state: ListingState }) {
   );
 }
 
-export function SpotStateBadge({ state, perspective = "public" }: { state: SpotState; perspective?: Perspective }) {
+// `bidding`: an auction spot with a bid while bidding is still open reads "has bids", not "taken".
+export function SpotStateBadge({ state, perspective = "public", bidding = false }: { state: SpotState; perspective?: Perspective; bidding?: boolean }) {
+  if (bidding && state === "funded" && perspective === "public") {
+    return (
+      <Badge tone="accent" dot>
+        has bids
+      </Badge>
+    );
+  }
   const copy = spotCopy[state];
   return (
     <Badge tone={copy.tone} dot>
