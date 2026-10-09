@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import { fetchProfilePage } from "@/lib/api/server";
-import { Brand, cardPhoto, loadFonts, loadImage, og, OG_SIZE, PhotoTile, truncate } from "@/lib/og/kit";
+import { Brand, cardPhoto, loadFonts, loadImage, og, OG_SIZE, PhotoTile, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
 
 export const alt = "adspaces profile";
 export const size = OG_SIZE;
@@ -66,6 +66,6 @@ export default async function Image({ params }: { params: Promise<{ handle: stri
         )}
       </div>
     ),
-    { ...size, fonts },
+    { ...size, fonts, headers: OG_CACHE_HEADERS },
   );
 }

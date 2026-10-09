@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { fetchListingPost } from "@/lib/api/server";
 import { headlineMetric, POST_SOURCE } from "@/lib/post-display";
-import { Brand, cardPhoto, loadFonts, loadImage, og, OG_SIZE, PhotoTile, truncate } from "@/lib/og/kit";
+import { Brand, cardPhoto, loadFonts, loadImage, og, OG_SIZE, PhotoTile, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
 
 export const alt = "post on adspaces";
 export const size = OG_SIZE;
@@ -40,6 +40,6 @@ export default async function Image({ params }: { params: Promise<{ listing: str
         </div>
       </div>
     ),
-    { ...size, fonts },
+    { ...size, fonts, headers: OG_CACHE_HEADERS },
   );
 }

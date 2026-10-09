@@ -186,3 +186,7 @@ export function MockupTile({ src, width, height, spots, rotate = 0 }: { src: str
     </div>
   );
 }
+
+// Dynamic cards take ~2s to draw; crawlers (X, LinkedIn) give up quickly. Let the CDN cache them
+// for an hour and serve stale while it redraws, so a preview is always instant.
+export const OG_CACHE_HEADERS = { "Cache-Control": "public, max-age=300, s-maxage=3600, stale-while-revalidate=86400" };

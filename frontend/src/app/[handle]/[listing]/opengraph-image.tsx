@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { fetchPublicListing } from "@/lib/api/server";
 import { priceSummary, spotsLeft } from "@/lib/listing-display";
 import { formatUsd } from "@/lib/money";
-import { Brand, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate } from "@/lib/og/kit";
+import { Brand, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
 
 export const alt = "adspaces listing";
 export const size = OG_SIZE;
@@ -78,6 +78,6 @@ export default async function Image({ params }: { params: Promise<{ listing: str
         </div>
       </div>
     ),
-    { ...size, fonts },
+    { ...size, fonts, headers: OG_CACHE_HEADERS },
   );
 }
