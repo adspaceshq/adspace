@@ -1,3 +1,4 @@
+import { PublicKey } from "@solana/web3.js";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { cookieOptions, userFromAccessToken } from "../auth.js";
@@ -539,6 +540,17 @@ export function createV2Router(options: {
     handle(async (req, res) => {
       const signer = await requireChain().userSigner(me(req));
       send(res, await closeListing(refundDeps(), me(req).id, signer, req.params.id));
+    }),
+  );
+  // Read with the server's RPC so the browser never needs (or exposes) a paid RPC key.
+  router.get(
+    "/me/balance",
+    requireUser,
+    handle(async (req, res) => {
+      const wallet = me(req).walletAddress;
+      if (!wallet) return void send(res, { usdc: "0", wallet: null });
+      const usdc = await requireChain().readTokenBalance(new PublicKey(wallet));
+      send(res, { usdc, wallet });
     }),
   );
   router.get("/me/withdrawals", requireUser, handle(async (req, res) => send(res, await listWithdrawals(db, me(req).id))));
