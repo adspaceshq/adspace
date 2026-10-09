@@ -111,7 +111,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
             />
           )}
           {listing.photos.length > 1 && (
-            <div className="flex gap-2 overflow-x-auto">
+            <div className="no-scrollbar flex gap-2 overflow-x-auto">
               {listing.photos.slice(1).map((photo) => (
                 // eslint-disable-next-line @next/next/no-img-element -- review thumbnails
                 <img key={photo.url} src={photo.url} alt="" className="h-24 rounded-control object-cover" />

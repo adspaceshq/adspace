@@ -10,7 +10,7 @@ export interface TabItem {
 // Tabs are links so every view is deep-linkable and survives reloads and back navigation.
 export function Tabs({ items, active }: { items: TabItem[]; active: string }) {
   return (
-    <nav aria-label="Sections" className="flex gap-1 overflow-x-auto border-b border-line">
+    <nav aria-label="Sections" className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-line no-scrollbar">
       {items.map((item) => {
         const selected = item.href === active;
         return (

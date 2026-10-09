@@ -123,7 +123,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
             {saving ? "saving…" : saved ? "draft saved" : listingId ? "draft" : "not saved yet"}
           </p>
         </div>
-        <ol className="flex gap-1 overflow-x-auto" aria-label="steps">
+        <ol className="no-scrollbar flex gap-1 overflow-x-auto" aria-label="steps">
           {STEPS.map((entry, index) => (
             <li key={entry.id} className="flex-1">
               <button

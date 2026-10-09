@@ -92,7 +92,7 @@ export function BrowseView() {
             className="h-12 w-full rounded-full border border-line bg-surface pl-11 pr-4 text-body placeholder:text-subtle focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent-ring"
           />
         </label>
-        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="no-scrollbar flex items-center gap-2 overflow-x-auto pb-1">
           <button type="button" className={chip(!filters.surface)} onClick={() => setFilter("surface", undefined)}>
             all
           </button>
