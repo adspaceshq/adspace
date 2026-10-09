@@ -108,6 +108,9 @@ export const users = app.table(
     onboarding: jsonb("onboarding").$type<Record<string, unknown>>(),
     // Email opt-outs by notification category ({ bidding: false }); missing means on.
     notificationPrefs: jsonb("notification_prefs").$type<Record<string, boolean>>().notNull().default({}),
+    // Last USDC balance the notifier saw, to spot incoming deposits.
+    usdcSeen: usdc("usdc_seen"),
+    usdcSeenAt: at("usdc_seen_at"),
     payoutWallet: text("payout_wallet"),
     verified: boolean("verified").notNull().default(false),
     isReviewer: boolean("is_reviewer").notNull().default(false),

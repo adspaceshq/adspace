@@ -64,6 +64,13 @@
       "when": 1791478075158,
       "tag": "0008_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791521898765,
+      "tag": "0009_deposit_tracking",
+      "breakpoints": true
     }
   ]
 }
