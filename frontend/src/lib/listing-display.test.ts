@@ -8,6 +8,7 @@ const spot = (overrides: Partial<PublicSpot>): PublicSpot => ({
   label: "",
   price: "1000000",
   layout: { x: 0, y: 0, w: 10 },
+  brand: null,
   state: "open",
   amount: null,
   taken: false,

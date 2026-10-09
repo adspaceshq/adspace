@@ -18,6 +18,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
+import { LogoUpload } from "./LogoUpload";
 
 export function CheckoutModal({
   listing,
@@ -59,6 +60,7 @@ export function CheckoutModal({
   const submit = async () => {
     const next: Record<string, string> = {};
     if (!brand.name.trim()) next.name = "add your brand name";
+    if (!brand.logoUrl) next.logo = "upload the logo the creator should put on the spot";
     if (brand.link && !/^https:\/\/\S+\.\S+$/.test(brand.link.trim())) next.link = "use a full https:// link";
     if (amount === null) next.amount = "enter an amount like 12.50";
     else if (amount < minimum) next.amount = `minimum is ${formatUsd(minimum)}`;
@@ -67,6 +69,7 @@ export function CheckoutModal({
     const result = await tx.execute({
       brand: {
         name: brand.name.trim(),
+        logoUrl: brand.logoUrl,
         ...(brand.link?.trim() ? { link: brand.link.trim() } : {}),
         ...(brand.handle?.trim() ? { handle: brand.handle.trim() } : {}),
       },
@@ -138,6 +141,13 @@ export function CheckoutModal({
               error={errors.name}
               maxLength={80}
               autoFocus
+            />
+            <LogoUpload
+              value={brand.logoUrl}
+              onChange={(logoUrl) => setBrand((current) => ({ ...current, logoUrl }))}
+              creatorHandle={listing.seller.handle}
+              error={errors.logo}
+              disabled={tx.busy}
             />
             <div className="grid gap-3 sm:grid-cols-2">
               <Input

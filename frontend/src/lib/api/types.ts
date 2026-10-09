@@ -74,6 +74,8 @@ export interface PublicSpot {
   state: SpotState;
   amount: BaseUnits | null;
   taken: boolean;
+  // The sponsor's chosen brand, public once the spot is sold.
+  brand: { name: string; logoUrl?: string; link?: string; handle?: string } | null;
 }
 
 export interface Spot {
