@@ -50,6 +50,13 @@ export function cardPhoto(url: string | null | undefined, width: number, height:
   return `https://res.cloudinary.com/${CLOUD_NAME}/image/fetch/${transform}/${url}`;
 }
 
+// Logos are fitted, not cropped, and kept as PNG so transparent backgrounds survive.
+export function cardLogo(url: string | null | undefined, size: number): string | null {
+  if (!url) return null;
+  const upload = CLOUD_NAME ? /^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/(.*)$/.exec(url) : null;
+  return upload ? `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/f_png,c_fit,w_${size * 2},h_${size * 2}/${upload[1]}` : url;
+}
+
 // Inlines a remote image so one slow or missing photo degrades to a placeholder instead of failing the card.
 export async function loadImage(url: string | undefined | null, timeoutMs = 8000): Promise<string | null> {
   if (!url) return null;
@@ -147,6 +154,8 @@ export interface MockupSpot {
   layout: { x: number; y: number; w: number; h?: number };
   taken: boolean;
   highlight?: boolean;
+  // Inlined sponsor logo, drawn on a white sticker instead of the number.
+  logo?: string | null;
 }
 
 // A listing photo with its ad spots drawn the same way as the in-app SpotMockup
@@ -158,7 +167,7 @@ export function MockupTile({ src, width, height, spots, rotate = 0 }: { src: str
       {spots.map((spot) => {
         const w = (spot.layout.w / 100) * width;
         const h = spot.layout.h ? (spot.layout.h / 100) * height : w;
-        const fill = spot.highlight ? og.accent : spot.taken ? "rgba(2, 8, 23, 0.55)" : "rgba(255, 255, 255, 0.9)";
+        const fill = spot.logo ? og.surface : spot.highlight ? og.accent : spot.taken ? "rgba(2, 8, 23, 0.55)" : "rgba(255, 255, 255, 0.9)";
         return (
           <div
             key={spot.index}
@@ -179,7 +188,12 @@ export function MockupTile({ src, width, height, spots, rotate = 0 }: { src: str
               fontWeight: 700,
             }}
           >
-            {spot.index + 1}
+            {spot.logo ? (
+              // eslint-disable-next-line @next/next/no-img-element -- Satori renders plain img elements
+              <img src={spot.logo} width={w * 0.8} height={h * 0.8} alt="" style={{ objectFit: "contain", width: "80%", height: "80%" }} />
+            ) : (
+              spot.index + 1
+            )}
           </div>
         );
       })}

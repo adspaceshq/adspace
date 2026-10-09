@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { fetchPublicListing } from "@/lib/api/server";
 import { priceSummary, spotsLeft } from "@/lib/listing-display";
 import { formatUsd } from "@/lib/money";
-import { Brand, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
+import { Brand, cardLogo, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
 
 export const alt = "adspaces listing";
 export const size = OG_SIZE;
@@ -13,10 +13,13 @@ const PHOTO = { width: 560, height: 420 };
 
 export default async function Image({ params }: { params: Promise<{ listing: string }> }) {
   const listing = await fetchPublicListing((await params).listing).catch(() => null);
-  const [fonts, photo, avatar] = await Promise.all([
+  const spots = listing?.spots ?? [];
+  const [fonts, photo, avatar, ...logos] = await Promise.all([
     loadFonts(),
     loadImage(cardPhoto(listing?.photos[0]?.url, PHOTO.width, PHOTO.height)),
     loadImage(cardPhoto(listing?.seller.avatarUrl, 64, 64)),
+    // Sold spots show the sponsor's logo, like on the listing page.
+    ...spots.map((spot) => loadImage(cardLogo(spot.brand?.logoUrl, Math.round((spot.layout.w / 100) * PHOTO.width)))),
   ]);
   const price = listing ? priceSummary(listing) : null;
   const left = listing ? spotsLeft(listing) : 0;
@@ -73,7 +76,7 @@ export default async function Image({ params }: { params: Promise<{ listing: str
             width={PHOTO.width}
             height={PHOTO.height}
             rotate={2}
-            spots={(listing?.spots ?? []).map((spot) => ({ index: spot.index, layout: spot.layout, taken: spot.taken }))}
+            spots={spots.map((spot, index) => ({ index: spot.index, layout: spot.layout, taken: spot.taken, logo: logos[index] }))}
           />
         </div>
       </div>

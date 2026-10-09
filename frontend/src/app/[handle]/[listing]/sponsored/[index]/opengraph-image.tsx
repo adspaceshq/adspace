@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { fetchSponsoredSpot } from "@/lib/api/server";
 import { SURFACE_LABELS } from "@/lib/listing-display";
-import { Brand, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
+import { Brand, cardLogo, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
 
 export const alt = "sponsored spot on adspaces";
 export const size = OG_SIZE;
@@ -16,7 +16,7 @@ export default async function Image({ params }: { params: Promise<{ listing: str
   const [fonts, photo, logo] = await Promise.all([
     loadFonts(),
     loadImage(cardPhoto(data?.listing.photos[0]?.url, PHOTO.width, PHOTO.height)),
-    loadImage(cardPhoto(data?.brand.logoUrl, 96, 96)),
+    loadImage(cardLogo(data?.brand.logoUrl, 96)),
   ]);
   const surface = data ? SURFACE_LABELS[data.listing.surface].toLowerCase() : "ad space";
   const headline = data ? `${data.brand.name} sponsored @${data.listing.seller.handle}'s ${surface}` : "sponsored on adspaces";
@@ -46,7 +46,7 @@ export default async function Image({ params }: { params: Promise<{ listing: str
             width={PHOTO.width}
             height={PHOTO.height}
             rotate={-2}
-            spots={(data?.listing.spots ?? []).map((spot) => ({ index: spot.index, layout: spot.layout, taken: spot.taken, highlight: spot.id === data?.spot.id }))}
+            spots={(data?.listing.spots ?? []).map((spot) => ({ index: spot.index, layout: spot.layout, taken: spot.taken, highlight: spot.id === data?.spot.id, logo: spot.id === data?.spot.id ? logo : null }))}
           />
         </div>
       </div>
