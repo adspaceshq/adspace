@@ -39,7 +39,7 @@ export function WalletView() {
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="flex flex-col gap-4">
-          <BalanceCard address={address} balance={balance.data} loading={balance.isPending} />
+          <BalanceCard address={address} balance={balance.data} loading={balance.isPending} onRetry={() => void balance.refetch()} />
           <DepositCard address={address} />
         </div>
         <WithdrawCard address={address} balance={balance.data ? BigInt(balance.data) : undefined} history={history.data ?? []} />
@@ -64,11 +64,22 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   );
 }
 
-function BalanceCard({ address, balance, loading }: { address: string; balance?: string; loading: boolean }) {
+function BalanceCard({ address, balance, loading, onRetry }: { address: string; balance?: string; loading: boolean; onRetry: () => void }) {
   return (
     <Card className="flex flex-col gap-4 p-5">
       <p className="text-small text-muted">available balance</p>
-      {loading ? <Skeleton className="h-10 w-40" /> : <p className="text-display font-semibold tabular-nums">{formatUsd(balance ?? "0")}</p>}
+      {loading ? (
+        <Skeleton className="h-10 w-40" />
+      ) : balance !== undefined ? (
+        <p className="text-display font-semibold tabular-nums">{formatUsd(balance)}</p>
+      ) : (
+        <p className="flex items-center gap-3 text-body text-muted">
+          couldn&apos;t load your balance
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            retry
+          </Button>
+        </p>
+      )}
       <Address value={address} chars={6} className="text-small" />
     </Card>
   );

@@ -1,5 +1,6 @@
 import type {
   ActivityItem,
+  BaseUnits,
   AssetKind,
   MediaAsset,
   UploadSignature,
@@ -106,6 +107,7 @@ export const api = {
     notificationPrefs: () => get<Record<NotificationCategory, boolean>>("/me/notification-prefs"),
     setNotificationPrefs: (prefs: Partial<Record<NotificationCategory, boolean>>) =>
       request<Record<NotificationCategory, boolean>>("PUT", "/me/notification-prefs", prefs),
+    balance: () => get<{ usdc: BaseUnits; wallet: string | null }>("/me/balance"),
     watchlist: () => get<WatchItem[]>("/me/watchlist"),
     watch: (listingId: string) => request<{ listingId: string; watching: boolean }>("PUT", `/me/watchlist/${enc(listingId)}`, {}),
     unwatch: (listingId: string) => request<{ listingId: string; watching: boolean }>("DELETE", `/me/watchlist/${enc(listingId)}`),

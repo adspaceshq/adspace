@@ -14,7 +14,15 @@ export function WalletChip({ address }: { address?: string }) {
       aria-label="wallet balance"
     >
       <Wallet className="size-4 text-muted" aria-hidden />
-      {balance.isPending ? <span className="h-3 w-12 animate-pulse rounded bg-ink/10" /> : <Money value={balance.data ?? "0"} />}
+      {balance.isPending ? (
+        <span className="h-3 w-12 animate-pulse rounded bg-ink/10" />
+      ) : balance.data !== undefined ? (
+        <Money value={balance.data} />
+      ) : (
+        <span title="couldn't load your balance" className="text-muted">
+          –
+        </span>
+      )}
     </Link>
   );
 }
