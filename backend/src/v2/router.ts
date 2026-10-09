@@ -160,11 +160,12 @@ export function createV2Router(options: {
     }
     next();
   };
+  const admins = options.admins ?? [];
+  // Admins can do everything reviewers can, matching the frontend's reviewer gate.
   const requireReviewer = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.v2Session || !isReviewer(req.v2Session.user, reviewers)) return void send(res, { error: "reviewers only" }, 403);
+    if (!req.v2Session || !isReviewer(req.v2Session.user, [...reviewers, ...admins])) return void send(res, { error: "reviewers only" }, 403);
     next();
   };
-  const admins = options.admins ?? [];
   const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
     if (!req.v2Session || !isReviewer(req.v2Session.user, admins)) return void send(res, { error: "admins only" }, 403);
     next();
@@ -354,7 +355,7 @@ export function createV2Router(options: {
 
   // ---------- posts, proof, messages ----------
 
-  const actor = (req: Request) => ({ id: me(req).id, isReviewer: isReviewer(me(req), reviewers) });
+  const actor = (req: Request) => ({ id: me(req).id, isReviewer: isReviewer(me(req), [...reviewers, ...admins]) });
 
   router.get("/listings/:id/posts", handle(async (req, res) => send(res, await listPosts(db, req.params.id))));
   router.post(
