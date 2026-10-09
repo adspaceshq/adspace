@@ -31,3 +31,14 @@ test("sold spots expose the sponsor's brand, never their account", async () => {
   await db.update(spots).set({ state: "refunded" }).where(eq(spots.id, spot.id));
   assert.equal(await getSponsoredSpot(db, listing.slug, 0), undefined);
 });
+
+test("public listings show the sponsor's brand on sold spots only", async () => {
+  const { listing, spot } = await seedListing(db, { deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR), funded: true });
+  const logoUrl = "https://res.cloudinary.com/demo/image/upload/v1/adspaces/logos/acme.png";
+  await db.update(spots).set({ brand: { name: "Acme", logoUrl } }).where(eq(spots.id, spot.id));
+  const { getPublishedListing } = await import("../src/services/listing-queries.js");
+  const sold = await getPublishedListing(db, listing.slug);
+  assert.deepEqual(sold?.spots[0].brand, { name: "Acme", logoUrl, link: undefined, handle: undefined });
+  await db.update(spots).set({ state: "refunded" }).where(eq(spots.id, spot.id));
+  assert.equal((await getPublishedListing(db, listing.slug))?.spots[0].brand, null);
+});

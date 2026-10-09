@@ -37,9 +37,11 @@ async function hydrate(db: Db, rows: ListingRow[]) {
   }));
 }
 
-// Buyers' identities and wallets are not public; only state and amounts are.
+// Buyers' identities and wallets are not public; only state, amounts and the brand they chose to show.
 export function publicSpot(spot: SpotRow) {
+  const sold = ["funded", "delivered", "disputed", "settled"].includes(spot.state);
   return {
+    brand: sold && spot.brand ? { name: spot.brand.name, logoUrl: spot.brand.logoUrl, link: spot.brand.link, handle: spot.brand.handle } : null,
     id: spot.id,
     index: spot.index,
     label: spot.label,
