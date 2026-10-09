@@ -1,3 +1,4 @@
+import { PublicKey } from "@solana/web3.js";
 import "dotenv/config";
 import { createApp } from "./index.js";
 import { loadConfig } from "./config.js";
@@ -22,7 +23,7 @@ import { TERMS_VERSION } from "./types.js";
 import { createChainContext } from "./v2/chain-context.js";
 import { createV2Router } from "./v2/router.js";
 import { reconcile } from "./services/reconciler.js";
-import { deliverEmails, processSpotEvents, scheduleReminders } from "./services/notifications.js";
+import { deliverEmails, detectDeposits, processSpotEvents, scheduleReminders, scheduleSettlementNotices, scheduleWalletNotices } from "./services/notifications.js";
 import { renderNotificationEmail, resendSender } from "./email.js";
 
 async function start() {
@@ -104,12 +105,20 @@ async function start() {
   const notifyEveryMs = Number(process.env.NOTIFY_INTERVAL_MS ?? 30_000);
   if (notifyEveryMs > 0) {
     let running = false;
+    let lastDepositCheck = 0;
+    const depositEveryMs = Number(process.env.DEPOSIT_CHECK_INTERVAL_MS ?? 120_000);
     const runNotifier = async () => {
       if (running) return;
       running = true;
       try {
         await processSpotEvents(db);
         await scheduleReminders(db);
+        await scheduleWalletNotices(db);
+        await scheduleSettlementNotices(db);
+        if (v2Chain && Date.now() - lastDepositCheck >= depositEveryMs) {
+          lastDepositCheck = Date.now();
+          await detectDeposits(db, (owner) => v2Chain.readTokenBalance(new PublicKey(owner)));
+        }
         if (sendEmail) await deliverEmails(db, sendEmail, (notification) => renderNotificationEmail(notification, config.frontendUrl));
       } catch (error) {
         console.error("notifier failed:", error instanceof Error ? error.message : error);
