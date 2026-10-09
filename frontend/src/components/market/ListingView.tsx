@@ -72,6 +72,7 @@ export function ListingView({ initial }: { initial: PublicListing }) {
                 state: spot.state,
                 price: spot.price,
                 label: spot.label,
+                logoUrl: spot.brand?.logoUrl,
               }))}
             />
           ) : (
@@ -225,6 +226,7 @@ function PurchasePanel({
         </p>
         <SpotStateBadge state={spot.state} />
       </div>
+      {spot.brand && <SponsorLine brand={spot.brand} leading={listing.mode === "auction" && spot.state === "funded"} />}
       <div>
         <p className="text-small text-muted">{headline.label}</p>
         <p className="text-display font-semibold leading-none">
@@ -305,11 +307,17 @@ function SpotList({ listing, selectedId, onSelect }: { listing: PublicListing; s
                   selected ? "border-accent bg-accent-soft" : "border-line bg-surface hover:border-line-strong",
                 )}
               >
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-control bg-ink/5 font-mono text-small font-semibold">
-                  {spot.index + 1}
+                <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-control bg-ink/5 font-mono text-small font-semibold">
+                  {spot.brand?.logoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- small sponsor logo
+                    <img src={spot.brand.logoUrl} alt="" className="size-full bg-white object-contain p-0.5" />
+                  ) : (
+                    spot.index + 1
+                  )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-body font-medium">{spot.label || `spot ${spot.index + 1}`}</span>
+                  {spot.brand && <span className="block truncate text-small text-muted">sponsored by {spot.brand.name}</span>}
                   <span className="text-small text-muted">
                     {headline.label} <Money value={headline.amount} />
                   </span>
@@ -321,5 +329,29 @@ function SpotList({ listing, selectedId, onSelect }: { listing: PublicListing; s
         })}
       </ul>
     </section>
+  );
+}
+
+// Who holds a sold spot (or leads an auction), linked to their site when they gave one.
+function SponsorLine({ brand, leading }: { brand: NonNullable<PublicListing["spots"][number]["brand"]>; leading: boolean }) {
+  const name = brand.link ? (
+    <a href={brand.link} target="_blank" rel="noreferrer nofollow sponsored" className="font-medium text-ink hover:underline">
+      {brand.name}
+    </a>
+  ) : (
+    <span className="font-medium text-ink">{brand.name}</span>
+  );
+  return (
+    <div className="flex items-center gap-3 rounded-card bg-canvas p-3">
+      {brand.logoUrl && (
+        // eslint-disable-next-line @next/next/no-img-element -- sponsor logo
+        <img src={brand.logoUrl} alt="" className="size-10 shrink-0 rounded-control border border-line bg-white object-contain p-1" />
+      )}
+      <p className="text-small text-muted">
+        {leading ? "top bid by " : "sponsored by "}
+        {name}
+        {brand.handle && <span> · @{brand.handle}</span>}
+      </p>
+    </div>
   );
 }

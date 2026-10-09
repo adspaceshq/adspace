@@ -25,7 +25,7 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           photoUrl={cover}
           alt={listing.title}
           size="thumb"
-          spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state }))}
+          spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state, logoUrl: spot.brand?.logoUrl }))}
           className="transition-transform group-hover:scale-[1.01]"
         />
       ) : (

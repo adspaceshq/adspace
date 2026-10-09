@@ -71,7 +71,9 @@ export function SpotMockup({
               {!taken && spot.price && <span className="hidden text-caption sm:block">{formatUsd(spot.price)}</span>}
             </span>
           ) : null;
-        const tone = taken
+        const tone = spot.logoUrl && !selected
+          ? "border-white bg-white text-ink shadow-card"
+          : taken
           ? "border-ink/20 bg-ink/45 text-white"
           : selected
             ? "border-accent bg-accent text-white shadow-pop"
