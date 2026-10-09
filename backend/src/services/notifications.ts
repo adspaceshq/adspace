@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { listings, notifications, spotEvents, spots, users, watchlist } from "../db/schema.js";
+import { listings, notifications, sessions, spotEvents, spots, users, watchlist, withdrawals } from "../db/schema.js";
 import { payoutAvailableAt } from "./settlement.js";
 
 export const NOTIFICATION_CATEGORIES = ["sales", "bidding", "delivery", "disputes", "payments", "listings", "messages", "reminders"] as const;
@@ -296,4 +296,149 @@ export async function setPrefs(db: Db, userId: string, input: unknown) {
     .set({ notificationPrefs: sql`${users.notificationPrefs} || ${JSON.stringify(prefs)}::jsonb`, updatedAt: new Date() })
     .where(eq(users.id, userId));
   return getPrefs(db, userId);
+}
+
+const WEEK = 7 * DAY;
+const spotLabel = (index: number, title: string) => `spot ${index + 1} on "${title}"`;
+
+// Withdrawals finish in the request or later via the reconciler; scanning covers both.
+export async function scheduleWalletNotices(db: Db, now = new Date()) {
+  const rows = await db
+    .select({ id: withdrawals.id, userId: withdrawals.userId, amount: withdrawals.amount, destination: withdrawals.destination, state: withdrawals.state })
+    .from(withdrawals)
+    .where(and(inArray(withdrawals.state, ["confirmed", "failed"]), gt(withdrawals.updatedAt, new Date(now.getTime() - 2 * DAY))));
+  const to = (address: string) => `${address.slice(0, 4)}…${address.slice(-4)}`;
+  await notify(
+    db,
+    rows.map((row) =>
+      row.state === "confirmed"
+        ? {
+            userId: row.userId,
+            type: "withdrawal_sent",
+            category: "payments" as const,
+            title: `${usd(row.amount)} withdrawal sent`,
+            body: `the USDC is on its way to ${to(row.destination)}. if you didn't do this, secure your account now.`,
+            href: "/wallet",
+            dedupeKey: `withdrawal:${row.id}:confirmed`,
+          }
+        : {
+            userId: row.userId,
+            type: "withdrawal_failed",
+            category: "payments" as const,
+            title: `${usd(row.amount)} withdrawal didn't go through`,
+            body: "nothing left your wallet. try again from your wallet page.",
+            href: "/wallet",
+            dedupeKey: `withdrawal:${row.id}:failed`,
+          },
+    ),
+  );
+  return rows.length;
+}
+
+// Results of auctions whose bidding closed in the last week, and money waiting to be collected.
+export async function scheduleSettlementNotices(db: Db, now = new Date()) {
+  const inputs: NotificationInput[] = [];
+  const recentlyClosed = await db
+    .select({ spotId: spots.id, index: spots.index, state: spots.state, amount: spots.amount, buyerId: spots.buyerId, listingId: listings.id, title: listings.title, sellerId: listings.sellerId, deliveryDueAt: listings.deliveryDueAt })
+    .from(spots)
+    .innerJoin(listings, eq(listings.id, spots.listingId))
+    .where(and(eq(listings.mode, "auction"), lte(listings.deadline, now), gt(listings.deadline, new Date(now.getTime() - WEEK))));
+  const byListing = new Map<string, typeof recentlyClosed>();
+  for (const row of recentlyClosed) {
+    byListing.set(row.listingId, [...(byListing.get(row.listingId) ?? []), row]);
+    if (row.buyerId && row.amount !== null && row.state !== "refunded" && row.state !== "cancelled") {
+      inputs.push({
+        userId: row.buyerId,
+        type: "auction_won",
+        category: "bidding",
+        title: `you won ${spotLabel(row.index, row.title)}`,
+        body: `your ${usd(row.amount)} bid is in escrow. the creator delivers by ${row.deliveryDueAt.toUTCString()}.`,
+        href: `/dashboard/spots/${row.spotId}`,
+        dedupeKey: `auction_won:${row.spotId}`,
+      });
+    }
+  }
+  for (const [listingId, rows] of byListing) {
+    const sold = rows.filter((row) => row.buyerId && row.amount !== null && row.state !== "refunded" && row.state !== "cancelled");
+    const total = sold.reduce((sum, row) => sum + (row.amount ?? 0n), 0n);
+    inputs.push({
+      userId: rows[0].sellerId,
+      type: "auction_closed",
+      category: "sales",
+      title: `bidding closed on "${rows[0].title}"`,
+      body: sold.length ? `${sold.length} of ${rows.length} spots sold for ${usd(total)} in total. deliver and post proof to get paid.` : "no bids this time. you can relist it any time.",
+      href: `/sell/listings/${listingId}`,
+      dedupeKey: `auction_closed:${listingId}`,
+    });
+  }
+
+  const active = await db
+    .select({ spotId: spots.id, index: spots.index, state: spots.state, buyerId: spots.buyerId, sellerId: listings.sellerId, title: listings.title, deliveryDueAt: listings.deliveryDueAt, reviewWindowSeconds: listings.reviewWindowSeconds, proofSubmittedAt: spots.proofSubmittedAt })
+    .from(spots)
+    .innerJoin(listings, eq(listings.id, spots.listingId))
+    .where(and(inArray(spots.state, ["funded", "delivered"]), gt(listings.deliveryDueAt, new Date(now.getTime() - 4 * WEEK))));
+  for (const row of active) {
+    const label = spotLabel(row.index, row.title);
+    const href = `/dashboard/spots/${row.spotId}`;
+    if (row.state === "delivered" && payoutAvailableAt(row) <= now) {
+      inputs.push({ userId: row.sellerId, type: "payout_ready", category: "payments", title: `your payout is ready for ${label}`, body: "the review window closed. collect it from the spot page.", href, dedupeKey: `payout_ready:${row.spotId}` });
+    }
+    if (row.state === "funded" && !row.proofSubmittedAt && row.deliveryDueAt <= now) {
+      if (row.buyerId) {
+        inputs.push({ userId: row.buyerId, type: "refund_available", category: "payments", title: `you can take a refund on ${label}`, body: "the creator missed the delivery date. claim your USDC back from the spot page.", href, dedupeKey: `refund_available:${row.spotId}` });
+      }
+      inputs.push({ userId: row.sellerId, type: "delivery_missed", category: "delivery", title: `delivery date passed for ${label}`, body: "the sponsor can now take a full refund. post proof as soon as you can.", href, dedupeKey: `delivery_missed:${row.spotId}` });
+    }
+  }
+  await notify(db, inputs);
+  return inputs.length;
+}
+
+// Incoming USDC that isn't explained by something we already announced (payouts, refunds, outbids).
+// The first look at a wallet only records its balance.
+export async function detectDeposits(db: Db, readTokenBalance: (owner: string) => Promise<bigint>, now = new Date(), limit = 100) {
+  const active = await db
+    .selectDistinct({ id: users.id, wallet: users.walletAddress, seen: users.usdcSeen, seenAt: users.usdcSeenAt })
+    .from(users)
+    .innerJoin(sessions, eq(sessions.userId, users.id))
+    .where(and(gt(sessions.expiresAt, now), sql`${users.walletAddress} is not null`))
+    .limit(limit);
+  let found = 0;
+  for (const user of active) {
+    let balance: bigint;
+    try {
+      balance = await readTokenBalance(user.wallet!);
+    } catch {
+      continue;
+    }
+    if (user.seen !== null && balance > user.seen) {
+      const [explained] = await db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.userId, user.id),
+            inArray(notifications.type, ["seller_paid", "refunded", "outbid", "dispute_resolved", "dispute_timed_out", "withdrawal_failed"]),
+            gt(notifications.createdAt, user.seenAt ?? new Date(0)),
+          ),
+        )
+        .limit(1);
+      if (!explained) {
+        found += 1;
+        await notify(db, [
+          {
+            userId: user.id,
+            type: "deposit_received",
+            category: "payments",
+            title: `${usd(balance - user.seen)} USDC received`,
+            body: `your wallet balance is now ${usd(balance)}.`,
+            href: "/wallet",
+            dedupeKey: `deposit:${user.id}:${balance}:${now.getTime()}`,
+          },
+        ]);
+      }
+    }
+    if (user.seen !== balance) await db.update(users).set({ usdcSeen: balance, usdcSeenAt: now }).where(eq(users.id, user.id));
+  }
+  return found;
 }

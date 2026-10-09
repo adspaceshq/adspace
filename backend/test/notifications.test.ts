@@ -113,3 +113,51 @@ test("messages notify the other party at most hourly, and read state is per user
   await markRead(db, seller.user.id);
   assert.equal((await listNotifications(db, seller.user.id)).unread, 0);
 });
+
+test("withdrawals, closed auctions, payouts and missed deliveries each notify once", async () => {
+  const { withdrawals: withdrawalsTable, listings: listingsTable } = await import("../src/db/schema.js");
+  const { scheduleWalletNotices, scheduleSettlementNotices } = await import("../src/services/notifications.js");
+  const user = await seedUser(db, "wallet");
+  await db.insert(withdrawalsTable).values([
+    { userId: user.user.id, amount: 5n * USDC, destination: "414exgwxaeBSjajy42RKbmRqKn6o8YesDkGFwnxZNgvn", state: "confirmed" },
+    { userId: user.user.id, amount: 2n * USDC, destination: "414exgwxaeBSjajy42RKbmRqKn6o8YesDkGFwnxZNgvn", state: "failed" },
+  ]);
+  await scheduleWalletNotices(db);
+  await scheduleWalletNotices(db);
+  assert.deepEqual((await forUser(user.user.id)).map((item) => item.type).sort(), ["withdrawal_failed", "withdrawal_sent"]);
+
+  const auction = await seedListing(db, { mode: "auction", deadline: new Date(Date.now() - HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR), funded: true });
+  const missed = await seedListing(db, { deadline: new Date(Date.now() - 72 * HOUR), deliveryDueAt: new Date(Date.now() - HOUR), funded: true });
+  const delivered = await seedListing(db, { deadline: new Date(Date.now() - 96 * HOUR), deliveryDueAt: new Date(Date.now() - 72 * HOUR), funded: true });
+  await db.update(listingsTable).set({ reviewWindowSeconds: 3600 }).where(eq(listingsTable.id, delivered.listing.id));
+  await db.update((await import("../src/db/schema.js")).spots).set({ state: "delivered", proofSubmittedAt: new Date(Date.now() - 80 * HOUR) }).where(eq((await import("../src/db/schema.js")).spots.id, delivered.spot.id));
+
+  await scheduleSettlementNotices(db);
+  await scheduleSettlementNotices(db);
+  assert.deepEqual((await forUser(auction.buyer!.user.id)).map((item) => item.type), ["auction_won"]);
+  assert.match((await forUser(auction.seller.user.id))[0].body, /1 of 1 spots sold for \$100\.00/);
+  assert.deepEqual((await forUser(missed.buyer!.user.id)).map((item) => item.type), ["refund_available"]);
+  assert.deepEqual((await forUser(missed.seller.user.id)).map((item) => item.type), ["delivery_missed"]);
+  assert.deepEqual((await forUser(delivered.seller.user.id)).map((item) => item.type), ["payout_ready"]);
+});
+
+test("deposits notify only for unexplained incoming USDC, after a first baseline look", async () => {
+  const { sessions } = await import("../src/db/schema.js");
+  const { detectDeposits } = await import("../src/services/notifications.js");
+  const user = await seedUser(db, "depositor");
+  await db.insert(sessions).values({ tokenHash: `t-${user.user.id}`, userId: user.user.id, csrfToken: "c", expiresAt: new Date(Date.now() + HOUR) });
+  let balance = 10n * USDC;
+  const read = async () => balance;
+
+  assert.equal(await detectDeposits(db, read), 0);
+  balance = 25n * USDC;
+  assert.equal(await detectDeposits(db, read), 1);
+  const [deposit] = await forUser(user.user.id);
+  assert.equal(deposit.title, "$15.00 USDC received");
+
+  await db.insert(notifications).values({ userId: user.user.id, type: "seller_paid", category: "payments", title: "paid", dedupeKey: `paid-${user.user.id}` });
+  balance = 40n * USDC;
+  assert.equal(await detectDeposits(db, read), 0);
+  balance = 30n * USDC;
+  assert.equal(await detectDeposits(db, read), 0);
+});
