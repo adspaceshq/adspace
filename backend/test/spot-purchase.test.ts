@@ -14,7 +14,8 @@ import { createTestDb } from "./helpers/db.js";
 const USDC = 1_000_000n;
 const NOW = new Date("2026-10-08T12:00:00Z");
 const DEADLINE = new Date("2026-10-10T12:00:00Z");
-const BRAND = { name: "Acme", link: "https://acme.example", handle: "@acme" };
+const LOGO = "https://res.cloudinary.com/demo/image/upload/v1/adspaces/logos/acme.png";
+const BRAND = { name: "Acme", link: "https://acme.example", handle: "@acme", logoUrl: LOGO };
 
 let db: Db;
 let close: () => Promise<void>;
@@ -186,13 +187,14 @@ test("the database rejects a funded spot without a buyer", async () => {
   await assert.rejects(db.update(spots).set({ state: "funded" }).where(eq(spots.id, spot.id)));
 });
 
-test("checkout requires a brand name and validates links", async () => {
+test("checkout requires a brand name and logo, and validates links", async () => {
   const { spot } = await createSpot("fixed");
   const { purchaser } = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
   await assert.rejects(claimSpot(deps(), spot.id, purchaser, {}), /brand name/);
-  await assert.rejects(claimSpot(deps(), spot.id, purchaser, { name: "Acme", link: "http://insecure.example" }), /https/);
+  await assert.rejects(claimSpot(deps(), spot.id, purchaser, { name: "Acme" }), /upload your logo/);
+  await assert.rejects(claimSpot(deps(), spot.id, purchaser, { name: "Acme", logoUrl: LOGO, link: "http://insecure.example" }), /https/);
   await assert.rejects(claimSpot(deps(), spot.id, purchaser, { name: "Acme", logoUrl: "https://evil.example/logo.png" }), /upload/);
   assert.equal(sentTxs.length, 0);
   const result = await claimSpot(deps(), spot.id, purchaser, BRAND);
-  assert.deepEqual(result.spot.brand, { name: "Acme", link: "https://acme.example", handle: "acme" });
+  assert.deepEqual(result.spot.brand, { name: "Acme", logoUrl: LOGO, link: "https://acme.example", handle: "acme" });
 });

@@ -43,12 +43,14 @@ export function parseBrand(input: unknown): SponsorBrand {
   if (!name) throw new PurchaseError("tell the creator your brand name", 400);
   const link = text("link", 200);
   if (link && !/^https:\/\/[^\s]+\.[^\s]+$/i.test(link)) throw new PurchaseError("brand link must be an https URL", 400);
+  // The creator prints or sticks this on the item, and it's shown publicly once the spot is sold.
   const logoUrl = text("logoUrl", 500);
-  if (logoUrl && !/^https:\/\/res\.cloudinary\.com\/[^/\s]+\/image\/upload\//i.test(logoUrl)) {
+  if (!logoUrl) throw new PurchaseError("upload your logo so the creator knows what to put on the spot", 400);
+  if (!/^https:\/\/res\.cloudinary\.com\/[^/\s]+\/image\/upload\//i.test(logoUrl)) {
     throw new PurchaseError("upload the logo through adspaces", 400);
   }
   const handle = text("handle", 40)?.replace(/^@+/, "");
-  return { name, ...(link ? { link } : {}), ...(handle ? { handle } : {}), ...(logoUrl ? { logoUrl } : {}) };
+  return { name, logoUrl, ...(link ? { link } : {}), ...(handle ? { handle } : {}) };
 }
 
 async function loadSpot(db: Db, spotId: string) {
