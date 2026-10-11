@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LifeBuoy, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import Link from "next/link";
 import { api } from "@/lib/api/v2";
 import type { NeedsYouItem } from "@/lib/api/types";
@@ -86,11 +86,3 @@ export function NetworkBadge() {
   );
 }
 
-// Same support address as the footer.
-export function HelpLink() {
-  return (
-    <a href="mailto:support@adspaces.fun" className="flex items-center gap-2.5 rounded-control px-3 py-1.5 text-small text-muted hover:bg-ink/5 hover:text-ink">
-      <LifeBuoy className="size-4" aria-hidden /> need help?
-    </a>
-  );
-}

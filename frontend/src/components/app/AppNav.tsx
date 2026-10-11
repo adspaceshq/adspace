@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Activity,
+  LifeBuoy,
   Bookmark,
   Compass,
   LayoutDashboard,
@@ -18,7 +19,7 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
-import { HelpLink, NetworkBadge, NeedsYouMini, NewListingButton } from "./SidebarExtras";
+import { NetworkBadge, NeedsYouMini, NewListingButton } from "./SidebarExtras";
 import { cx } from "@/lib/cx";
 
 interface NavItem {
@@ -42,6 +43,7 @@ const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
       { href: "/activity", label: "activity", icon: Activity },
       { href: "/watchlist", label: "saved", icon: Bookmark },
       { href: "/settings", label: "settings", icon: Settings },
+      { href: "mailto:support@adspaces.fun", label: "need help?", icon: LifeBuoy },
     ],
   },
 ];
@@ -88,10 +90,7 @@ export function AppSidebar() {
       <div className="mt-auto flex flex-col gap-3 pt-4">
         <NeedsYouMini />
         <NewListingButton />
-        <div className="flex flex-col gap-1">
-          <HelpLink />
-          <NetworkBadge />
-        </div>
+        <NetworkBadge />
         {session && <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />}
       </div>
     </nav>
