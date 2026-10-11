@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { LayoutDashboard, LogOut, MoreHorizontal, Settings, ShieldCheck, User } from "lucide-react";
 import type { Session } from "@/lib/api/types";
+import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { cx } from "@/lib/cx";
 
 function Avatar({ session }: { session: Session }) {
@@ -52,7 +53,15 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
         >
           <Avatar session={session} />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-small font-semibold text-ink">{session.name ?? session.handle.replace(/^@/, "")}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="truncate text-small font-semibold text-ink">{session.name ?? session.handle.replace(/^@/, "")}</span>
+              {/* Test money must never be mistaken for real money; hidden on mainnet. */}
+              {ADSPACES_CLUSTER !== "mainnet-beta" && (
+                <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-warning">
+                  {ADSPACES_CLUSTER}
+                </span>
+              )}
+            </span>
             <span className="block truncate text-caption text-muted">@{session.handle.replace(/^@/, "")}</span>
           </span>
           <MoreHorizontal className="size-4 shrink-0 text-muted" aria-hidden />
