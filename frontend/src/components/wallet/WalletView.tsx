@@ -117,6 +117,7 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
   const [amount, setAmount] = useState("");
   const [errors, setErrors] = useState<WithdrawErrors>({});
   const [reviewing, setReviewing] = useState(false);
+  const [signing, setSigning] = useState(false);
   // What was actually sent, so the receipt survives the form being cleared.
   const [sent, setSent] = useState<{ amount: string; destination: string }>();
   const [setupError, setSetupError] = useState<string>();
@@ -128,7 +129,14 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
     // Prepare on the server, sign with the user's own wallet (Privy asks for two-factor), then submit.
     async (to: string, value: string) => {
       const prepared = await api.me.prepareWithdrawal(to, value);
-      const signed = await wallet.signTransaction(prepared.transaction);
+      // Our dialog steps aside so Privy's signing and two-factor popup is visible and clickable.
+      setSigning(true);
+      let signed: string;
+      try {
+        signed = await wallet.signTransaction(prepared.transaction);
+      } finally {
+        setSigning(false);
+      }
       return api.me.submitWithdrawal(prepared.withdrawalId, signed);
     },
     [wallet],
@@ -204,6 +212,7 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
       )}
       <Modal
         open={reviewing}
+        suspended={signing}
         onClose={() => !tx.busy && setReviewing(false)}
         title={done ? "withdrawal sent" : "confirm withdrawal"}
         description={done ? undefined : "you'll be asked for your two-factor code. transfers on Solana can't be reversed."}

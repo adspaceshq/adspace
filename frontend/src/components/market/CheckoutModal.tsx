@@ -42,6 +42,8 @@ export function CheckoutModal({
   const [brand, setBrand] = useState<SponsorBrand>({ name: sponsor?.brandName ?? "", link: sponsor?.website ?? "", handle: "" });
   const [amountText, setAmountText] = useState(toInputValue(minimum));
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // True while Privy's gasless approval popup is open; our dialog steps aside so it can be used.
+  const [approving, setApproving] = useState(false);
 
   const tx = useTx(async (payload: { brand: SponsorBrand; amount: string }) =>
     auction ? api.spots.bid(spot.id, payload.amount, payload.brand) : api.spots.claim(spot.id, payload.brand),
@@ -98,7 +100,8 @@ export function CheckoutModal({
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      suspended={approving}
+      onClose={() => !approving && onClose()}
       title={title}
       description={done ? undefined : `${listing.title} · @${listing.seller.handle}`}
       footer={
@@ -122,7 +125,7 @@ export function CheckoutModal({
       }
     >
       {needsGasless ? (
-        <GaslessPrompt action={auction ? "bid" : "claim spots"} />
+        <GaslessPrompt action={auction ? "bid" : "claim spots"} onBusyChange={setApproving} />
       ) : done ? (
         <div className="flex flex-col items-center gap-3 py-4 text-center">
           <CheckCircle2 className="size-10 text-success" aria-hidden />

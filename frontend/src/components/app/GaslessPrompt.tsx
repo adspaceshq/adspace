@@ -6,13 +6,15 @@ import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
 
 // Asked just in time, at the first money action, rather than during sign-up.
-export function GaslessPrompt({ action }: { action: string }) {
+// `onBusyChange` lets a surrounding modal step aside while Privy's approval popup is open.
+export function GaslessPrompt({ action, onBusyChange }: { action: string; onBusyChange?: (busy: boolean) => void }) {
   const { wallet } = useSession();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
   const enable = async () => {
     setBusy(true);
+    onBusyChange?.(true);
     setError(undefined);
     try {
       await wallet.enableGasless();
@@ -20,6 +22,7 @@ export function GaslessPrompt({ action }: { action: string }) {
       setError(cause instanceof Error ? cause.message : "couldn't enable gasless transactions");
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 
