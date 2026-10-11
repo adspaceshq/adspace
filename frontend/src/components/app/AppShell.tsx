@@ -1,4 +1,5 @@
 import { AppSidebar, BottomTabs } from "./AppNav";
+import { LockPageScroll } from "./LockPageScroll";
 import { CompactFooter } from "./SiteFooter";
 import { TopBar } from "./TopBar";
 
@@ -8,7 +9,8 @@ import { TopBar } from "./TopBar";
 // "app": signed-in work areas — sidebar on desktop, bottom tabs on mobile.
 export function AppShell({ children, variant = "public" }: { children: React.ReactNode; variant?: "public" | "app" }) {
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-canvas">
+    <div className="fixed inset-0 flex flex-col overflow-hidden bg-canvas">
+      <LockPageScroll />
       <TopBar inSidebar={variant === "app"} />
       {variant === "public" ? (
         <div id="scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
