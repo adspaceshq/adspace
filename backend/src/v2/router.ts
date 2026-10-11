@@ -23,7 +23,7 @@ import { submitSpotProof } from "../services/spot-proof.js";
 import { payoutSeller } from "../services/settlement.js";
 import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../services/disputes.js";
 import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
-import { listWithdrawals, withdrawUsdc } from "../services/wallet.js";
+import { listWithdrawals, prepareWithdrawal, submitWithdrawal } from "../services/wallet.js";
 import { publicProfilePage } from "../services/profiles.js";
 import { spotBidHistory } from "../services/bid-history.js";
 import { listWatchlist, unwatchListing, watchListing } from "../services/watchlist.js";
@@ -556,30 +556,39 @@ export function createV2Router(options: {
     }),
   );
   router.get("/me/withdrawals", requireUser, handle(async (req, res) => send(res, await listWithdrawals(db, me(req).id))));
+  const walletDeps = () => {
+    const context = requireChain();
+    return {
+      db,
+      mint: context.mint,
+      feePayer: context.reviewer,
+      prepareTx: context.prepareTx,
+      submitTx: context.submitTx,
+      readTokenBalance: context.readTokenBalance,
+      accountExists: context.accountExists,
+      dailyLimit: options.withdrawalDailyLimit ?? 1_000n * 1_000_000n,
+    };
+  };
+  // Withdrawals are signed by the user's own wallet in the browser, where Privy requires their two-factor;
+  // the server's delegated signer is not allowed to move USDC (Privy signer policy).
   router.post(
-    "/me/withdrawals",
+    "/me/withdrawals/prepare",
     ...mutate,
     handle(async (req, res) => {
-      const context = requireChain();
       const body = (req.body ?? {}) as { destination?: unknown; amount?: unknown };
       const amount = parseUsdc(body.amount, "amount");
-      const signer = await context.userSigner(me(req), { requireMfa: true });
-      const result = await withdrawUsdc(
-        {
-          db,
-          mint: context.mint,
-          feePayer: context.reviewer,
-          runTx: context.runTx,
-          readTokenBalance: context.readTokenBalance,
-          accountExists: context.accountExists,
-          dailyLimit: options.withdrawalDailyLimit ?? 1_000n * 1_000_000n,
-        },
-        me(req).id,
-        signer,
-        typeof body.destination === "string" ? body.destination : "",
-        amount,
-      );
-      send(res, result, 201);
+      // Refuses accounts without two-factor set up.
+      const owner = (await requireChain().userSigner(me(req), { requireMfa: true })).publicKey;
+      send(res, await prepareWithdrawal(walletDeps(), me(req).id, owner, typeof body.destination === "string" ? body.destination : "", amount), 201);
+    }),
+  );
+  router.post(
+    "/me/withdrawals/:id/submit",
+    ...mutate,
+    handle(async (req, res) => {
+      const signed = (req.body as { transaction?: unknown } | undefined)?.transaction;
+      if (typeof signed !== "string" || signed.length > 4000) throw new BadRequest("transaction must be a base64 string");
+      send(res, await submitWithdrawal(walletDeps(), me(req).id, req.params.id, signed));
     }),
   );
   router.post(

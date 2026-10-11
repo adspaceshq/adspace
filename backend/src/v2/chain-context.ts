@@ -2,7 +2,7 @@ import type { PrivyClient } from "@privy-io/node";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { associatedTokenAddress, createProgram, pdas, type AdspacesProgram } from "../chain/program.js";
-import { runChainTx, type ChainTxRequest, type ChainTxResult } from "../chain/runner.js";
+import { prepareChainTx, runChainTx, submitPreparedChainTx, type ChainTxRequest, type ChainTxResult, type PreparedChainTx } from "../chain/runner.js";
 import { keypairSigner, privyWalletSigner, type TxSigner } from "../chain/signers.js";
 import { loadKeypair } from "../keypair.js";
 import type { SessionUser } from "../types.js";
@@ -16,6 +16,8 @@ export interface ChainContext {
   mint: PublicKey;
   reviewer: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
+  prepareTx: (request: Omit<ChainTxRequest, "signers">) => Promise<PreparedChainTx>;
+  submitTx: (chainTxId: string, signedBase64: string) => Promise<ChainTxResult>;
   // `requireMfa` refuses users without two-factor set up in Privy (withdrawals).
   userSigner: (user: SessionUser, options?: { requireMfa?: boolean }) => Promise<TxSigner>;
   ensureSellerFunding: (seller: PublicKey) => Promise<void>;
@@ -53,6 +55,8 @@ export function createChainContext(options: {
     mint: new PublicKey(options.mint),
     reviewer,
     runTx: (request) => runChainTx(options.db, connection, request),
+    prepareTx: (request) => prepareChainTx(options.db, connection, request),
+    submitTx: (chainTxId, signed) => submitPreparedChainTx(options.db, connection, chainTxId, signed),
 
     async userSigner(user, signerOptions = {}) {
       if (!options.privy || !options.privyAuthorizationKey) throw httpError("wallet signing is not configured", 503);

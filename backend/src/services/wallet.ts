@@ -3,7 +3,7 @@ import { PublicKey, TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { chainTxs, users, withdrawals } from "../db/schema.js";
 import { associatedTokenAddress, TOKEN_PROGRAM_ID } from "../chain/program.js";
-import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
+import type { ChainTxRequest, ChainTxResult, PreparedChainTx } from "../chain/runner.js";
 import type { TxSigner } from "../chain/signers.js";
 import { createAtaIdempotent } from "./settlement.js";
 
@@ -13,11 +13,14 @@ export class WalletError extends Error {
   }
 }
 
+// Withdrawals are signed by the user in the browser (Privy enforces their two-factor there); the
+// server only prepares the exact transaction, pays the fee, and submits what the user signed.
 export interface WalletDeps {
   db: Db;
   mint: PublicKey;
   feePayer: TxSigner;
-  runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
+  prepareTx: (request: Omit<ChainTxRequest, "signers">) => Promise<PreparedChainTx>;
+  submitTx: (chainTxId: string, signedBase64: string) => Promise<ChainTxResult>;
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
   dailyLimit: bigint;
@@ -79,42 +82,80 @@ async function reserve(deps: WalletDeps, userId: string, amount: bigint, destina
   });
 }
 
-export async function withdrawUsdc(deps: WalletDeps, userId: string, owner: TxSigner, destinationInput: string, amount: bigint) {
+const failWithdrawal = (db: Db, id: string) =>
+  db.update(withdrawals).set({ state: "failed", updatedAt: new Date() }).where(eq(withdrawals.id, id));
+
+// Step 1: validate, reserve the amount against the daily limit, and hand back a fee-payer-signed
+// transaction for the user's wallet to sign.
+export async function prepareWithdrawal(deps: WalletDeps, userId: string, owner: PublicKey, destinationInput: string, amount: bigint) {
   const now = deps.now?.() ?? new Date();
   if (amount <= 0n) throw new WalletError("enter an amount above zero");
-  const destination = parseDestination(destinationInput, owner.publicKey);
-  const balance = await deps.readTokenBalance(owner.publicKey);
+  const destination = parseDestination(destinationInput, owner);
+  const balance = await deps.readTokenBalance(owner);
   if (balance < amount) throw new WalletError("not enough USDC in your wallet", 409);
 
   const withdrawal = await reserve(deps, userId, amount, destination.toBase58(), now);
-  const sourceAta = associatedTokenAddress(owner.publicKey, deps.mint);
+  const sourceAta = associatedTokenAddress(owner, deps.mint);
   const destinationAta = associatedTokenAddress(destination, deps.mint);
   const instructions: TransactionInstruction[] = [];
   if (!(await deps.accountExists(destinationAta))) {
     instructions.push(createAtaIdempotent(deps.feePayer.publicKey, destination, deps.mint));
   }
-  instructions.push(transferChecked(sourceAta, deps.mint, destinationAta, owner.publicKey, amount));
+  instructions.push(transferChecked(sourceAta, deps.mint, destinationAta, owner, amount));
 
   try {
-    const tx = await deps.runTx({
+    const prepared = await deps.prepareTx({
       op: "wallet_withdrawal",
       idempotencyKey: `withdrawal:${withdrawal.id}`,
       actorId: userId,
       instructions,
       feePayer: deps.feePayer,
-      signers: [owner],
     });
+    await deps.db.update(withdrawals).set({ chainTxId: prepared.chainTxId, updatedAt: new Date() }).where(eq(withdrawals.id, withdrawal.id));
+    return { withdrawalId: withdrawal.id, transaction: prepared.transaction };
+  } catch (error) {
+    // Failed withdrawals release their share of the daily limit.
+    await failWithdrawal(deps.db, withdrawal.id);
+    throw error;
+  }
+}
+
+// Step 2: submit the transaction the user signed. Only the withdrawal's owner can submit it, and the
+// runner rejects anything that isn't byte-identical to what was prepared.
+export async function submitWithdrawal(deps: WalletDeps, userId: string, withdrawalId: string, signedBase64: string) {
+  const [withdrawal] = await deps.db
+    .select()
+    .from(withdrawals)
+    .where(and(eq(withdrawals.id, withdrawalId), eq(withdrawals.userId, userId)));
+  if (!withdrawal?.chainTxId) throw new WalletError("withdrawal not found", 404);
+  if (withdrawal.state !== "pending") throw new WalletError("this withdrawal is no longer waiting for a signature", 409);
+  try {
+    const tx = await deps.submitTx(withdrawal.chainTxId, signedBase64);
     const [confirmed] = await deps.db
       .update(withdrawals)
-      .set({ state: "confirmed", chainTxId: tx.chainTxId, updatedAt: new Date() })
+      .set({ state: "confirmed", updatedAt: new Date() })
       .where(eq(withdrawals.id, withdrawal.id))
       .returning();
     return { withdrawal: confirmed, signature: tx.signature };
   } catch (error) {
-    // Failed withdrawals release their share of the daily limit.
-    await deps.db.update(withdrawals).set({ state: "failed", updatedAt: new Date() }).where(eq(withdrawals.id, withdrawal.id));
+    // A malformed or mismatched upload (400) leaves the withdrawal open to retry; anything else ends it.
+    if ((error as { status?: number }).status !== 400) await failWithdrawal(deps.db, withdrawal.id);
     throw error;
   }
+}
+
+// Withdrawals prepared but never signed release their reserved amount once the transaction can no longer land.
+export async function expireUnsignedWithdrawals(db: Db, now = new Date(), maxAgeMs = 5 * 60 * 1000) {
+  const stale = await db
+    .select({ id: withdrawals.id, chainTxId: withdrawals.chainTxId })
+    .from(withdrawals)
+    .innerJoin(chainTxs, eq(chainTxs.id, withdrawals.chainTxId))
+    .where(and(eq(withdrawals.state, "pending"), eq(chainTxs.status, "pending"), sql`${withdrawals.createdAt} < ${new Date(now.getTime() - maxAgeMs)}`));
+  for (const row of stale) {
+    await failWithdrawal(db, row.id);
+    await db.update(chainTxs).set({ status: "failed", error: "never signed", updatedAt: new Date() }).where(eq(chainTxs.id, row.chainTxId!));
+  }
+  return stale.length;
 }
 
 // Includes the Solana signature (from the chain tx log) so the UI can link to the explorer.

@@ -23,6 +23,7 @@ import { TERMS_VERSION } from "./types.js";
 import { createChainContext } from "./v2/chain-context.js";
 import { createV2Router } from "./v2/router.js";
 import { reconcile } from "./services/reconciler.js";
+import { expireUnsignedWithdrawals } from "./services/wallet.js";
 import { deliverEmails, detectDeposits, processSpotEvents, scheduleReminders, scheduleSettlementNotices, scheduleWalletNotices } from "./services/notifications.js";
 import { renderNotificationEmail, resendSender } from "./email.js";
 
@@ -113,6 +114,7 @@ async function start() {
       try {
         await processSpotEvents(db);
         await scheduleReminders(db);
+        await expireUnsignedWithdrawals(db);
         await scheduleWalletNotices(db);
         await scheduleSettlementNotices(db);
         if (v2Chain && Date.now() - lastDepositCheck >= depositEveryMs) {
