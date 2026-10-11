@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ListingStateBadge, SpotStateBadge } from "@/components/ui/StateBadge";
+import { UserLink } from "@/components/ui/UserLink";
 
 const OP_LABEL: Record<string, string> = {
   publish_listing: "published",
@@ -44,7 +45,7 @@ export function LedgerView() {
         <p className="text-small text-muted">every transaction on a listing, the USDC it moved, and whether each escrow balances.</p>
       </div>
       <ListingSearch onPick={(id) => router.replace(`/review/ledger?listing=${id}`)} />
-      {listingId ? <Ledger listingId={listingId} /> : <EmptyState icon={Search} title="pick a listing" description="search by title, creator handle or listing ID." />}
+      {listingId ? <Ledger listingId={listingId} /> : <RecentListings onPick={(id) => router.replace(`/review/ledger?listing=${id}`)} />}
     </div>
   );
 }
@@ -81,7 +82,7 @@ function ListingSearch({ onPick }: { onPick: (id: string) => void }) {
                 className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left text-small hover:bg-ink/5"
               >
                 <span className="min-w-0 truncate">
-                  <span className="font-medium">{hit.title}</span> <span className="text-muted">@{hit.sellerHandle}</span>
+                  <span className="font-medium">{hit.title}</span> <UserLink handle={hit.sellerHandle} nested className="text-muted" />
                 </span>
                 <ListingStateBadge state={hit.state} />
               </button>
@@ -110,7 +111,7 @@ function Ledger({ listingId }: { listingId: string }) {
             {data.listing.title} <ListingStateBadge state={data.listing.state} />
           </p>
           <p className="text-small text-muted">
-            @{data.listing.seller.handle} · {data.listing.mode} · {data.entries.length} transactions
+            <UserLink handle={data.listing.seller.handle} /> · {data.listing.mode} · {data.entries.length} transactions
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -213,7 +214,11 @@ function Ledger({ listingId }: { listingId: string }) {
                   <td className="px-3 py-2">{entry.spotIndex === null ? "all" : entry.spotIndex + 1}</td>
                   <td className="px-3 py-2">
                     <span className="font-medium">{OP_LABEL[entry.op] ?? entry.op.replace(/_/g, " ")}</span>
-                    {entry.actor && <span className="block text-caption text-muted">by @{entry.actor.handle}</span>}
+                    {entry.actor && (
+                      <span className="block text-caption text-muted">
+                        by <UserLink handle={entry.actor.handle} />
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2">
                     <Moves moves={entry.moves} />
@@ -248,7 +253,12 @@ function Moves({ moves }: { moves: LedgerMove[] }) {
             </span>
             <span className="text-muted">
               {PARTY_LABEL[move.party]}
-              {move.handle ? ` @${move.handle}` : ""}
+              {move.handle && (
+                <>
+                  {" "}
+                  <UserLink handle={move.handle} />
+                </>
+              )}
             </span>
           </li>
         );
@@ -269,5 +279,31 @@ function Status({ entry, check }: { entry: ListingLedger["entries"][number]; che
         </span>
       )}
     </div>
+  );
+}
+
+// Shown before a search: the newest listings, so there's always something to open.
+function RecentListings({ onPick }: { onPick: (id: string) => void }) {
+  const recent = useQuery({ queryKey: ["ledger-search", ""], queryFn: () => api.review.searchListings("") });
+  if (recent.isPending) return <Skeleton className="h-64 w-full" />;
+  if (!recent.data?.length) return <EmptyState icon={Search} title="no listings yet" description="listings show up here as soon as creators start drafting." />;
+  return (
+    <section className="flex flex-col gap-2">
+      <h2 className="text-body font-semibold">recent listings</h2>
+      <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+        {recent.data.map((hit) => (
+          <li key={hit.id}>
+            <button type="button" onClick={() => onPick(hit.id)} className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left text-small hover:bg-ink/5">
+              <span className="min-w-0 flex-1 truncate">
+                <span className="font-medium">{hit.title}</span> <UserLink handle={hit.sellerHandle} nested className="text-muted" />
+              </span>
+              <span className="hidden text-muted sm:inline">{hit.mode}</span>
+              <span className="hidden w-20 text-right text-subtle sm:inline">{new Date(hit.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+              <ListingStateBadge state={hit.state} />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

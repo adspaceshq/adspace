@@ -18,6 +18,7 @@ import { TxStatus } from "@/components/ui/TxStatus";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { ResolveDisputeModal } from "./ResolveDisputeModal";
 import { Address } from "@/components/ui/Address";
+import { UserLink } from "@/components/ui/UserLink";
 
 type Tab = "listings" | "disputes" | "payouts" | "failed";
 const TABS: Tab[] = ["listings", "disputes", "payouts", "failed"];
@@ -78,7 +79,8 @@ function ListingsTab() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-body font-semibold">{listing.title}</p>
               <p className="flex items-center gap-1.5 truncate text-small text-muted">
-                <SellerAvatar seller={listing.seller} size={16} />@{listing.seller.handle} · {listing.spots.length} spots · {listing.mode}
+                <SellerAvatar seller={listing.seller} size={16} />
+                <UserLink handle={listing.seller.handle} nested /> · {listing.spots.length} spots · {listing.mode}
               </p>
             </div>
             <span className="shrink-0 text-small text-muted">
@@ -107,7 +109,7 @@ function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings">; data: Review
                 <Money value={item.amount} className="text-body font-semibold" />
               </div>
               <p className="text-small text-muted">
-                @{item.buyerHandle} disputes @{item.sellerHandle} · opened {new Date(item.dispute.openedAt).toLocaleString()}
+                <UserLink handle={item.buyerHandle} /> disputes <UserLink handle={item.sellerHandle} /> · opened {new Date(item.dispute.openedAt).toLocaleString()}
               </p>
               <blockquote className="rounded-control bg-canvas px-3 py-2 text-body">&ldquo;{item.dispute.reason}&rdquo;</blockquote>
               <div className="flex gap-2">

@@ -16,6 +16,7 @@ import { Stat } from "@/components/ui/Stat";
 import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { DashboardHeader } from "./DashboardHeader";
 import { NeedsYouList } from "./NeedsYouList";
+import { UserLink } from "@/components/ui/UserLink";
 
 type SponsorSpot = SponsorDashboard["spots"][number];
 
@@ -36,7 +37,7 @@ function SpotCard({ spot }: { spot: SponsorSpot }) {
         <div className="min-w-0">
           <p className="truncate text-body font-semibold">{spot.listing.title}</p>
           <p className="truncate text-small text-muted">
-            spot {spot.index + 1} · @{spot.listing.sellerHandle}
+            spot {spot.index + 1} · <UserLink handle={spot.listing.sellerHandle} nested />
           </p>
         </div>
         <SpotStateBadge state={spot.state} perspective="sponsor" />

@@ -19,6 +19,7 @@ import { Money } from "@/components/ui/Money";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
 import { LogoUpload } from "./LogoUpload";
+import { UserLink } from "@/components/ui/UserLink";
 
 export function CheckoutModal({
   listing,
@@ -199,7 +200,7 @@ export function CheckoutModal({
             <div className="mt-1 flex gap-2 border-t border-line pt-3 text-small text-muted">
               <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
               <p>
-                held in escrow until @{listing.seller.handle} posts proof. refunded in full if it isn&apos;t delivered by{" "}
+                held in escrow until <UserLink handle={listing.seller.handle} /> posts proof. refunded in full if it isn&apos;t delivered by{" "}
                 {new Date(listing.deliveryDueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.
                 {auction && " if you're outbid, it comes straight back."}
               </p>

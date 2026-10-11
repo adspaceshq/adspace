@@ -8,6 +8,7 @@ import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { cx } from "@/lib/cx";
 import { Button } from "@/components/ui/Button";
+import { UserLink } from "@/components/ui/UserLink";
 
 export function MessagesPanel({ spotId, counterpart }: { spotId: string; counterpart: string }) {
   const { session } = useSession();
@@ -65,7 +66,7 @@ export function MessagesPanel({ spotId, counterpart }: { spotId: string; counter
                   {message.body}
                 </p>
                 <span className="text-caption text-subtle">
-                  {mine ? "you" : `@${message.author.handle}`} · {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  {mine ? "you" : <UserLink handle={message.author.handle} />} · {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                 </span>
               </li>
             );

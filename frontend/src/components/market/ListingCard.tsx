@@ -7,6 +7,7 @@ import { Countdown } from "@/components/ui/Countdown";
 import { Money } from "@/components/ui/Money";
 import { SpotMockup } from "@/components/ui/SpotMockup";
 import { SellerAvatar } from "./SellerAvatar";
+import { UserLink } from "@/components/ui/UserLink";
 
 export function ListingCard({ listing }: { listing: PublicListing }) {
   const price = priceSummary(listing);
@@ -34,7 +35,7 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
       <div className="flex flex-col gap-1.5 px-1 pb-1">
         <div className="flex items-center gap-2 text-small text-muted">
           <SellerAvatar seller={listing.seller} size={20} />
-          <span className="truncate">@{listing.seller.handle}</span>
+          <UserLink handle={listing.seller.handle} nested className="truncate" />
           {listing.seller.verified && <BadgeCheck className="size-3.5 shrink-0 text-accent" aria-label="verified" />}
           <span className="ml-auto shrink-0">{SURFACE_LABELS[listing.surface]}</span>
         </div>

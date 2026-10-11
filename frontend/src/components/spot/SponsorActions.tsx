@@ -16,6 +16,7 @@ import { Money } from "@/components/ui/Money";
 import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
+import { UserLink } from "@/components/ui/UserLink";
 
 function useRefreshSpot(spotId: string) {
   const queryClient = useQueryClient();
@@ -63,7 +64,7 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
   if (spot.state === "funded" && !deliveryPassed) {
     body = (
       <Block icon={Clock} tone="bg-accent-soft text-accent" title="waiting for delivery">
-        @{seller.handle} has until <Countdown to={deadlines.deliveryDueAt} className="font-medium text-ink" /> to place your brand and post
+        <UserLink handle={seller.handle} /> has until <Countdown to={deadlines.deliveryDueAt} className="font-medium text-ink" /> to place your brand and post
         proof. your USDC stays in escrow until then.
       </Block>
     );
@@ -86,7 +87,7 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
     body = (
       <>
         <Block icon={ShieldCheck} tone="bg-success-soft text-success" title="check the delivery">
-          @{seller.handle} posted proof. if it looks right, there&apos;s nothing to do: they&apos;re paid when your review window closes in{" "}
+          <UserLink handle={seller.handle} /> posted proof. if it looks right, there&apos;s nothing to do: they&apos;re paid when your review window closes in{" "}
           <Countdown to={deadlines.reviewUntil} className="font-medium text-ink" />.
         </Block>
         <Button variant="secondary" onClick={() => setDisputeOpen(true)}>
@@ -132,7 +133,7 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
       <Block icon={CheckCircle2} tone="bg-success-soft text-success" title={refunded > 0n && settlement.kind !== "dispute_split" ? "refunded" : "complete"}>
         {settlement.kind === "payout" && (
           <>
-            delivered and paid out. <Money value={settlement.gross} /> released to @{seller.handle}.
+            delivered and paid out. <Money value={settlement.gross} /> released to <UserLink handle={seller.handle} />.
           </>
         )}
         {(settlement.kind === "refund" || settlement.kind === "timeout_refund") && (
