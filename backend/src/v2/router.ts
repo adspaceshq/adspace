@@ -143,6 +143,11 @@ export function createV2Router(options: {
   const router = Router();
   const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: "draft-7", legacyHeaders: false });
   const mutationLimiter = rateLimit({ windowMs: 60_000, limit: 60, standardHeaders: "draft-7", legacyHeaders: false });
+  // Per account, on top of the per-IP limit: one account can't spam money actions or burn upload quota.
+  const perUser = (windowMs: number, limit: number) =>
+    rateLimit({ windowMs, limit, standardHeaders: "draft-7", legacyHeaders: false, keyGenerator: (req) => `user:${(req as Request).v2Session?.user.id}` });
+  const uploadLimiter = perUser(10 * 60_000, 30);
+  const moneyLimiter = perUser(60_000, 10);
 
   const requireChain = (): ChainContext => {
     if (!chain) throw Object.assign(new Error("on-chain actions are not configured"), { status: 503 });
@@ -290,10 +295,11 @@ export function createV2Router(options: {
 
   // ---------- media ----------
 
-  router.post("/uploads/sign", ...mutate, handle(async (req, res) => send(res, signUpload(parseAssetKind(req.body?.kind)))));
+  router.post("/uploads/sign", ...mutate, uploadLimiter, handle(async (req, res) => send(res, signUpload(parseAssetKind(req.body?.kind)))));
   router.post(
     "/media",
     ...mutate,
+    uploadLimiter,
     handle(async (req, res) => {
       const body = (req.body ?? {}) as Record<string, unknown>;
       send(res, await registerMedia(db, me(req).id, parseAssetKind(body.kind), { url: body.url, bytes: body.bytes, width: body.width, height: body.height }), 201);
@@ -354,6 +360,7 @@ export function createV2Router(options: {
   router.post(
     "/spots/:id/claim",
     ...mutate,
+    moneyLimiter,
     handle(async (req, res) => {
       const deps = purchaseDeps();
       const signer = await requireChain().userSigner(me(req));
@@ -363,6 +370,7 @@ export function createV2Router(options: {
   router.post(
     "/spots/:id/bid",
     ...mutate,
+    moneyLimiter,
     handle(async (req, res) => {
       const deps = purchaseDeps();
       const amount = parseUsdc((req.body ?? {}).amount, "amount");
@@ -590,6 +598,7 @@ export function createV2Router(options: {
   router.post(
     "/me/withdrawals/prepare",
     ...mutate,
+    moneyLimiter,
     handle(async (req, res) => {
       const body = (req.body ?? {}) as { destination?: unknown; amount?: unknown };
       const amount = parseUsdc(body.amount, "amount");
