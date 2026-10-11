@@ -122,7 +122,7 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
           </section>
           <MessagesPanel spotId={spot.id} counterpart={`@${seller.handle}`} />
         </div>
-        <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-0 lg:self-start">
+        <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-20 lg:self-start">
           {detail.role === "sponsor" ? (
             <SponsorActions detail={detail} now={now} />
           ) : (

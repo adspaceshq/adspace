@@ -106,7 +106,7 @@ export function ControlRoom({ listingId }: { listingId: string }) {
             <CloseListing listing={listing} now={now} />
           </div>
           {/* Two tabs instead of one tall stack, so the page doesn't keep growing; pinned while the left side scrolls. */}
-          <div className="flex flex-col gap-4 lg:sticky lg:top-0 lg:max-h-[calc(100dvh-12rem)] lg:self-start lg:overflow-y-auto lg:pb-4 no-scrollbar">
+          <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-9.5rem)] lg:self-start lg:overflow-y-auto lg:pb-4 no-scrollbar">
             <div role="tablist" aria-label="listing panels" className="flex gap-1 rounded-control bg-ink/5 p-1 text-small">
               {(
                 [

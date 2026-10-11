@@ -1,32 +1,26 @@
 import { AppSidebar, BottomTabs } from "./AppNav";
-import { LockPageScroll } from "./LockPageScroll";
 import { CompactFooter } from "./SiteFooter";
 import { TopBar } from "./TopBar";
 
-// Every page is exactly one screen tall: header pinned at the top, compact footer pinned at the bottom,
-// and only the content between them scrolls (`#scroll`). Sticky elements inside pages stick within it.
+// The window scrolls (one standard browser scrollbar). The header sticks to the top, the compact
+// footer is fixed to the bottom on desktop, and the app sidebar sticks between them, so only the
+// page content moves.
 // "public": browse, listings, profiles — no sidebar.
 // "app": signed-in work areas — sidebar on desktop, bottom tabs on mobile.
 export function AppShell({ children, variant = "public" }: { children: React.ReactNode; variant?: "public" | "app" }) {
   return (
-    <div className="fixed inset-0 flex flex-col overflow-hidden bg-canvas">
-      <LockPageScroll />
+    <div className="flex min-h-dvh flex-col bg-canvas">
       <TopBar inSidebar={variant === "app"} />
       {variant === "public" ? (
-        <div id="scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <main id="main" className="mx-auto w-full max-w-7xl px-4 py-8 pb-28 sm:px-6 lg:py-10">
+        <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 pb-28 sm:px-6 lg:py-10 lg:pb-24">
+          {children}
+        </main>
+      ) : (
+        <div className="mx-auto flex w-full max-w-7xl flex-1 gap-8 px-4 sm:px-6">
+          <AppSidebar />
+          <main id="main" className="min-w-0 flex-1 py-8 pb-24 lg:pb-24">
             {children}
           </main>
-        </div>
-      ) : (
-        // The sidebar is its own column outside the scroll area, so it never moves; only the content scrolls.
-        <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 gap-8 px-4 sm:px-6">
-          <AppSidebar />
-          <div id="scroll" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
-            <main id="main" className="py-8 pb-24 lg:pb-10">
-              {children}
-            </main>
-          </div>
         </div>
       )}
       <CompactFooter />

@@ -62,8 +62,8 @@ function FooterColumn({ title, links }: { title: string; links: Array<{ href: st
 // One-line footer for app pages; hidden on mobile where the bottom tabs sit.
 export function CompactFooter() {
   return (
-    <footer className="hidden border-t border-line lg:block">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 text-small text-muted">
+    <footer className="fixed inset-x-0 bottom-0 z-30 hidden border-t border-line bg-canvas/95 backdrop-blur-md lg:block">
+      <div className="mx-auto flex h-12 max-w-7xl items-center justify-between px-6 text-small text-muted">
         <span>© {year} adspaces</span>
         <nav aria-label="footer" className="flex gap-4">
           <Link href="/terms" className="hover:text-ink">terms</Link>

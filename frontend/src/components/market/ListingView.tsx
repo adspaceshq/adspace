@@ -124,7 +124,7 @@ export function ListingView({ initial }: { initial: PublicListing }) {
         <PostFeed listingId={listing.id} spots={listing.spots} />
       </div>
 
-      <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-0 lg:self-start">
+      <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-20 lg:self-start">
         <SellerCard listing={listing} onShare={() => void share()} />
         {selected && (
           <PurchasePanel

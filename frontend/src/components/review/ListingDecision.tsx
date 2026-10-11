@@ -138,7 +138,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
           </dl>
         </div>
 
-        <aside className="flex flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
+        <aside className="flex flex-col gap-4 lg:sticky lg:top-20 lg:self-start">
           <div className="flex items-center gap-3 rounded-panel border border-line bg-surface p-4 shadow-card">
             <SellerAvatar seller={listing.seller} size={40} />
             <div className="min-w-0">
