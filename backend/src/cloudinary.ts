@@ -50,7 +50,9 @@ export function isOwnUpload(url: string, kind: CloudinaryUploadKind): boolean {
   if (!cloudName) return false;
   const prefix = `https://res.cloudinary.com/${cloudName}/image/upload/`;
   if (!url.startsWith(prefix) || url.length > 500 || /\s/.test(url)) return false;
-  return url.slice(prefix.length).includes(`${rootFolder}/${kind}/`);
+  // Anchored: an optional version, then exactly our folder, so the folder can't appear later in the path.
+  const folder = `${rootFolder}/${kind}/`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`^(?:v\\d+/)?${folder}[^/]+$`).test(url.slice(prefix.length));
 }
 
 export function isHostedAssetUrl(value: string | undefined): boolean {
