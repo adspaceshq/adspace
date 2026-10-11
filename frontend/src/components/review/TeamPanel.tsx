@@ -7,6 +7,7 @@ import { api } from "@/lib/api/v2";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { UserLink } from "@/components/ui/UserLink";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
@@ -27,7 +28,14 @@ export function TeamPanel() {
       setHandle("");
     },
   });
-  const remove = useMutation({ mutationFn: (userId: string) => api.admin.removeTeamMember(userId), onSuccess: update });
+  const [removing, setRemoving] = useState<{ userId: string; handle: string; role: string } | null>(null);
+  const remove = useMutation({
+    mutationFn: (userId: string) => api.admin.removeTeamMember(userId),
+    onSuccess: (members) => {
+      update(members);
+      setRemoving(null);
+    },
+  });
 
   return (
     <Card className="flex flex-col gap-4 p-5">
@@ -65,7 +73,6 @@ export function TeamPanel() {
         </Button>
       </form>
       {add.isError && <p className="text-small text-danger">{add.error.message}</p>}
-      {remove.isError && <p className="text-small text-danger">{remove.error.message}</p>}
 
       {team.isPending ? (
         <Skeleton className="h-24 w-full" />
@@ -87,7 +94,7 @@ export function TeamPanel() {
               {member.userId !== session?.id && (
                 <button
                   type="button"
-                  onClick={() => remove.mutate(member.userId)}
+                  onClick={() => setRemoving({ userId: member.userId, handle: member.handle, role: member.role })}
                   disabled={remove.isPending}
                   aria-label={`remove @${member.handle}`}
                   className="cursor-pointer rounded-full p-1.5 text-muted hover:bg-ink/5 hover:text-danger"
@@ -99,6 +106,24 @@ export function TeamPanel() {
           ))}
         </ul>
       )}
+      <Modal
+        open={removing !== null}
+        onClose={() => !remove.isPending && setRemoving(null)}
+        title={removing ? `remove @${removing.handle}?` : "remove member"}
+        description={removing ? `they lose ${removing.role} access right away. you can add them again later.` : undefined}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRemoving(null)} disabled={remove.isPending}>
+              cancel
+            </Button>
+            <Button variant="danger" onClick={() => removing && remove.mutate(removing.userId)} loading={remove.isPending}>
+              remove
+            </Button>
+          </>
+        }
+      >
+        {remove.isError ? <p className="text-small text-danger">{remove.error.message}</p> : <p className="text-small text-muted">reviews and decisions they already made stay on record.</p>}
+      </Modal>
     </Card>
   );
 }
