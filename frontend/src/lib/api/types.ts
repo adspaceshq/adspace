@@ -467,6 +467,8 @@ export interface LedgerListingHit {
   mode: PricingMode;
   createdAt: IsoDate;
   sellerHandle: string;
+  spotCount: number;
+  soldCount: number;
 }
 
 export interface LedgerMove {

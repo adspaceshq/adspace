@@ -44,53 +44,84 @@ export function LedgerView() {
         <h1 className="text-title font-semibold">ledger</h1>
         <p className="text-small text-muted">every transaction on a listing, the USDC it moved, and whether each escrow balances.</p>
       </div>
-      <ListingSearch onPick={(id) => router.replace(`/review/ledger?listing=${id}`)} />
-      {listingId ? <Ledger listingId={listingId} /> : <RecentListings onPick={(id) => router.replace(`/review/ledger?listing=${id}`)} />}
+      {listingId ? (
+        <>
+          <button type="button" onClick={() => router.replace("/review/ledger")} className="cursor-pointer self-start text-small font-medium text-accent hover:underline">
+            all listings
+          </button>
+          <Ledger listingId={listingId} />
+        </>
+      ) : (
+        <ListingTable onPick={(id) => router.replace(`/review/ledger?listing=${id}`)} />
+      )}
     </div>
   );
 }
 
-function ListingSearch({ onPick }: { onPick: (id: string) => void }) {
+// Newest listings by default; typing filters the same table (title, creator handle or listing ID).
+function ListingTable({ onPick }: { onPick: (id: string) => void }) {
   const [text, setText] = useState("");
   const [query, setQuery] = useState("");
   useEffect(() => {
     const timer = setTimeout(() => setQuery(text.trim()), 300);
     return () => clearTimeout(timer);
   }, [text]);
-  const hits = useQuery({ queryKey: ["ledger-search", query], queryFn: () => api.review.searchListings(query), enabled: query.length > 0 });
+  const rows = useQuery({ queryKey: ["ledger-search", query], queryFn: () => api.review.searchListings(query), placeholderData: (previous) => previous });
   return (
-    <div className="relative max-w-xl">
-      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
-      <input
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        placeholder="search listings"
-        aria-label="search listings"
-        className="h-10 w-full rounded-control border border-line bg-surface pl-9 pr-3 text-body outline-none focus:border-line-strong"
-      />
-      {query && hits.data && (
-        <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-card border border-line bg-surface shadow-card">
-          {hits.data.length === 0 && <li className="px-3 py-2 text-small text-muted">no listings found</li>}
-          {hits.data.map((hit) => (
-            <li key={hit.id}>
-              <button
-                type="button"
-                onClick={() => {
-                  onPick(hit.id);
-                  setText("");
-                }}
-                className="flex w-full cursor-pointer items-center justify-between gap-3 px-3 py-2 text-left text-small hover:bg-ink/5"
-              >
-                <span className="min-w-0 truncate">
-                  <span className="font-medium">{hit.title}</span> <UserLink handle={hit.sellerHandle} nested className="text-muted" />
-                </span>
-                <ListingStateBadge state={hit.state} />
-              </button>
-            </li>
-          ))}
-        </ul>
+    <section className="flex flex-col gap-3">
+      <div className="relative max-w-md">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
+        <input
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          placeholder="filter by title, creator or listing ID"
+          aria-label="filter listings"
+          className="h-10 w-full rounded-control border border-line bg-surface pl-9 pr-3 text-body outline-none focus:border-line-strong"
+        />
+      </div>
+      {rows.isPending ? (
+        <Skeleton className="h-64 w-full" />
+      ) : !rows.data?.length ? (
+        <EmptyState icon={Search} title={query ? "no listings match" : "no listings yet"} description={query ? "try a title, a creator handle or a listing ID." : undefined} />
+      ) : (
+        <div className="overflow-x-auto rounded-card border border-line bg-surface">
+          <table className="w-full min-w-[640px] text-small">
+            <thead className="text-left text-caption text-muted">
+              <tr className="border-b border-line">
+                <th className="px-4 py-2 font-medium">listing</th>
+                <th className="px-4 py-2 font-medium">creator</th>
+                <th className="px-4 py-2 font-medium">mode</th>
+                <th className="px-4 py-2 text-right font-medium">sold</th>
+                <th className="px-4 py-2 font-medium">created</th>
+                <th className="px-4 py-2 font-medium">status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.data.map((row) => (
+                <tr key={row.id} onClick={() => onPick(row.id)} className="cursor-pointer border-b border-line last:border-0 hover:bg-ink/5">
+                  <td className="px-4 py-2.5">
+                    <button type="button" onClick={() => onPick(row.id)} className="cursor-pointer text-left font-medium hover:underline">
+                      {row.title}
+                    </button>
+                  </td>
+                  <td className="px-4 py-2.5 text-muted">
+                    <UserLink handle={row.sellerHandle} nested />
+                  </td>
+                  <td className="px-4 py-2.5 text-muted">{row.mode}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">
+                    {row.soldCount} / {row.spotCount}
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-2.5 text-muted">{new Date(row.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</td>
+                  <td className="px-4 py-2.5">
+                    <ListingStateBadge state={row.state} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -282,28 +313,3 @@ function Status({ entry, check }: { entry: ListingLedger["entries"][number]; che
   );
 }
 
-// Shown before a search: the newest listings, so there's always something to open.
-function RecentListings({ onPick }: { onPick: (id: string) => void }) {
-  const recent = useQuery({ queryKey: ["ledger-search", ""], queryFn: () => api.review.searchListings("") });
-  if (recent.isPending) return <Skeleton className="h-64 w-full" />;
-  if (!recent.data?.length) return <EmptyState icon={Search} title="no listings yet" description="listings show up here as soon as creators start drafting." />;
-  return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-body font-semibold">recent listings</h2>
-      <ul className="divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-        {recent.data.map((hit) => (
-          <li key={hit.id}>
-            <button type="button" onClick={() => onPick(hit.id)} className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left text-small hover:bg-ink/5">
-              <span className="min-w-0 flex-1 truncate">
-                <span className="font-medium">{hit.title}</span> <UserLink handle={hit.sellerHandle} nested className="text-muted" />
-              </span>
-              <span className="hidden text-muted sm:inline">{hit.mode}</span>
-              <span className="hidden w-20 text-right text-subtle sm:inline">{new Date(hit.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
-              <ListingStateBadge state={hit.state} />
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
