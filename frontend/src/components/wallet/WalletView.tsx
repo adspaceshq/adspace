@@ -93,7 +93,7 @@ function DepositCard({ address }: { address: string }) {
       </p>
       <p className="text-small text-muted">send USDC on Solana to this address. other tokens or networks will be lost.</p>
       <div className="flex items-center gap-2 rounded-control bg-canvas p-3">
-        <code className="min-w-0 flex-1 break-all text-small">{address}</code>
+        <code className="min-w-0 flex-1 break-all font-mono text-caption tracking-tight sm:text-small">{address}</code>
         <CopyButton value={address} label="copy deposit address" />
       </div>
       {ADSPACES_CLUSTER !== "mainnet-beta" && (

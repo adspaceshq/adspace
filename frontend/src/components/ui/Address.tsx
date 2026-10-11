@@ -35,8 +35,9 @@ export function Address({
   };
   const label = kind === "tx" ? "transaction" : "address";
   return (
-    <span className={`inline-flex min-w-0 items-center gap-1 font-mono ${className}`}>
-      <span title={value} className={full ? "no-scrollbar min-w-0 overflow-x-auto whitespace-nowrap" : "truncate"}>
+    <span className={`inline-flex min-w-0 items-center gap-1 ${className}`}>
+      {/* JetBrains Mono runs ~15% larger than Inter at the same size; scale it down to sit level with the surrounding text. */}
+      <span title={value} className={`font-mono text-[0.85em] tracking-tight ${full ? "no-scrollbar min-w-0 overflow-x-auto whitespace-nowrap" : "truncate"}`}>
         {prefix}
         {full ? value : shortKey(value, chars)}
       </span>
