@@ -113,8 +113,12 @@ export const api = {
     watch: (listingId: string) => request<{ listingId: string; watching: boolean }>("PUT", `/me/watchlist/${enc(listingId)}`, {}),
     unwatch: (listingId: string) => request<{ listingId: string; watching: boolean }>("DELETE", `/me/watchlist/${enc(listingId)}`),
     withdrawals: () => get<Withdrawal[]>("/me/withdrawals"),
-    withdraw: (destination: string, amount: string) =>
-      post<{ withdrawal: Withdrawal; signature: string }>("/me/withdrawals", { destination, amount }),
+    // Two steps: the server prepares the transfer (and pays the fee), the user's wallet signs it in the
+    // browser (Privy asks for their two-factor), then the server checks and submits exactly that.
+    prepareWithdrawal: (destination: string, amount: string) =>
+      post<{ withdrawalId: string; transaction: string }>("/me/withdrawals/prepare", { destination, amount }),
+    submitWithdrawal: (withdrawalId: string, transaction: string) =>
+      post<{ withdrawal: Withdrawal; signature: string }>(`/me/withdrawals/${enc(withdrawalId)}/submit`, { transaction }),
   },
 
   handles: {

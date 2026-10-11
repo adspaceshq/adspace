@@ -197,9 +197,9 @@ function SecuritySection() {
         icon={Zap}
         title="gasless transactions"
         status={wallet.delegated ? "on" : "off"}
-        description="adspaces pays Solana fees and submits your claims, bids and payouts. withdrawals still need your two-factor code. if transactions fail with an authorization error, reconnect."
+        description="adspaces pays Solana fees and submits your claims, bids and payouts. it can never move your USDC: withdrawals are always signed by you, with your two-factor code. if transactions fail with an authorization error, reconnect."
         action={wallet.delegated ? "reconnect" : "turn on"}
-        onClick={() => void run(wallet.enableGasless)}
+        onClick={() => void run(wallet.delegated ? wallet.reconnectGasless : wallet.enableGasless)}
       />
       {error && (
         <p role="alert" className="text-small text-danger">

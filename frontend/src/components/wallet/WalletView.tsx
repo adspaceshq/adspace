@@ -125,9 +125,11 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
 
   // Fresh two-factor check inside the tx so a retry asks again.
   const send = useCallback(
+    // Prepare on the server, sign with the user's own wallet (Privy asks for two-factor), then submit.
     async (to: string, value: string) => {
-      await wallet.verifyMfa();
-      return api.me.withdraw(to, value);
+      const prepared = await api.me.prepareWithdrawal(to, value);
+      const signed = await wallet.signTransaction(prepared.transaction);
+      return api.me.submitWithdrawal(prepared.withdrawalId, signed);
     },
     [wallet],
   );

@@ -1,6 +1,8 @@
 "use client";
 
-import { getAccessToken, getIdentityToken, useLinkAccount, useMfa, useMfaEnrollment, usePrivy, useSigners, useUpdateAccount, useUser } from "@privy-io/react-auth";
+import { getAccessToken, getIdentityToken, useLinkAccount, useMfaEnrollment, usePrivy, useSigners, useUpdateAccount, useUser } from "@privy-io/react-auth";
+import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
+import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { api, ApiError, setCsrfToken } from "@/lib/api/v2";
@@ -13,9 +15,12 @@ export interface WalletAccess {
   delegated: boolean;
   mfaEnabled: boolean;
   enableGasless: () => Promise<void>;
+  // Replaces the signer (e.g. after a key or policy change) so it carries the current policy.
+  reconnectGasless: () => Promise<void>;
   setupMfa: () => void;
-  // Asks for a fresh two-factor check; required right before withdrawals.
-  verifyMfa: () => Promise<void>;
+  // Signs a server-prepared transaction with the user's own wallet. Privy asks for two-factor here;
+  // used for withdrawals, which the gasless signer's policy does not allow.
+  signTransaction: (base64: string) => Promise<string>;
 }
 
 export interface SessionState {
@@ -36,8 +41,11 @@ const noWallet: WalletAccess = {
   delegated: false,
   mfaEnabled: false,
   enableGasless: async () => {},
+  reconnectGasless: async () => {},
   setupMfa: () => {},
-  verifyMfa: async () => {},
+  signTransaction: async () => {
+    throw new Error("sign in first");
+  },
 };
 
 const guest: SessionState = {
@@ -79,10 +87,11 @@ async function loadSession(privyEmail: string | undefined): Promise<Session> {
 function PrivySession({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, login, logout, user } = usePrivy();
   const queryClient = useQueryClient();
-  const { addSigners } = useSigners();
+  const { addSigners, removeSigners } = useSigners();
+  const { wallets } = useWallets();
+  const { signTransaction: privySignTransaction } = useSignTransaction();
   const { refreshUser } = useUser();
   const { showMfaEnrollmentModal } = useMfaEnrollment();
-  const { promptMfa } = useMfa();
 
   const embedded = user?.linkedAccounts.find(
     (account) =>
@@ -92,17 +101,40 @@ function PrivySession({ children }: { children: React.ReactNode }) {
   const delegated = Boolean(embedded?.delegated);
   const mfaEnabled = (user?.mfaMethods?.length ?? 0) > 0;
 
+  // The signer carries a Privy policy: it may only sign adspaces program instructions (plus creating
+  // token accounts), never plain USDC transfers. Withdrawals therefore always need the user's own signature.
   const enableGasless = useCallback(async () => {
     const signerId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID;
+    const policyId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_POLICY_ID;
     if (!walletAddress) throw new Error("your wallet is still being created; try again in a moment");
     if (!signerId) throw new Error("gasless transactions are not configured");
-    await addSigners({ address: walletAddress, signers: [{ signerId }] });
+    await addSigners({ address: walletAddress, signers: [{ signerId, policyIds: policyId ? [policyId] : [] }] });
     await refreshUser();
   }, [addSigners, walletAddress, refreshUser]);
 
+  const reconnectGasless = useCallback(async () => {
+    if (!walletAddress) throw new Error("your wallet is still being created; try again in a moment");
+    await removeSigners({ address: walletAddress });
+    await enableGasless();
+  }, [removeSigners, walletAddress, enableGasless]);
+
+  const signTransaction = useCallback(
+    async (base64: string) => {
+      const target = wallets.find((item) => item.address === walletAddress);
+      if (!target) throw new Error("your wallet isn't ready yet; try again in a moment");
+      const { signedTransaction } = await privySignTransaction({
+        transaction: Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)),
+        wallet: target,
+        chain: `solana:${ADSPACES_CLUSTER === "mainnet-beta" ? "mainnet" : ADSPACES_CLUSTER}` as never,
+      });
+      return btoa(String.fromCharCode(...signedTransaction));
+    },
+    [wallets, walletAddress, privySignTransaction],
+  );
+
   const wallet = useMemo<WalletAccess>(
-    () => ({ delegated, mfaEnabled, enableGasless, setupMfa: showMfaEnrollmentModal, verifyMfa: promptMfa }),
-    [delegated, mfaEnabled, enableGasless, showMfaEnrollmentModal, promptMfa],
+    () => ({ delegated, mfaEnabled, enableGasless, reconnectGasless, setupMfa: showMfaEnrollmentModal, signTransaction }),
+    [delegated, mfaEnabled, enableGasless, reconnectGasless, showMfaEnrollmentModal, signTransaction],
   );
 
   const privyEmail = user?.email?.address;
