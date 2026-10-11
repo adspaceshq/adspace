@@ -38,7 +38,6 @@ const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
   },
   {
     items: [
-      { href: "/sell", label: "new listing", icon: Plus, match: "/sell" },
       { href: "/wallet", label: "wallet", icon: Wallet },
       { href: "/activity", label: "activity", icon: Activity },
       { href: "/watchlist", label: "saved", icon: Bookmark },
@@ -87,11 +86,16 @@ export function AppSidebar() {
           {link({ href: "/review", label: "review", icon: ShieldCheck })}
         </div>
       )}
-      {session && (
-        <div className="mt-auto pt-4">
-          <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />
-        </div>
-      )}
+      <div className="mt-auto flex flex-col gap-3 pt-4">
+        {/* The main creator action, X "post"-style. */}
+        <Link
+          href="/sell"
+          className="flex items-center justify-center gap-2 rounded-full bg-ink px-4 py-2.5 text-body font-semibold text-white shadow-card transition-colors hover:bg-ink-soft"
+        >
+          <Plus className="size-4" aria-hidden /> new listing
+        </Link>
+        {session && <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />}
+      </div>
     </nav>
   );
 }
