@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
+import { HelpLink, NetworkBadge, NeedsYouMini, NewListingButton } from "./SidebarExtras";
 import { cx } from "@/lib/cx";
 
 interface NavItem {
@@ -37,7 +38,6 @@ const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
   },
   {
     items: [
-      { href: "/sell", label: "new listing", icon: Plus, match: "/sell" },
       { href: "/wallet", label: "wallet", icon: Wallet },
       { href: "/activity", label: "activity", icon: Activity },
       { href: "/watchlist", label: "saved", icon: Bookmark },
@@ -85,11 +85,15 @@ export function AppSidebar() {
           {link({ href: "/review", label: "review", icon: ShieldCheck })}
         </div>
       )}
-      {session && (
-        <div className="mt-auto pt-4">
-          <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />
+      <div className="mt-auto flex flex-col gap-3 pt-4">
+        <NeedsYouMini />
+        <NewListingButton />
+        <div className="flex flex-col gap-1">
+          <HelpLink />
+          <NetworkBadge />
         </div>
-      )}
+        {session && <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />}
+      </div>
     </nav>
   );
 }

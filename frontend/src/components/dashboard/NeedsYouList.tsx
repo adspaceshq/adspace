@@ -27,7 +27,7 @@ const spotLabel = (item: NeedsYouItem) => (item.spotIndex !== undefined ? `spot 
 const control = (item: NeedsYouItem) => `/sell/listings/${item.listingId}${item.spotId ? `?spot=${item.spotId}` : ""}`;
 const sponsorSpot = (item: NeedsYouItem) => `/dashboard/spots/${item.spotId}`;
 
-const COPY: Record<NeedsYouType, Copy> = {
+export const NEEDS_YOU_COPY: Record<NeedsYouType, Copy> = {
   proof_due: { icon: Upload, tone: "bg-accent-soft text-accent", title: (i) => `post proof for ${spotLabel(i)}`, cta: "add proof", href: control },
   accept_terms: { icon: BadgeCheck, tone: "bg-success-soft text-success", title: () => "your listing is approved", cta: "review & publish", href: (i) => `/sell/listings/${i.listingId}` },
   changes_requested: { icon: FilePen, tone: "bg-warning-soft text-warning", title: () => "the reviewer asked for changes", cta: "edit listing", href: (i) => `/sell/drafts/${i.listingId}` },
@@ -57,7 +57,7 @@ export function NeedsYouList({ items, emptyText }: { items: NeedsYouItem[]; empt
       ) : (
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
           {items.map((item) => {
-            const copy = COPY[item.type];
+            const copy = NEEDS_YOU_COPY[item.type];
             return (
               <li key={`${item.type}:${item.spotId ?? item.listingId}`} className="flex items-center gap-3 px-4 py-3">
                 <span className={`flex size-9 shrink-0 items-center justify-center rounded-full ${copy.tone}`}>
