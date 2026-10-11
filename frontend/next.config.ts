@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@privy-io/react-auth', '@privy-io/api-base', 'x402'],
+  transpilePackages: ['@privy-io/react-auth', '@privy-io/api-base'],
   images: { loader: 'custom', loaderFile: './src/lib/image-loader.ts' },
   // No other site may frame the app (clickjacking on bid, claim and withdraw).
   async headers() {
