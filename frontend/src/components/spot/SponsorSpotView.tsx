@@ -15,6 +15,7 @@ import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { MessagesPanel } from "./MessagesPanel";
 import { SponsorActions } from "./SponsorActions";
 import { SpotActivity } from "./SpotActivity";
+import { XHandleLink } from "@/components/ui/UserLink";
 
 export function SponsorSpotView({ spotId }: { spotId: string }) {
   const now = useNow(15_000);
@@ -83,7 +84,7 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-card border border-line bg-surface px-4 py-3 text-small">
               <span className="text-muted">your brand</span>
               <span className="font-semibold">{spot.brand.name}</span>
-              {spot.brand.handle && <span className="text-muted">@{spot.brand.handle}</span>}
+              {spot.brand.handle && <XHandleLink handle={spot.brand.handle} className="text-muted" />}
               {spot.brand.link && (
                 <a href={spot.brand.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
                   {new URL(spot.brand.link).hostname} <ExternalLink className="size-3" aria-hidden />
@@ -121,7 +122,7 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
           </section>
           <MessagesPanel spotId={spot.id} counterpart={`@${seller.handle}`} />
         </div>
-        <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-24 lg:self-start">
+        <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-0 lg:self-start">
           {detail.role === "sponsor" ? (
             <SponsorActions detail={detail} now={now} />
           ) : (

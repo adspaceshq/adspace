@@ -19,6 +19,7 @@ import { Money } from "@/components/ui/Money";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { SpotMockup } from "@/components/ui/SpotMockup";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
+import { UserLink } from "@/components/ui/UserLink";
 
 const toLocal = (iso: string) => {
   const date = new Date(iso);
@@ -137,7 +138,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
           </dl>
         </div>
 
-        <aside className="flex flex-col gap-4 lg:sticky lg:top-24 lg:self-start">
+        <aside className="flex flex-col gap-4 lg:sticky lg:top-0 lg:self-start">
           <div className="flex items-center gap-3 rounded-panel border border-line bg-surface p-4 shadow-card">
             <SellerAvatar seller={listing.seller} size={40} />
             <div className="min-w-0">
@@ -146,7 +147,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
                 {listing.seller.verified && <BadgeCheck className="size-4 text-accent" aria-label="verified" />}
               </p>
               <p className="text-small text-muted">
-                @{listing.seller.handle}
+                <UserLink handle={listing.seller.handle} />
                 {listing.audience.followers ? ` · ${formatFollowers(listing.audience.followers)} followers` : ""}
               </p>
             </div>

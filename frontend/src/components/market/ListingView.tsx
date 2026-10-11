@@ -23,6 +23,7 @@ import { ListingTimeline } from "./ListingTimeline";
 import { PostFeed } from "./PostFeed";
 import { WatchButton } from "@/components/watchlist/WatchButton";
 import { SellerAvatar } from "./SellerAvatar";
+import { UserLink, XHandleLink } from "@/components/ui/UserLink";
 
 export function ListingView({ initial }: { initial: PublicListing }) {
   const { session, signIn } = useSession();
@@ -123,7 +124,7 @@ export function ListingView({ initial }: { initial: PublicListing }) {
         <PostFeed listingId={listing.id} spots={listing.spots} />
       </div>
 
-      <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-24 lg:self-start">
+      <aside className="order-first flex flex-col gap-4 lg:order-none lg:sticky lg:top-0 lg:self-start">
         <SellerCard listing={listing} onShare={() => void share()} />
         {selected && (
           <PurchasePanel
@@ -162,7 +163,9 @@ function SellerCard({ listing, onShare }: { listing: PublicListing; onShare: () 
             <span className="truncate">{listing.seller.displayName}</span>
             {listing.seller.verified && <BadgeCheck className="size-4 shrink-0 text-accent" aria-label="verified" />}
           </Link>
-          <p className="truncate text-small text-muted">@{listing.seller.handle}</p>
+          <p className="truncate text-small text-muted">
+            <UserLink handle={listing.seller.handle} />
+          </p>
         </div>
         <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="shadow-none" />
         <button type="button" onClick={onShare} aria-label="share listing" className="cursor-pointer rounded-full p-2 text-muted hover:bg-ink/5 hover:text-ink">
@@ -352,7 +355,12 @@ function SponsorLine({ brand, leading }: { brand: NonNullable<PublicListing["spo
       <p className="text-small text-muted">
         {leading ? "top bid by " : "sponsored by "}
         {name}
-        {brand.handle && <span> · @{brand.handle}</span>}
+        {brand.handle && (
+          <span>
+            {" · "}
+            <XHandleLink handle={brand.handle} />
+          </span>
+        )}
       </p>
     </div>
   );

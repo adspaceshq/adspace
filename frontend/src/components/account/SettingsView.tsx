@@ -54,7 +54,7 @@ export function SettingsView() {
       <h1 className="text-title font-semibold sm:text-display">settings</h1>
       <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-8">
         <nav aria-label="settings sections">
-          <ul role="tablist" aria-orientation="vertical" className="no-scrollbar flex gap-1 overflow-x-auto text-small lg:sticky lg:top-24 lg:flex-col lg:overflow-visible">
+          <ul role="tablist" aria-orientation="vertical" className="no-scrollbar flex gap-1 overflow-x-auto text-small lg:sticky lg:top-0 lg:flex-col lg:overflow-visible">
             {SECTIONS.map(({ id, label, icon: Icon }) => {
               const active = id === section;
               return (
