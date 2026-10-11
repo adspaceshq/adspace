@@ -99,11 +99,13 @@ export async function raiseDispute(
   const spotKey = new PublicKey(spot.chainAddress!);
   const disputeKey = pdas(deps.program.programId).dispute(spotKey);
 
-  await deps.ensureRent(buyer.publicKey);
   const instruction = await deps.program.methods
     .raiseDispute(Array.from(hash), uri)
     .accountsStrict({
       buyer: buyer.publicKey,
+      config: pdas(deps.program.programId).config(),
+      // The platform pays the dispute's rent, so buyers never need SOL. It's the fee payer key, which signs anyway.
+      rentPayer: deps.feePayer.publicKey,
       listing: new PublicKey(listing.chainAddress!),
       spot: spotKey,
       dispute: disputeKey,
@@ -158,6 +160,7 @@ export async function withdrawDispute(deps: DisputeDeps, buyerId: string, buyer:
     .withdrawDispute()
     .accountsStrict({
       buyer: buyer.publicKey,
+      rentPayer: deps.feePayer.publicKey,
       listing: new PublicKey(listing.chainAddress!),
       spot: spotKey,
       dispute: pdas(deps.program.programId).dispute(spotKey),
@@ -239,6 +242,7 @@ export async function resolveDispute(
       .resolveDispute(sellerShareBps, Array.from(sha256(`adspaces-decision-v1\n${dispute.id}\n${sellerShareBps}\n${decision}`)), listingUri(deps.listingBaseUrl, handle, listing.slug, `decision-${spot.index + 1}`))
       .accountsStrict({
         resolver: deps.resolver.publicKey,
+        rentPayer: deps.feePayer.publicKey,
         config: addresses.config(),
         listing: listingKey,
         spot: spotKey,
@@ -326,6 +330,7 @@ export async function timeoutDispute(deps: DisputeDeps, spotId: string, triggere
       .timeoutDispute()
       .accountsStrict({
         caller: deps.feePayer.publicKey,
+        rentPayer: deps.feePayer.publicKey,
         config: addresses.config(),
         listing: listingKey,
         seller: new PublicKey(listing.sellerWallet!),
