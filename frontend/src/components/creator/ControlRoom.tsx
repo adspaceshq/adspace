@@ -36,6 +36,12 @@ export function ControlRoom({ listingId }: { listingId: string }) {
   const queryKey = ["me", "listing", listingId];
   const query = useQuery({ queryKey, queryFn: () => api.me.listing(listingId), refetchInterval: 30_000 });
   const [selectedId, setSelectedId] = useState<string | null>(params.get("spot"));
+  const [panel, setPanel] = useState<"spot" | "updates">(params.get("tab") === "updates" ? "updates" : "spot");
+  // Picking a spot on the photo or table brings its panel forward.
+  const selectSpot = (id: string) => {
+    setSelectedId(id);
+    setPanel("spot");
+  };
 
   if (query.isPending) {
     return (
@@ -91,17 +97,42 @@ export function ControlRoom({ listingId }: { listingId: string }) {
                 photoUrl={cover}
                 alt={listing.title}
                 selectedId={selected?.id}
-                onSelect={setSelectedId}
+                onSelect={selectSpot}
                 spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state, price: spot.price, logoUrl: spot.brand?.logoUrl }))}
               />
             )}
-            <SpotTable listing={listing} selectedId={selected?.id} onSelect={setSelectedId} now={now} />
+            <SpotTable listing={listing} selectedId={selected?.id} onSelect={selectSpot} now={now} />
             <CloseListing listing={listing} now={now} />
           </div>
-          <div className="flex flex-col gap-6">
-            {selected && <SpotPanel listing={listing} spot={selected} now={now} />}
-            <PostComposer listingId={listing.id} />
-            <PostFeed listingId={listing.id} spots={listing.spots} />
+          {/* Two tabs instead of one tall stack, so the page doesn't keep growing; pinned while the left side scrolls. */}
+          <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:self-start lg:overflow-y-auto lg:pb-4 no-scrollbar">
+            <div role="tablist" aria-label="listing panels" className="flex gap-1 rounded-control bg-ink/5 p-1 text-small">
+              {(
+                [
+                  ["spot", selected ? `spot ${selected.index + 1}` : "spot"],
+                  ["updates", "updates & proof"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={panel === id}
+                  onClick={() => setPanel(id)}
+                  className={cx("flex-1 cursor-pointer rounded-[calc(var(--radius-control)-2px)] px-3 py-1.5 font-medium transition-colors", panel === id ? "bg-surface text-ink shadow-card" : "text-muted hover:text-ink")}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {panel === "spot" ? (
+              selected && <SpotPanel listing={listing} spot={selected} now={now} />
+            ) : (
+              <>
+                <PostComposer listingId={listing.id} />
+                <PostFeed listingId={listing.id} spots={listing.spots} />
+              </>
+            )}
           </div>
         </div>
       )}
@@ -272,9 +303,15 @@ function CloseListing({ listing, now }: { listing: OwnedListing; now: number }) 
   if (!ready) return null;
   return (
     <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
-      <p className="text-body">every spot is finished. close the listing to reclaim its rent.</p>
-      <Button variant="secondary" onClick={async () => (await tx.execute()) && (await refresh())} loading={tx.busy}>
-        close listing
+      <div className="flex flex-col gap-1">
+        <p className="text-body font-medium">every spot is finished</p>
+        <p className="text-small text-muted">
+          publishing put a small SOL deposit into this listing&apos;s on-chain accounts. closing returns that SOL to your wallet. it moves no USDC, and the
+          listing page and its history stay visible.
+        </p>
+      </div>
+      <Button variant="secondary" className="self-start" onClick={async () => (await tx.execute()) && (await refresh())} loading={tx.busy}>
+        close listing and reclaim SOL
       </Button>
       <TxStatus state={tx.state} action="close listing" onRetry={tx.retry} />
     </div>
