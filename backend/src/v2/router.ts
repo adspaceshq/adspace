@@ -649,17 +649,17 @@ export function createV2Router(options: {
     const context = requireChain();
     return { db, program: context.program, authority: context.reviewer, runTx: context.runTx, readProtocolStatus: context.readProtocolStatus };
   };
-  router.get("/admin/team", requireUser, requireAdmin, handle(async (_req, res) => send(res, await listStaff(db))));
+  router.get("/admin/team", requireUser, requireAdmin, handle(async (_req, res) => send(res, await listStaff(db, admins))));
   router.post(
     "/admin/team",
     ...mutate,
     requireAdmin,
     handle(async (req, res) => {
       const body = (req.body ?? {}) as { handle?: unknown; role?: unknown };
-      send(res, await grantStaffRole(db, me(req).id, body.handle, body.role));
+      send(res, await grantStaffRole(db, me(req).id, body.handle, body.role, admins));
     }),
   );
-  router.delete("/admin/team/:userId", ...mutate, requireAdmin, handle(async (req, res) => send(res, await revokeStaffRole(db, me(req).id, req.params.userId))));
+  router.delete("/admin/team/:userId", ...mutate, requireAdmin, handle(async (req, res) => send(res, await revokeStaffRole(db, me(req).id, req.params.userId, admins))));
   router.get(
     "/admin/status",
     requireUser,

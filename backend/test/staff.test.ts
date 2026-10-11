@@ -54,12 +54,18 @@ test("admins add and remove team members by handle; the grant is stored by id", 
 
   const added = await write("/api/v2/admin/team", owner).send({ handle: "@Helper_One", role: "reviewer" });
   assert.equal(added.status, 200);
-  assert.equal(added.body[0].userId, helper.id);
-  assert.equal(added.body[0].grantedByHandle, "owner_admin");
+  const helperRow = added.body.find((row: { userId: string }) => row.userId === helper.id);
+  assert.equal(helperRow.role, "reviewer");
+  assert.equal(helperRow.grantedByHandle, "owner_admin");
+  assert.deepEqual([added.body[0].userId, added.body[0].role], [owner.id, "owner"]);
   assert.deepEqual([(await me(helper)).isReviewer, (await me(helper)).isAdmin], [true, false]);
   assert.equal((await request(app).get("/api/v2/review/queue").set("Cookie", helper.cookie)).status, 200);
 
-  // Promote, then the new admin can manage the team but cannot remove themselves.
+  // One role per person: a second role is refused until they're removed.
+  const duplicate = await write("/api/v2/admin/team", owner).send({ handle: "helper_one", role: "admin" });
+  assert.equal(duplicate.status, 409);
+  assert.match(duplicate.body.error, /already a reviewer/);
+  await request(app).delete(`/api/v2/admin/team/${helper.id}`).set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf);
   await write("/api/v2/admin/team", owner).send({ handle: "helper_one", role: "admin" });
   assert.equal((await me(helper)).isAdmin, true);
   assert.equal((await request(app).delete(`/api/v2/admin/team/${helper.id}`).set("Cookie", helper.cookie).set("X-CSRF-Token", helper.csrf)).status, 400);
@@ -67,7 +73,7 @@ test("admins add and remove team members by handle; the grant is stored by id", 
   // Removal takes effect immediately.
   const removed = await request(app).delete(`/api/v2/admin/team/${helper.id}`).set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf);
   assert.equal(removed.status, 200);
-  assert.deepEqual(removed.body, []);
+  assert.deepEqual(removed.body.map((row: { role: string }) => row.role), ["owner"]);
   assert.equal((await me(helper)).isReviewer, false);
 
   // The owner admin comes from env and is never in the team table, so it can't be removed in the app.
@@ -91,4 +97,16 @@ test("team roles need a linked X account and a verified email, and stop working 
   assert.equal((await me(member)).isReviewer, false);
   assert.equal((await request(app).get("/api/v2/review/queue").set("Cookie", member.cookie)).status, 403);
   assert.ok(noX && noEmail);
+});
+
+test("owners are listed, can't be added again, and can clear their own extra entry", async () => {
+  const owner = await signIn("owner_admin");
+  const added = await request(app).post("/api/v2/admin/team").set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf).send({ handle: "owner_admin", role: "reviewer" });
+  assert.match(added.body.error, /already an owner admin/);
+  // A stray row from before this check existed can be removed by the owner themselves.
+  const { staff } = await import("../src/db/schema.js");
+  await db.insert(staff).values({ userId: owner.id, role: "reviewer" }).onConflictDoNothing();
+  const cleared = await request(app).delete(`/api/v2/admin/team/${owner.id}`).set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf);
+  assert.equal(cleared.status, 200);
+  assert.equal((await me(owner)).isAdmin, true);
 });
