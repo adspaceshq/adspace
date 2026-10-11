@@ -19,7 +19,6 @@ import {
 } from "lucide-react";
 import { useSession } from "@/lib/session";
 import { AccountMenu } from "./AccountMenu";
-import { NetworkBadge, NeedsYouMini, NewListingButton } from "./SidebarExtras";
 import { cx } from "@/lib/cx";
 
 interface NavItem {
@@ -39,6 +38,7 @@ const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
   },
   {
     items: [
+      { href: "/sell", label: "new listing", icon: Plus, match: "/sell" },
       { href: "/wallet", label: "wallet", icon: Wallet },
       { href: "/activity", label: "activity", icon: Activity },
       { href: "/watchlist", label: "saved", icon: Bookmark },
@@ -75,7 +75,7 @@ export function AppSidebar() {
     );
   };
   return (
-    <nav aria-label="app" className="hidden w-56 shrink-0 flex-col gap-6 py-6 lg:flex">
+    <nav aria-label="app" className="hidden w-56 shrink-0 flex-col gap-6 self-start py-6 lg:sticky lg:top-16 lg:flex lg:h-[calc(100dvh-7rem)]">
       {sidebarSections.map((section, index) => (
         <div key={index} className="flex flex-col gap-1">
           {section.title && <p className="px-3 pb-1 text-caption font-medium uppercase tracking-wide text-subtle">{section.title}</p>}
@@ -87,12 +87,11 @@ export function AppSidebar() {
           {link({ href: "/review", label: "review", icon: ShieldCheck })}
         </div>
       )}
-      <div className="mt-auto flex flex-col gap-3 pt-4">
-        <NeedsYouMini />
-        <NewListingButton />
-        <NetworkBadge />
-        {session && <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />}
-      </div>
+      {session && (
+        <div className="mt-auto pt-4">
+          <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />
+        </div>
+      )}
     </nav>
   );
 }
