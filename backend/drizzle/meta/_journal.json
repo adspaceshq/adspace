@@ -78,6 +78,13 @@
       "when": 1791698234534,
       "tag": "0010_user_signed_txs",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1791705616511,
+      "tag": "0011_staff_roles",
+      "breakpoints": true
     }
   ]
 }

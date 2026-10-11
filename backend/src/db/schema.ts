@@ -577,3 +577,18 @@ export const notifications = app.table(
     index("notifications_email_pending_idx").on(t.createdAt).where(sql`email_state = 'pending'`),
   ],
 );
+
+// ---------- team roles ----------
+
+export const staffRole = app.enum("staff_role", ["reviewer", "admin"]);
+
+// Reviewer/admin access granted from the app by an admin. Keyed by user id (never handle).
+// PLATFORM_ADMINS env entries are the owner bootstrap and are not stored here.
+export const staff = app.table("staff", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  role: staffRole("role").notNull(),
+  grantedBy: uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
+  grantedAt: createdAt(),
+});
