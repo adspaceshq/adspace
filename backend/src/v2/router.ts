@@ -26,6 +26,7 @@ import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../service
 import { listWithdrawals, prepareWithdrawal, submitWithdrawal } from "../services/wallet.js";
 import { publicProfilePage } from "../services/profiles.js";
 import { spotBidHistory } from "../services/bid-history.js";
+import { listingLedger, searchListings, verifyLedger } from "../services/ledger.js";
 import { listWatchlist, unwatchListing, watchListing } from "../services/watchlist.js";
 import { getPrefs, listNotifications, markRead, setPrefs } from "../services/notifications.js";
 import { reconcile } from "../services/reconciler.js";
@@ -589,6 +590,35 @@ export function createV2Router(options: {
       const signed = (req.body as { transaction?: unknown } | undefined)?.transaction;
       if (typeof signed !== "string" || signed.length > 4000) throw new BadRequest("transaction must be a base64 string");
       send(res, await submitWithdrawal(walletDeps(), me(req).id, req.params.id, signed));
+    }),
+  );
+  // Listing ledger: every transaction, USDC moves and escrow balance checks (reviewers and admins).
+  router.get(
+    "/review/listings",
+    requireUser,
+    requireReviewer,
+    handle(async (req, res) => send(res, await searchListings(db, typeof req.query.q === "string" ? req.query.q : ""))),
+  );
+  const ledgerTreasury = async () => (chain ? (await chain.readProtocolStatus().catch(() => undefined))?.treasury?.toString() ?? null : null);
+  router.get(
+    "/review/listings/:id/ledger",
+    requireUser,
+    requireReviewer,
+    handle(async (req, res) => {
+      const ledger = /^[0-9a-f-]{36}$/i.test(req.params.id) ? await listingLedger(db, req.params.id, await ledgerTreasury()) : undefined;
+      if (!ledger) return void send(res, { error: "listing not found" }, 404);
+      send(res, ledger);
+    }),
+  );
+  router.post(
+    "/review/listings/:id/ledger/verify",
+    ...mutate,
+    requireReviewer,
+    handle(async (req, res) => {
+      const context = requireChain();
+      const ledger = /^[0-9a-f-]{36}$/i.test(req.params.id) ? await listingLedger(db, req.params.id, await ledgerTreasury()) : undefined;
+      if (!ledger) return void send(res, { error: "listing not found" }, 404);
+      send(res, await verifyLedger(context.connection, ledger.entries));
     }),
   );
   router.post(
