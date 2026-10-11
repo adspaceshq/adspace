@@ -13,6 +13,7 @@ export function Modal({
   children,
   footer,
   className,
+  suspended = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -21,20 +22,35 @@ export function Modal({
   children: React.ReactNode;
   footer?: React.ReactNode;
   className?: string;
+  // A modal <dialog> sits in the browser's top layer and makes the rest of the page inert, which
+  // hides and blocks Privy's own popups (two-factor, signing). While true, the dialog steps aside
+  // without counting as closed, and comes back when the external popup is done.
+  suspended?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const suspending = useRef(false);
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
+    const visible = open && !suspended;
+    if (visible && !dialog.open) dialog.showModal();
+    if (!visible && dialog.open) {
+      suspending.current = open && suspended;
+      dialog.close();
+    }
+  }, [open, suspended]);
 
   return (
     <dialog
       ref={ref}
-      onClose={onClose}
+      onClose={() => {
+        if (suspending.current) {
+          suspending.current = false;
+          return;
+        }
+        onClose();
+      }}
       onClick={(event) => {
         if (event.target === ref.current) onClose();
       }}
