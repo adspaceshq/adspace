@@ -1,5 +1,6 @@
 import { PublicKey } from "@solana/web3.js";
 import { hasRole, invalidRoleEntries } from "./roles.js";
+import { grantStaffRole, listStaff, revokeStaffRole, staffRoleOf, type StaffRole } from "../services/staff.js";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { cookieOptions, userFromAccessToken } from "../auth.js";
@@ -148,14 +149,22 @@ export function createV2Router(options: {
     return chain;
   };
 
-  const attach = async (req: Request, _res: Response, next: NextFunction) => {
+  const admins = options.admins ?? [];
+  // Owner admins (env, by id) first, then roles granted in the app (staff table), then env reviewers.
+  const roleOf = async (user: { id: string; did: string }): Promise<StaffRole | null> => {
+    if (hasRole(user, admins)) return "admin";
+    return (await staffRoleOf(db, user.id)) ?? (hasRole(user, reviewers) ? "reviewer" : null);
+  };
+  const attach = async (req: Request, res: Response, next: NextFunction) => {
     try {
       req.v2Session = await auth.readSession(req.cookies?.[SESSION_COOKIE] as string | undefined);
+      res.locals.role = req.v2Session ? await roleOf(req.v2Session.user) : null;
     } catch (error) {
       console.warn("v2 session:", error instanceof Error ? error.message : error);
     }
     next();
   };
+  const roleIn = (res: Response) => res.locals.role as StaffRole | null | undefined;
   const requireUser = (req: Request, res: Response, next: NextFunction) => {
     if (!req.v2Session) return void send(res, { error: "sign in required" }, 401);
     next();
@@ -166,14 +175,13 @@ export function createV2Router(options: {
     }
     next();
   };
-  const admins = options.admins ?? [];
   // Admins can do everything reviewers can, matching the frontend's reviewer gate.
   const requireReviewer = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.v2Session || !hasRole(req.v2Session.user, [...reviewers, ...admins])) return void send(res, { error: "reviewers only" }, 403);
+    if (!req.v2Session || !roleIn(res)) return void send(res, { error: "reviewers only" }, 403);
     next();
   };
   const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.v2Session || !hasRole(req.v2Session.user, admins)) return void send(res, { error: "admins only" }, 403);
+    if (!req.v2Session || roleIn(res) !== "admin") return void send(res, { error: "admins only" }, 403);
     next();
   };
   const me = (req: Request) => req.v2Session!.user;
@@ -183,14 +191,17 @@ export function createV2Router(options: {
 
   // ---------- auth & profile ----------
 
-  const sessionBody = async (session: StoredSession) => ({
-    ...session.user,
-    csrfToken: session.csrfToken,
-    expiresAt: session.expiresAt.toISOString(),
-    isReviewer: hasRole(session.user, reviewers),
-    isAdmin: hasRole(session.user, admins),
-    onboarding: await auth.getOnboarding(session.user.id),
-  });
+  const sessionBody = async (session: StoredSession) => {
+    const role = await roleOf(session.user);
+    return {
+      ...session.user,
+      csrfToken: session.csrfToken,
+      expiresAt: session.expiresAt.toISOString(),
+      isReviewer: role !== null,
+      isAdmin: role === "admin",
+      onboarding: await auth.getOnboarding(session.user.id),
+    };
+  };
 
   router.post(
     "/auth/session",
@@ -362,7 +373,8 @@ export function createV2Router(options: {
 
   // ---------- posts, proof, messages ----------
 
-  const actor = (req: Request) => ({ id: me(req).id, isReviewer: hasRole(me(req), [...reviewers, ...admins]) });
+  // Route handlers with `res` in scope pass it so the per-request role is reused.
+  const actor = (req: Request) => ({ id: me(req).id, isReviewer: Boolean(req.res && roleIn(req.res)) });
 
   router.get("/listings/:id/posts", handle(async (req, res) => send(res, await listPosts(db, req.params.id))));
   router.post(
@@ -637,11 +649,22 @@ export function createV2Router(options: {
     const context = requireChain();
     return { db, program: context.program, authority: context.reviewer, runTx: context.runTx, readProtocolStatus: context.readProtocolStatus };
   };
+  router.get("/admin/team", requireUser, requireAdmin, handle(async (_req, res) => send(res, await listStaff(db))));
+  router.post(
+    "/admin/team",
+    ...mutate,
+    requireAdmin,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as { handle?: unknown; role?: unknown };
+      send(res, await grantStaffRole(db, me(req).id, body.handle, body.role));
+    }),
+  );
+  router.delete("/admin/team/:userId", ...mutate, requireAdmin, handle(async (req, res) => send(res, await revokeStaffRole(db, me(req).id, req.params.userId))));
   router.get(
     "/admin/status",
     requireUser,
     handle(async (req, res) => {
-      if (!hasRole(me(req), admins) && !hasRole(me(req), reviewers)) return void send(res, { error: "reviewers only" }, 403);
+      if (!roleIn(res)) return void send(res, { error: "reviewers only" }, 403);
       const status = await requireChain().readProtocolStatus();
       send(res, { ...status, authority: status.authority.toBase58(), treasury: status.treasury.toBase58() });
     }),
