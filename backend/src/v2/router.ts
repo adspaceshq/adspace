@@ -1,8 +1,9 @@
 import { PublicKey } from "@solana/web3.js";
+import { hasRole, invalidRoleEntries } from "./roles.js";
 import { Router, type NextFunction, type Request, type Response } from "express";
 import rateLimit from "express-rate-limit";
 import { cookieOptions, userFromAccessToken } from "../auth.js";
-import { csrfMatches, isReviewer, type StoredSession } from "../db.js";
+import { csrfMatches, type StoredSession } from "../db.js";
 import type { Db } from "../db/client.js";
 import { AppAuthRepository, parseHandle } from "../repositories/app-auth.js";
 import {
@@ -128,13 +129,15 @@ export function createV2Router(options: {
   db: Db;
   chain?: ChainContext;
   reviewers: readonly string[];
-  // Can pause the protocol and change protocol settings; matched like reviewers (handle or user id).
+  // Can pause the protocol and change protocol settings. Entries are user ids or Privy DIDs, never handles.
   admins?: readonly string[];
   termsVersion: string;
   metadataBaseUrl: string;
   withdrawalDailyLimit?: bigint;
 }) {
   const { db, chain, reviewers } = options;
+  const badRoles = invalidRoleEntries([...reviewers, ...(options.admins ?? [])]);
+  if (badRoles.length) console.warn(`PLATFORM_REVIEWERS/PLATFORM_ADMINS entries must be user ids or Privy DIDs; ignoring: ${badRoles.join(", ")}`);
   const auth = new AppAuthRepository(db);
   const router = Router();
   const authLimiter = rateLimit({ windowMs: 15 * 60_000, limit: 20, standardHeaders: "draft-7", legacyHeaders: false });
@@ -166,11 +169,11 @@ export function createV2Router(options: {
   const admins = options.admins ?? [];
   // Admins can do everything reviewers can, matching the frontend's reviewer gate.
   const requireReviewer = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.v2Session || !isReviewer(req.v2Session.user, [...reviewers, ...admins])) return void send(res, { error: "reviewers only" }, 403);
+    if (!req.v2Session || !hasRole(req.v2Session.user, [...reviewers, ...admins])) return void send(res, { error: "reviewers only" }, 403);
     next();
   };
   const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
-    if (!req.v2Session || !isReviewer(req.v2Session.user, admins)) return void send(res, { error: "admins only" }, 403);
+    if (!req.v2Session || !hasRole(req.v2Session.user, admins)) return void send(res, { error: "admins only" }, 403);
     next();
   };
   const me = (req: Request) => req.v2Session!.user;
@@ -184,8 +187,8 @@ export function createV2Router(options: {
     ...session.user,
     csrfToken: session.csrfToken,
     expiresAt: session.expiresAt.toISOString(),
-    isReviewer: isReviewer(session.user, reviewers),
-    isAdmin: isReviewer(session.user, admins),
+    isReviewer: hasRole(session.user, reviewers),
+    isAdmin: hasRole(session.user, admins),
     onboarding: await auth.getOnboarding(session.user.id),
   });
 
@@ -359,7 +362,7 @@ export function createV2Router(options: {
 
   // ---------- posts, proof, messages ----------
 
-  const actor = (req: Request) => ({ id: me(req).id, isReviewer: isReviewer(me(req), [...reviewers, ...admins]) });
+  const actor = (req: Request) => ({ id: me(req).id, isReviewer: hasRole(me(req), [...reviewers, ...admins]) });
 
   router.get("/listings/:id/posts", handle(async (req, res) => send(res, await listPosts(db, req.params.id))));
   router.post(
@@ -638,7 +641,7 @@ export function createV2Router(options: {
     "/admin/status",
     requireUser,
     handle(async (req, res) => {
-      if (!isReviewer(me(req), admins) && !isReviewer(me(req), reviewers)) return void send(res, { error: "reviewers only" }, 403);
+      if (!hasRole(me(req), admins) && !hasRole(me(req), reviewers)) return void send(res, { error: "reviewers only" }, 403);
       const status = await requireChain().readProtocolStatus();
       send(res, { ...status, authority: status.authority.toBase58(), treasury: status.treasury.toBase58() });
     }),

@@ -18,7 +18,7 @@ before(async () => {
   app = createApp({
     auth,
     reviewers: ["@reviewer_one"],
-    v2Router: createV2Router({ db, reviewers: ["@reviewer_one"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
+    v2Router: createV2Router({ db, reviewers: ["did:privy:reviewer_one", "@impostor_one"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
   });
 });
 after(async () => close());
@@ -135,4 +135,12 @@ test("creators can edit their draft and read it back; others cannot", async () =
   assert.equal(own.body.spots[0].price, "3000000");
   const stranger = await signIn("edit_stranger");
   assert.equal((await request(app).get(`/api/v2/me/listings/${id}`).set("Cookie", stranger.cookie)).status, 404);
+});
+
+test("roles match only ids or Privy DIDs, never a handle someone can claim", async () => {
+  // "@impostor_one" is configured as a reviewer by handle; holding that handle must not grant the role.
+  const impostor = await signIn("impostor_one");
+  assert.equal((await request(app).get("/api/v2/review/queue").set("Cookie", impostor.cookie)).status, 403);
+  const me = await request(app).get("/api/v2/auth/me").set("Cookie", impostor.cookie);
+  assert.equal(me.body.isReviewer, false);
 });
