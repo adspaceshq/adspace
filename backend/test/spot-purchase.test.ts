@@ -198,3 +198,22 @@ test("checkout requires a brand name and logo, and validates links", async () =>
   const result = await claimSpot(deps(), spot.id, purchaser, BRAND);
   assert.deepEqual(result.spot.brand, { name: "Acme", logoUrl: LOGO, link: "https://acme.example", handle: "acme" });
 });
+
+test("checkout stops implausible bids and missing funds before anything is sent", async () => {
+  const { spot } = await createSpot("auction");
+  const alice = await createUser(`alice_${randomUUID().slice(0, 8)}`);
+  const sentBefore = sentTxs.length;
+
+  // A base-units-as-dollars mistake: 100 USDC entered as 100_000_000 USDC.
+  await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 100n * USDC * 1_000_000n, BRAND), /over 100x the minimum of \$100\.00/);
+
+  const broke = { ...deps(), readTokenBalance: async () => 40n * USDC };
+  await assert.rejects(placeBid(broke, spot.id, alice.purchaser, 100n * USDC, BRAND), /you have \$40\.00 and this needs \$100\.00/);
+  const fixed = await createSpot("fixed");
+  await assert.rejects(claimSpot(broke, fixed.spot.id, alice.purchaser, BRAND), /not enough USDC/);
+  assert.equal(sentTxs.length, sentBefore);
+
+  const funded = { ...deps(), readTokenBalance: async () => 500n * USDC };
+  await placeBid(funded, spot.id, alice.purchaser, 100n * USDC, BRAND);
+  assert.equal(sentTxs.length, sentBefore + 1);
+});

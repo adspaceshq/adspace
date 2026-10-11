@@ -333,6 +333,7 @@ export function createV2Router(options: {
       feePayer: context.reviewer,
       runTx: context.runTx,
       fetchListingDeadline: context.fetchListingDeadline,
+      readTokenBalance: context.readTokenBalance,
     };
   };
   router.post(

@@ -22,7 +22,20 @@ export interface PurchaseDeps {
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   // The program extends auction deadlines on late bids; the chain is the source of truth.
   fetchListingDeadline: (listing: PublicKey) => Promise<Date>;
+  // Lets checkout fail with a clear message before anything is sent to Solana.
+  readTokenBalance?: (owner: PublicKey) => Promise<bigint>;
   now?: () => Date;
+}
+
+// Bids this far above the minimum are almost certainly a unit or typing mistake.
+export const MAX_BID_MULTIPLE = 100n;
+
+const usd = (base: bigint) => `$${(base / 1_000_000n).toLocaleString("en-US")}.${(base % 1_000_000n).toString().padStart(6, "0").slice(0, 2)}`;
+
+async function assertFunds(deps: PurchaseDeps, owner: PublicKey, amount: bigint) {
+  if (!deps.readTokenBalance) return;
+  const balance = await deps.readTokenBalance(owner);
+  if (balance < amount) throw new PurchaseError(`not enough USDC: you have ${usd(balance)} and this needs ${usd(amount)}`, 409);
 }
 
 // `signer.publicKey` is the user's embedded wallet; it signs as buyer/bidder.
@@ -78,6 +91,7 @@ export async function claimSpot(deps: PurchaseDeps, spotId: string, buyer: Purch
   if (listing.mode !== "fixed") throw new PurchaseError("this spot is an auction; place a bid instead");
   assertPurchaser(listing, buyer, now, listing.deadline);
   if (spot.state !== "open") throw new PurchaseError("this spot has already been taken");
+  await assertFunds(deps, buyer.signer.publicKey, spot.price);
 
   const listingKey = new PublicKey(listing.chainAddress!);
   const spotKey = new PublicKey(spot.chainAddress!);
@@ -153,7 +167,11 @@ export async function placeBid(deps: PurchaseDeps, spotId: string, bidder: Purch
   if (spot.state !== "open" && spot.state !== "funded") throw new PurchaseError("bidding has ended for this spot");
   if (spot.buyerId === bidder.id) throw new PurchaseError("you already hold the top bid");
   const minimum = minimumBid(spot, listing);
-  if (amount < minimum) throw new PurchaseError(`bid must be at least ${minimum} base units`, 400);
+  if (amount < minimum) throw new PurchaseError(`bid must be at least ${usd(minimum)}`, 400);
+  if (amount > minimum * MAX_BID_MULTIPLE) {
+    throw new PurchaseError(`that bid is over ${MAX_BID_MULTIPLE}x the minimum of ${usd(minimum)}; check the amount`, 400);
+  }
+  await assertFunds(deps, bidder.signer.publicKey, amount);
 
   const listingKey = new PublicKey(listing.chainAddress!);
   const spotKey = new PublicKey(spot.chainAddress!);
