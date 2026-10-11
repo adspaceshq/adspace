@@ -458,3 +458,45 @@ export interface SponsoredSpot {
   spot: { id: string; index: number; state: SpotState };
   brand: SponsorBrand;
 }
+
+export interface LedgerListingHit {
+  id: string;
+  title: string;
+  slug: string;
+  state: ListingState;
+  mode: PricingMode;
+  createdAt: IsoDate;
+  sellerHandle: string;
+}
+
+export interface LedgerMove {
+  party: "sponsor" | "creator" | "treasury" | "escrow";
+  wallet: string | null;
+  handle: string | null;
+  amount: BaseUnits;
+}
+
+export interface ListingLedger {
+  listing: { id: string; title: string; slug: string; mode: PricingMode; state: ListingState; seller: { handle: string; wallet: string | null } };
+  totals: { sponsorsPaid: BaseUnits; refundedToSponsors: BaseUnits; creatorEarned: BaseUnits; platformFees: BaseUnits; heldInEscrow: BaseUnits };
+  spots: Array<{ index: number; state: SpotState; price: BaseUnits; amount: BaseUnits | null; escrowIn: BaseUnits; escrowOut: BaseUnits; held: BaseUnits; expectedHeld: BaseUnits; balanced: boolean }>;
+  entries: Array<{
+    id: string;
+    createdAt: IsoDate;
+    op: string;
+    status: string;
+    signature: string | null;
+    error: string | null;
+    spotIndex: number | null;
+    actor: { handle: string; wallet: string | null } | null;
+    moves: LedgerMove[];
+  }>;
+  flags: Array<{ type: "failed_tx" | "unsettled_tx" | "escrow_mismatch"; entryId: string | null; message: string }>;
+}
+
+export interface LedgerVerification {
+  entryId: string;
+  chain: "ok" | "failed" | "missing";
+  matches: boolean;
+  actual: Record<string, BaseUnits>;
+}

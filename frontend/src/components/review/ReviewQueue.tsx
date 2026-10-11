@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2, Settings2 } from "lucide-react";
+import { BookOpen, CheckCircle2, Settings2 } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { ReviewSummary } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
@@ -35,9 +35,14 @@ export function ReviewQueue() {
           <h1 className="text-title font-semibold sm:text-display">review</h1>
           <p className="text-body text-muted">approve listings, settle disputes, keep money moving.</p>
         </div>
-        <Link href="/review/ops" className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
-          <Settings2 className="size-4" aria-hidden /> ops
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/review/ledger" className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
+            <BookOpen className="size-4" aria-hidden /> ledger
+          </Link>
+          <Link href="/review/ops" className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
+            <Settings2 className="size-4" aria-hidden /> ops
+          </Link>
+        </div>
       </div>
       <Tabs
         active={`/review?tab=${tab}`}

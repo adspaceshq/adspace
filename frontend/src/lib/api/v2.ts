@@ -1,5 +1,8 @@
 import type {
   ActivityItem,
+  LedgerListingHit,
+  LedgerVerification,
+  ListingLedger,
   BaseUnits,
   BidHistory,
   AssetKind,
@@ -189,6 +192,9 @@ export const api = {
         decision,
       }),
     reconcile: () => post<unknown>("/review/reconcile"),
+    searchListings: (q: string) => get<LedgerListingHit[]>(`/review/listings?q=${enc(q)}`),
+    ledger: (listingId: string) => get<ListingLedger>(`/review/listings/${enc(listingId)}/ledger`),
+    verifyLedger: (listingId: string) => post<LedgerVerification[]>(`/review/listings/${enc(listingId)}/ledger/verify`),
   },
 
   admin: {
