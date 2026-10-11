@@ -138,8 +138,14 @@ export async function submitWithdrawal(deps: WalletDeps, userId: string, withdra
       .returning();
     return { withdrawal: confirmed, signature: tx.signature };
   } catch (error) {
-    // A malformed or mismatched upload (400) leaves the withdrawal open to retry; anything else ends it.
-    if ((error as { status?: number }).status !== 400) await failWithdrawal(deps.db, withdrawal.id);
+    // Follow the transaction: failed ends the withdrawal; sent but unconfirmed (RPC or confirmation
+    // timeout) stays submitted, still counting toward the daily limit, until the reconciler settles it;
+    // never sent (bad upload, RPC down before sending) stays pending so the user can retry.
+    const [tx] = await deps.db.select({ status: chainTxs.status }).from(chainTxs).where(eq(chainTxs.id, withdrawal.chainTxId));
+    if (tx?.status === "failed") await failWithdrawal(deps.db, withdrawal.id);
+    else if (tx?.status === "submitted" || tx?.status === "confirmed") {
+      await deps.db.update(withdrawals).set({ state: tx.status, updatedAt: new Date() }).where(eq(withdrawals.id, withdrawal.id));
+    }
     throw error;
   }
 }

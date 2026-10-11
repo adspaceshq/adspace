@@ -87,17 +87,33 @@ test("parallel requests cannot exceed the daily limit", async () => {
   assert.match(String((attempts.find((attempt) => attempt.status === "rejected") as PromiseRejectedResult).reason), /daily withdrawal limit/);
 });
 
-test("a tampered upload can be retried, a failed send frees the daily limit", async () => {
+test("withdrawals follow their transaction: unsent can retry, unconfirmed holds the limit, failed frees it", async () => {
   const { user, signer } = await seedUser(db);
   const step = await prepareWithdrawal(deps(), user.id, signer.publicKey, destination(), 90n * USDC);
+  const [row] = await db.select().from(withdrawals).where(eq(withdrawals.id, step.withdrawalId));
+  const txStatus = (status: "submitted" | "failed") => db.update(chainTxs).set({ status }).where(eq(chainTxs.id, row.chainTxId!));
+  const state = async () => (await listWithdrawals(db, user.id))[0].state;
 
   submitError = Object.assign(new Error("the signed transaction does not match what was prepared"), { status: 400 });
   await assert.rejects(submitWithdrawal(deps(), user.id, step.withdrawalId, "tampered"), /does not match/);
-  assert.equal((await listWithdrawals(db, user.id))[0].state, "pending");
+  assert.equal(await state(), "pending");
 
+  // RPC down before sending: nothing went out, so the user can retry.
   submitError = Object.assign(new Error("rpc down"), { status: 502 });
   await assert.rejects(submitWithdrawal(deps(), user.id, step.withdrawalId, "signed"), /rpc down/);
-  assert.equal((await listWithdrawals(db, user.id))[0].state, "failed");
+  assert.equal(await state(), "pending");
+
+  // Sent but the confirmation timed out: it may still land, so it keeps counting toward the limit.
+  await txStatus("submitted");
+  await assert.rejects(submitWithdrawal(deps(), user.id, step.withdrawalId, "signed"), /rpc down/);
+  assert.equal(await state(), "submitted");
+  await assert.rejects(prepareWithdrawal(deps(), user.id, signer.publicKey, destination(), 90n * USDC));
+
+  // Failed on chain: the limit is released.
+  await db.update(withdrawals).set({ state: "pending" }).where(eq(withdrawals.id, step.withdrawalId));
+  await txStatus("failed");
+  await assert.rejects(submitWithdrawal(deps(), user.id, step.withdrawalId, "signed"));
+  assert.equal(await state(), "failed");
 
   submitError = undefined;
   const retry = await prepareWithdrawal(deps(), user.id, signer.publicKey, destination(), 90n * USDC);
