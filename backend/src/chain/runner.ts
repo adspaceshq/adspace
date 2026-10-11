@@ -62,8 +62,22 @@ export async function runChainTx(db: Db, connection: Connection, request: ChainT
   let transaction = new Transaction({ feePayer: request.feePayer.publicKey, ...latest }).add(...request.instructions);
   for (const signer of request.signers ?? []) transaction = await signer.sign(transaction);
   transaction = await request.feePayer.sign(transaction);
+  return sendAndConfirm(db, connection, row.id, request.op, transaction, latest);
+}
+
+// Records the signature, sends, confirms and stores the outcome. Shared by server-signed and user-signed transactions.
+async function sendAndConfirm(
+  db: Db,
+  connection: Connection,
+  chainTxId: string,
+  op: ChainOp,
+  transaction: Transaction,
+  latest: { blockhash: string; lastValidBlockHeight: number },
+): Promise<ChainTxResult> {
   if (!transaction.signature) throw new ChainError("transaction was not signed", undefined, undefined, 500);
   const signature = utils.bytes.bs58.encode(transaction.signature);
+  const row = { id: chainTxId };
+  const request = { op };
 
   await db
     .update(chainTxs)
@@ -130,4 +144,67 @@ async function settlePreviousAttempt(
     throw new ChainError("previous attempt is still confirming; try again in a minute", undefined, undefined, 409);
   }
   return undefined;
+}
+
+export interface PreparedChainTx {
+  chainTxId: string;
+  // Base64 transaction signed by the fee payer; the user's wallet adds its signature in the browser.
+  transaction: string;
+}
+
+// Step 1 of a user-signed transaction (withdrawals). Builds the transaction, signs it as fee payer and
+// stores it, so step 2 can accept only this exact transaction back.
+export async function prepareChainTx(
+  db: Db,
+  connection: Connection,
+  request: Omit<ChainTxRequest, "signers">,
+): Promise<PreparedChainTx> {
+  const latest = await connection.getLatestBlockhash("confirmed");
+  let transaction = new Transaction({ feePayer: request.feePayer.publicKey, ...latest }).add(...request.instructions);
+  transaction = await request.feePayer.sign(transaction);
+  const prepared = transaction.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+  const [row] = await db
+    .insert(chainTxs)
+    .values({
+      op: request.op,
+      idempotencyKey: request.idempotencyKey,
+      listingId: request.listingId,
+      spotId: request.spotId,
+      actorId: request.actorId,
+      preparedTx: prepared,
+      lastValidBlockHeight: latest.lastValidBlockHeight,
+    })
+    .returning({ id: chainTxs.id });
+  return { chainTxId: row.id, transaction: prepared };
+}
+
+// Step 2: accepts the user-signed transaction only if its message is byte-identical to what we prepared
+// and every required signature (fee payer + user) is valid, then sends it like any other transaction.
+export async function submitPreparedChainTx(
+  db: Db,
+  connection: Connection,
+  chainTxId: string,
+  signedBase64: string,
+): Promise<ChainTxResult> {
+  const row = await db.query.chainTxs.findFirst({ where: eq(chainTxs.id, chainTxId) });
+  if (!row?.preparedTx || row.lastValidBlockHeight === null) throw new ChainError("this transaction was not prepared here", undefined, undefined, 400);
+  if (row.status === "confirmed" && row.signature) return { chainTxId: row.id, signature: row.signature };
+  if (row.status !== "pending") throw new ChainError("this transaction was already submitted", undefined, undefined, 409);
+
+  let signed: Transaction;
+  try {
+    signed = Transaction.from(Buffer.from(signedBase64, "base64"));
+  } catch {
+    throw new ChainError("the signed transaction could not be read", undefined, undefined, 400);
+  }
+  const expected = Transaction.from(Buffer.from(row.preparedTx, "base64")).serializeMessage();
+  if (!signed.serializeMessage().equals(expected)) throw new ChainError("the signed transaction does not match what was prepared", undefined, undefined, 400);
+  if (!signed.verifySignatures(true)) throw new ChainError("the transaction is missing a valid signature", undefined, undefined, 400);
+
+  const height = await connection.getBlockHeight("confirmed");
+  if (height > row.lastValidBlockHeight) {
+    await db.update(chainTxs).set({ status: "failed", error: "expired before it was signed", updatedAt: new Date() }).where(eq(chainTxs.id, row.id));
+    throw new ChainError("this withdrawal expired before it was signed; start again", undefined, undefined, 409);
+  }
+  return sendAndConfirm(db, connection, row.id, row.op, signed, { blockhash: signed.recentBlockhash!, lastValidBlockHeight: row.lastValidBlockHeight });
 }
