@@ -84,10 +84,15 @@ async function sendAndConfirm(
     .set({ status: "submitted", signature, error: null, attempts: sql`${chainTxs.attempts} + 1`, updatedAt: new Date() })
     .where(eq(chainTxs.id, row.id));
 
+  // Once sent, a confirmation timeout or RPC error doesn't mean it failed: it may still land. Those stay
+  // submitted for the reconciler to settle by signature; only a definite on-chain error is marked failed.
+  let sent = false;
   try {
     await connection.sendRawTransaction(transaction.serialize(), { preflightCommitment: "confirmed" });
+    sent = true;
     const confirmation = await connection.confirmTransaction({ signature, ...latest }, "confirmed");
     if (confirmation.value.err) {
+      sent = false;
       const details = await connection.getTransaction(signature, { commitment: "confirmed", maxSupportedTransactionVersion: 0 });
       throw decodeChainError(confirmation.value.err, details?.meta?.logMessages);
     }
@@ -98,7 +103,7 @@ async function sendAndConfirm(
     await db
       .update(chainTxs)
       .set({
-        status: "failed",
+        status: sent ? "submitted" : "failed",
         error: [decoded.programError ?? decoded.message, decoded.raw?.slice(0, 1500)].filter(Boolean).join("\n---\n"),
         updatedAt: new Date(),
       })
