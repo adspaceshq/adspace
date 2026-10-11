@@ -8,7 +8,8 @@ import { queryKeys } from "@/lib/query";
 import { useNow } from "@/lib/use-now";
 import { Card } from "@/components/ui/Card";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { Address } from "@/components/ui/Address";
+import { ExternalLink } from "lucide-react";
+import { explorerTxUrl } from "@/lib/chain-config";
 
 export function ActivityFeed({ limit = 8 }: { limit?: number }) {
   const query = useQuery({ queryKey: queryKeys.activity, queryFn: () => api.me.activity(), refetchInterval: 30_000 });
@@ -40,7 +41,11 @@ export function ActivityFeed({ limit = 8 }: { limit?: number }) {
               </div>
               <span className="flex shrink-0 items-center gap-1.5 text-subtle">
                 {ago(item.createdAt, now)}
-                {item.signature && <Address value={item.signature} kind="tx" chars={3} />}
+                {item.signature && (
+                  <a href={explorerTxUrl(item.signature)} target="_blank" rel="noreferrer" aria-label="view transaction on explorer" className="hover:text-accent">
+                    <ExternalLink className="size-3.5" aria-hidden />
+                  </a>
+                )}
               </span>
             </li>
           ))}
