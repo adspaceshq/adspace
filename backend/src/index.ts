@@ -121,6 +121,14 @@ export function createApp({
   const app = express();
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
   app.disable("x-powered-by");
+  // JSON-only API: never sniffed, framed or cached by intermediaries, and always over https.
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    next();
+  });
   app.use(express.json({ limit: "4mb" }));
   app.use(cookieParser());
   app.use((req, res, next) => {
