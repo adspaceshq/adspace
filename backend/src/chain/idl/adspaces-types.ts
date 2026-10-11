@@ -1098,6 +1098,24 @@ export type Adspaces = {
           "signer": true
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "listing",
           "pda": {
             "seeds": [
@@ -1129,6 +1147,14 @@ export type Adspaces = {
         {
           "name": "spot",
           "writable": true
+        },
+        {
+          "name": "rentPayer",
+          "docs": [
+            "Platform key that pays the dispute's rent, so buyers never need SOL. Co-signs the raise."
+          ],
+          "writable": true,
+          "signer": true
         },
         {
           "name": "dispute",
@@ -1338,6 +1364,13 @@ export type Adspaces = {
               }
             ]
           }
+        },
+        {
+          "name": "rentPayer",
+          "docs": [
+            "Gets the dispute account's rent back: the platform account that paid it."
+          ],
+          "writable": true
         },
         {
           "name": "vault",
@@ -1650,6 +1683,13 @@ export type Adspaces = {
           }
         },
         {
+          "name": "rentPayer",
+          "docs": [
+            "Gets the dispute account's rent back: the platform account that paid it."
+          ],
+          "writable": true
+        },
+        {
           "name": "proof",
           "writable": true,
           "optional": true,
@@ -1894,6 +1934,13 @@ export type Adspaces = {
               }
             ]
           }
+        },
+        {
+          "name": "rentPayer",
+          "docs": [
+            "Gets the dispute's rent back: the platform account that paid it."
+          ],
+          "writable": true
         }
       ],
       "args": []
@@ -2906,6 +2953,13 @@ export type Adspaces = {
             "type": "pubkey"
           },
           {
+            "name": "rentPayer",
+            "docs": [
+              "Platform account that paid the dispute's rent; the rent returns here when the dispute closes."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "proofSubmitted",
             "type": "bool"
           },
@@ -2924,6 +2978,13 @@ export type Adspaces = {
           },
           {
             "name": "openedAt",
+            "type": "i64"
+          },
+          {
+            "name": "timeoutSeconds",
+            "docs": [
+              "Timeout captured when the dispute was raised, so later config changes can't cut it short."
+            ],
             "type": "i64"
           },
           {
@@ -3583,6 +3644,14 @@ export type Adspaces = {
       "name": "maxSpotsPerListing",
       "type": "u8",
       "value": "60"
+    },
+    {
+      "name": "minBidIncrement",
+      "docs": [
+        "Smallest allowed auction bid step, in USDC base units (6 decimals): 0.01 USDC."
+      ],
+      "type": "u64",
+      "value": "10000"
     },
     {
       "name": "minDisputeTimeoutSeconds",

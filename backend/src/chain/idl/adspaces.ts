@@ -1095,6 +1095,24 @@ export const ADSPACES_IDL = {
           "signer": true
         },
         {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "listing",
           "pda": {
             "seeds": [
@@ -1126,6 +1144,14 @@ export const ADSPACES_IDL = {
         {
           "name": "spot",
           "writable": true
+        },
+        {
+          "name": "rent_payer",
+          "docs": [
+            "Platform key that pays the dispute's rent, so buyers never need SOL. Co-signs the raise."
+          ],
+          "writable": true,
+          "signer": true
         },
         {
           "name": "dispute",
@@ -1335,6 +1361,13 @@ export const ADSPACES_IDL = {
               }
             ]
           }
+        },
+        {
+          "name": "rent_payer",
+          "docs": [
+            "Gets the dispute account's rent back: the platform account that paid it."
+          ],
+          "writable": true
         },
         {
           "name": "vault",
@@ -1647,6 +1680,13 @@ export const ADSPACES_IDL = {
           }
         },
         {
+          "name": "rent_payer",
+          "docs": [
+            "Gets the dispute account's rent back: the platform account that paid it."
+          ],
+          "writable": true
+        },
+        {
           "name": "proof",
           "writable": true,
           "optional": true,
@@ -1891,6 +1931,13 @@ export const ADSPACES_IDL = {
               }
             ]
           }
+        },
+        {
+          "name": "rent_payer",
+          "docs": [
+            "Gets the dispute's rent back: the platform account that paid it."
+          ],
+          "writable": true
         }
       ],
       "args": []
@@ -2903,6 +2950,13 @@ export const ADSPACES_IDL = {
             "type": "pubkey"
           },
           {
+            "name": "rent_payer",
+            "docs": [
+              "Platform account that paid the dispute's rent; the rent returns here when the dispute closes."
+            ],
+            "type": "pubkey"
+          },
+          {
             "name": "proof_submitted",
             "type": "bool"
           },
@@ -2921,6 +2975,13 @@ export const ADSPACES_IDL = {
           },
           {
             "name": "opened_at",
+            "type": "i64"
+          },
+          {
+            "name": "timeout_seconds",
+            "docs": [
+              "Timeout captured when the dispute was raised, so later config changes can't cut it short."
+            ],
             "type": "i64"
           },
           {
@@ -3580,6 +3641,14 @@ export const ADSPACES_IDL = {
       "name": "MAX_SPOTS_PER_LISTING",
       "type": "u8",
       "value": "60"
+    },
+    {
+      "name": "MIN_BID_INCREMENT",
+      "docs": [
+        "Smallest allowed auction bid step, in USDC base units (6 decimals): 0.01 USDC."
+      ],
+      "type": "u64",
+      "value": "10000"
     },
     {
       "name": "MIN_DISPUTE_TIMEOUT_SECONDS",
