@@ -1,5 +1,6 @@
 import type {
   ActivityItem,
+  TeamMember,
   LedgerListingHit,
   LedgerVerification,
   ListingLedger,
@@ -202,5 +203,8 @@ export const api = {
     setPaused: (paused: boolean) => post<{ paused: boolean; signature: string | null }>("/admin/pause", { paused }),
     setDisputeTimeout: (seconds: number) =>
       post<{ disputeTimeoutSeconds: number; signature: string | null }>("/admin/dispute-timeout", { seconds }),
+    team: () => get<TeamMember[]>("/admin/team"),
+    addTeamMember: (handle: string, role: "reviewer" | "admin") => post<TeamMember[]>("/admin/team", { handle, role }),
+    removeTeamMember: (userId: string) => request<TeamMember[]>("DELETE", `/admin/team/${enc(userId)}`),
   },
 };

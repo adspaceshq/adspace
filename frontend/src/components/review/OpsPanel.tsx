@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
+import { TeamPanel } from "./TeamPanel";
 import { Address } from "@/components/ui/Address";
 
 type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
@@ -79,6 +80,8 @@ export function OpsPanel() {
           </p>
         ))}
       </Card>
+
+      {isAdmin && <TeamPanel />}
 
       {isAdmin ? (
         <div className="grid gap-4 lg:grid-cols-2">

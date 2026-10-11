@@ -502,3 +502,13 @@ export interface LedgerVerification {
   matches: boolean;
   actual: Record<string, BaseUnits>;
 }
+
+export interface TeamMember {
+  userId: string;
+  role: "reviewer" | "admin";
+  grantedAt: IsoDate;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+  grantedByHandle: string | null;
+}
