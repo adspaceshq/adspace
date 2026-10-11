@@ -126,6 +126,9 @@ function PrivySession({ children }: { children: React.ReactNode }) {
         transaction: Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)),
         wallet: target,
         chain: `solana:${ADSPACES_CLUSTER === "mainnet-beta" ? "mainnet" : ADSPACES_CLUSTER}` as never,
+        // Our own confirm window already shows amount and destination; skip Privy's generic one.
+        // Privy still asks for the user's two-factor code before signing.
+        options: { uiOptions: { showWalletUIs: false } },
       });
       return btoa(String.fromCharCode(...signedTransaction));
     },
