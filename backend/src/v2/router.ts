@@ -60,7 +60,8 @@ function send(res: Response, body: unknown, status = 200) {
 function sendError(res: Response, error: unknown) {
   const status = (error as { status?: number }).status;
   if (status && status >= 400 && status < 600) return send(res, { error: (error as Error).message }, status);
-  console.error("v2 api:", error);
+  // Message and stack only: SDK errors can carry request details such as headers.
+  console.error("v2 api:", error instanceof Error ? error.stack ?? error.message : String(error));
   send(res, { error: "something went wrong" }, 500);
 }
 

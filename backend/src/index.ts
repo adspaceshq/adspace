@@ -55,7 +55,7 @@ export interface AppDependencies {
 
 const sendErr = (res: Response, e: unknown) => {
   const status = (e as { status?: number }).status ?? 500;
-  if (status === 500) console.error(e);
+  if (status === 500) console.error(e instanceof Error ? e.stack ?? e.message : String(e));
   res.status(status).json({ error: status === 500 ? "internal error" : e instanceof Error ? e.message : "request failed" });
 };
 
