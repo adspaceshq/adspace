@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api/v2";
 import type { Session } from "@/lib/api/types";
 import { useSession } from "@/lib/session";
+import { Address } from "@/components/ui/Address";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Field";
@@ -233,6 +234,11 @@ function AccountSection({ session }: { session: Session }) {
   const { signOut } = useSession();
   return (
     <Section id="account" title="account">
+      {/* Shared with the team to be added as a reviewer or admin (roles are granted by id, never handle). */}
+      <div className="flex flex-col gap-1">
+        <p className="text-small text-muted">your account ID</p>
+        <Address value={session.id} full explorer={false} className="text-small" />
+      </div>
       <div className="flex flex-wrap gap-2">
         <Link href={`/${session.handle.replace(/^@/, "")}`} className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-2 text-small font-medium hover:border-line-strong">
           view public profile <ExternalLink className="size-3.5" aria-hidden />
