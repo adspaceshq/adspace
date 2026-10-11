@@ -1,4 +1,4 @@
-import { asc, desc, eq, ilike, inArray, or } from "drizzle-orm";
+import { asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import type { Connection } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { bids, chainTxs, disputes, listings, settlements, spotEvents, spots, users } from "../db/schema.js";
@@ -196,7 +196,17 @@ export async function searchListings(db: Db, query: string, limit = 20) {
   const pattern = `%${text.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
   const isId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(text);
   return db
-    .select({ id: listings.id, title: listings.title, slug: listings.slug, state: listings.state, mode: listings.mode, createdAt: listings.createdAt, sellerHandle: users.handle })
+    .select({
+      id: listings.id,
+      title: listings.title,
+      slug: listings.slug,
+      state: listings.state,
+      mode: listings.mode,
+      createdAt: listings.createdAt,
+      sellerHandle: users.handle,
+      spotCount: sql<number>`(select count(*)::int from ${spots} where ${spots.listingId} = ${listings.id})`,
+      soldCount: sql<number>`(select count(*)::int from ${spots} where ${spots.listingId} = ${listings.id} and ${spots.state} in ('funded', 'delivered', 'disputed', 'settled'))`,
+    })
     .from(listings)
     .innerJoin(users, eq(users.id, listings.sellerId))
     .where(text ? (isId ? eq(listings.id, text) : or(ilike(listings.title, pattern), ilike(listings.slug, pattern), ilike(users.handle, pattern))) : undefined)
