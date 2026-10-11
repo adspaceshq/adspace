@@ -64,6 +64,8 @@ export function CheckoutModal({
     if (brand.link && !/^https:\/\/\S+\.\S+$/.test(brand.link.trim())) next.link = "use a full https:// link";
     if (amount === null) next.amount = "enter an amount like 12.50";
     else if (amount < minimum) next.amount = `minimum is ${formatUsd(minimum)}`;
+    // Mirrors the backend guard: anything this far above the minimum is almost certainly a typo.
+    else if (amount > minimum * 100n) next.amount = `that's over 100x the minimum of ${formatUsd(minimum)}; check the amount`;
     setErrors(next);
     if (Object.keys(next).length > 0 || amount === null) return;
     const result = await tx.execute({
