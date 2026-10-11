@@ -57,10 +57,25 @@ export function cardLogo(url: string | null | undefined, size: number): string |
   return upload ? `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/f_png,c_fit,w_${size * 2},h_${size * 2}/${upload[1]}` : url;
 }
 
+// Only fetch images from where ours live, so a user-set URL can't turn the card renderer into a proxy.
+const IMAGE_HOSTS = new Set(
+  ["res.cloudinary.com", "pbs.twimg.com", "abs.twimg.com", process.env.NEXT_PUBLIC_SITE_URL, process.env.NEXT_PUBLIC_STATIC_ASSET_BASE]
+    .map((entry) => {
+      try {
+        return entry ? new URL(entry.includes("://") ? entry : `https://${entry}`).host : "";
+      } catch {
+        return "";
+      }
+    })
+    .filter(Boolean),
+);
+
 // Inlines a remote image so one slow or missing photo degrades to a placeholder instead of failing the card.
 export async function loadImage(url: string | undefined | null, timeoutMs = 8000): Promise<string | null> {
   if (!url) return null;
   try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:" || !IMAGE_HOSTS.has(parsed.host)) return null;
     const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs), cache: "force-cache" });
     if (!response.ok) return null;
     const type = response.headers.get("content-type") ?? "image/png";
