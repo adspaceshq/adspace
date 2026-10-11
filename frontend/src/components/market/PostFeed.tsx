@@ -1,5 +1,6 @@
 "use client";
 
+import { safeHref } from "@/lib/safe-href";
 import { useQuery } from "@tanstack/react-query";
 import { BadgeCheck, Bookmark, ExternalLink, Eye, Heart, MessageCircle, Repeat2, type LucideIcon } from "lucide-react";
 import { api } from "@/lib/api/v2";
@@ -75,7 +76,7 @@ export function PostCard({ post, spots }: { post: Post; spots: Pick<PublicSpot, 
       )}
       {post.url && (
         <a
-          href={post.url}
+          href={safeHref(post.url)}
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1.5 self-start text-small font-medium text-accent hover:underline"

@@ -1,5 +1,6 @@
 "use client";
 
+import { safeHref } from "@/lib/safe-href";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -225,7 +226,7 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
           <span className="text-body font-semibold">{spot.brand.name}</span>
           {spot.brand.handle && <XHandleLink handle={spot.brand.handle} className="text-muted" />}
           {spot.brand.link && (
-            <a href={spot.brand.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+            <a href={safeHref(spot.brand.link)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
               {spot.brand.link} <ExternalLink className="size-3" aria-hidden />
             </a>
           )}

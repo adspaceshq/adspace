@@ -1,3 +1,4 @@
+import { safeHref } from "@/lib/safe-href";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
@@ -64,7 +65,7 @@ export default async function SponsoredSpotPage({ params }: { params: Params }) 
           </Link>
           <div className="flex gap-2">
             {brand.link && (
-              <a href={brand.link} target="_blank" rel="noreferrer nofollow sponsored" className="rounded-control border border-line px-4 py-2 text-small font-medium hover:border-line-strong">
+              <a href={safeHref(brand.link)} target="_blank" rel="noreferrer nofollow sponsored" className="rounded-control border border-line px-4 py-2 text-small font-medium hover:border-line-strong">
                 visit {brand.name}
               </a>
             )}

@@ -1,5 +1,6 @@
 "use client";
 
+import { safeHref } from "@/lib/safe-href";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
@@ -340,7 +341,7 @@ function SpotList({ listing, selectedId, onSelect, now }: { listing: PublicListi
 // Who holds a sold spot (or leads an auction), linked to their site when they gave one.
 function SponsorLine({ brand, leading }: { brand: NonNullable<PublicListing["spots"][number]["brand"]>; leading: boolean }) {
   const name = brand.link ? (
-    <a href={brand.link} target="_blank" rel="noreferrer nofollow sponsored" className="font-medium text-ink hover:underline">
+    <a href={safeHref(brand.link)} target="_blank" rel="noreferrer nofollow sponsored" className="font-medium text-ink hover:underline">
       {brand.name}
     </a>
   ) : (

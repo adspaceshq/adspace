@@ -1,3 +1,4 @@
+import { safeHref } from "@/lib/safe-href";
 import type { Metadata } from "next";
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
@@ -55,7 +56,7 @@ export default async function PostPage({ params }: { params: Params }) {
         )}
         <div className="flex flex-wrap gap-2">
           {post.url && (
-            <a href={post.url} target="_blank" rel="noreferrer nofollow" className="inline-flex items-center gap-1.5 rounded-control border border-line px-4 py-2 text-small font-medium hover:border-line-strong">
+            <a href={safeHref(post.url)} target="_blank" rel="noreferrer nofollow" className="inline-flex items-center gap-1.5 rounded-control border border-line px-4 py-2 text-small font-medium hover:border-line-strong">
               open on {POST_SOURCE[post.kind]} <ExternalLink className="size-3.5" aria-hidden />
             </a>
           )}

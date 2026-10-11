@@ -1,5 +1,6 @@
 "use client";
 
+import { safeHref } from "@/lib/safe-href";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { AlertTriangle, ArrowLeft, BadgeCheck, ExternalLink } from "lucide-react";
@@ -86,7 +87,7 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
               <span className="font-semibold">{spot.brand.name}</span>
               {spot.brand.handle && <XHandleLink handle={spot.brand.handle} className="text-muted" />}
               {spot.brand.link && (
-                <a href={spot.brand.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+                <a href={safeHref(spot.brand.link)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
                   {new URL(spot.brand.link).hostname} <ExternalLink className="size-3" aria-hidden />
                 </a>
               )}
@@ -102,7 +103,7 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
                   <li key={post.id} className="rounded-card border border-line bg-surface px-4 py-3">
                     {post.body && <p className="whitespace-pre-line text-body">{post.body}</p>}
                     {post.url && (
-                      <a href={post.url} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-small font-medium text-accent hover:underline">
+                      <a href={safeHref(post.url)} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-small font-medium text-accent hover:underline">
                         open post <ExternalLink className="size-3" aria-hidden />
                       </a>
                     )}
