@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { LayoutDashboard, LogOut, Settings, ShieldCheck, User } from "lucide-react";
+import { LayoutDashboard, LogOut, MoreHorizontal, Settings, ShieldCheck, User } from "lucide-react";
 import type { Session } from "@/lib/api/types";
 import { cx } from "@/lib/cx";
 
@@ -17,7 +17,9 @@ function Avatar({ session }: { session: Session }) {
   );
 }
 
-export function AccountMenu({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+// `avatar`: compact trigger in the top bar, menu drops down.
+// `card`: X-style account card at the bottom of the sidebar (avatar, name, handle), menu opens upward.
+export function AccountMenu({ session, onSignOut, variant = "avatar" }: { session: Session; onSignOut: () => void; variant?: "avatar" | "card" }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -39,20 +41,41 @@ export function AccountMenu({ session, onSignOut }: { session: Session; onSignOu
 
   return (
     <div ref={ref} className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((value) => !value)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="account menu"
-        className="cursor-pointer rounded-full"
-      >
-        <Avatar session={session} />
-      </button>
+      {variant === "card" ? (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="account menu"
+          className={cx("flex w-full cursor-pointer items-center gap-3 rounded-card p-2 text-left transition-colors hover:bg-ink/5", open && "bg-ink/5")}
+        >
+          <Avatar session={session} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-small font-semibold text-ink">{session.name ?? session.handle.replace(/^@/, "")}</span>
+            <span className="block truncate text-caption text-muted">@{session.handle.replace(/^@/, "")}</span>
+          </span>
+          <MoreHorizontal className="size-4 shrink-0 text-muted" aria-hidden />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((value) => !value)}
+          aria-haspopup="menu"
+          aria-expanded={open}
+          aria-label="account menu"
+          className="cursor-pointer rounded-full"
+        >
+          <Avatar session={session} />
+        </button>
+      )}
       {open && (
         <div
           role="menu"
-          className={cx("absolute right-0 top-11 z-50 w-60 rounded-card border border-line bg-surface p-1.5 shadow-pop")}
+          className={cx(
+            "absolute z-50 w-60 rounded-card border border-line bg-surface p-1.5 shadow-pop",
+            variant === "card" ? "bottom-full left-0 mb-2" : "right-0 top-11",
+          )}
         >
           <div className="px-3 py-2">
             <p className="truncate text-body font-semibold">{session.name ?? session.handle}</p>

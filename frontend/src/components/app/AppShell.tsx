@@ -9,7 +9,7 @@ import { TopBar } from "./TopBar";
 export function AppShell({ children, variant = "public" }: { children: React.ReactNode; variant?: "public" | "app" }) {
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-canvas">
-      <TopBar />
+      <TopBar inSidebar={variant === "app"} />
       {variant === "public" ? (
         <div id="scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <main id="main" className="mx-auto w-full max-w-7xl px-4 py-8 pb-28 sm:px-6 lg:py-10">

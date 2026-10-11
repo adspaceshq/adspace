@@ -17,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useSession } from "@/lib/session";
+import { AccountMenu } from "./AccountMenu";
 import { cx } from "@/lib/cx";
 
 interface NavItem {
@@ -52,7 +53,7 @@ function isActive(pathname: string, item: NavItem) {
 
 export function AppSidebar() {
   const pathname = usePathname();
-  const { session } = useSession();
+  const { session, signOut } = useSession();
   const canReview = Boolean(session?.isReviewer || session?.isAdmin);
   const link = (item: NavItem) => {
     const active = isActive(pathname, item);
@@ -72,7 +73,7 @@ export function AppSidebar() {
     );
   };
   return (
-    <nav aria-label="app" className="no-scrollbar hidden w-56 shrink-0 flex-col gap-6 overflow-y-auto py-8 lg:flex">
+    <nav aria-label="app" className="hidden w-56 shrink-0 flex-col gap-6 py-6 lg:flex">
       {sidebarSections.map((section, index) => (
         <div key={index} className="flex flex-col gap-1">
           {section.title && <p className="px-3 pb-1 text-caption font-medium uppercase tracking-wide text-subtle">{section.title}</p>}
@@ -82,6 +83,11 @@ export function AppSidebar() {
       {canReview && (
         <div className="flex flex-col gap-1 border-t border-line pt-4">
           {link({ href: "/review", label: "review", icon: ShieldCheck })}
+        </div>
+      )}
+      {session && (
+        <div className="mt-auto pt-4">
+          <AccountMenu session={session} onSignOut={() => void signOut()} variant="card" />
         </div>
       )}
     </nav>

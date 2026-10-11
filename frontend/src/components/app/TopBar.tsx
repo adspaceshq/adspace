@@ -15,7 +15,8 @@ const links = [
   { href: "/sell", label: "sell" },
 ];
 
-export function TopBar() {
+// `inSidebar`: app pages show the account card at the bottom of the sidebar on desktop instead of here.
+export function TopBar({ inSidebar = false }: { inSidebar?: boolean }) {
   const pathname = usePathname();
   const { ready, session, signIn, signOut } = useSession();
   return (
@@ -49,7 +50,9 @@ export function TopBar() {
                 <WalletChip address={session.walletAddress} />
               </span>
               <NotificationBell />
-              <AccountMenu session={session} onSignOut={() => void signOut()} />
+              <div className={inSidebar ? "lg:hidden" : undefined}>
+                <AccountMenu session={session} onSignOut={() => void signOut()} />
+              </div>
             </>
           ) : (
             <Button size="sm" onClick={signIn}>
