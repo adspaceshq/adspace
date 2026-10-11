@@ -475,6 +475,10 @@ export const chainTxs = app.table(
     signature: text("signature").unique(),
     error: text("error"),
     attempts: smallint("attempts").notNull().default(0),
+    // User-signed transactions (withdrawals): the fee-payer-signed transaction we handed to the
+    // browser, and the block height after which it can no longer land.
+    preparedTx: text("prepared_tx"),
+    lastValidBlockHeight: bigint("last_valid_block_height", { mode: "number" }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
     confirmedAt: at("confirmed_at"),
