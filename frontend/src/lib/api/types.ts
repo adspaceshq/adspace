@@ -505,8 +505,9 @@ export interface LedgerVerification {
 
 export interface TeamMember {
   userId: string;
-  role: "reviewer" | "admin";
-  grantedAt: IsoDate;
+  // Owners come from server settings, so they have no grant date.
+  role: "owner" | "reviewer" | "admin";
+  grantedAt: IsoDate | null;
   handle: string;
   displayName: string;
   avatarUrl: string | null;

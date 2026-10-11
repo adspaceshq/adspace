@@ -77,7 +77,7 @@ export function TeamPanel() {
       {team.isPending ? (
         <Skeleton className="h-24 w-full" />
       ) : !team.data?.length ? (
-        <p className="text-small text-muted">no team members added yet. owner admins come from server settings and aren&apos;t listed here.</p>
+        <p className="text-small text-muted">no team members added yet.</p>
       ) : (
         <ul className="divide-y divide-line rounded-card border border-line">
           {team.data.map((member) => (
@@ -87,11 +87,12 @@ export function TeamPanel() {
                 <p className="truncate font-medium">{member.displayName}</p>
                 <p className="truncate text-caption text-muted">
                   <UserLink handle={member.handle} />
-                  {member.grantedByHandle && <> · added by <UserLink handle={member.grantedByHandle} /></>} · {new Date(member.grantedAt).toLocaleDateString()}
+                  {member.grantedByHandle && <> · added by <UserLink handle={member.grantedByHandle} /></>}
+                  {member.grantedAt ? <> · {new Date(member.grantedAt).toLocaleDateString()}</> : <> · server settings</>}
                 </p>
               </div>
-              <span className={`rounded-full px-2 py-0.5 text-caption font-medium ${member.role === "admin" ? "bg-ink text-white" : "bg-accent-soft text-accent"}`}>{member.role}</span>
-              {member.userId !== session?.id && (
+              <span className={`rounded-full px-2 py-0.5 text-caption font-medium ${member.role === "reviewer" ? "bg-accent-soft text-accent" : "bg-ink text-white"}`}>{member.role}</span>
+              {member.role !== "owner" && member.userId !== session?.id && (
                 <button
                   type="button"
                   onClick={() => setRemoving({ userId: member.userId, handle: member.handle, role: member.role })}
