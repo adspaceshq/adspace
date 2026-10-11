@@ -117,14 +117,48 @@ export function SponsorDashboardView() {
                 }
               />
             ) : (
-              <div className="grid gap-3 md:grid-cols-2">
-                {query.data.spots.map((spot) => (
-                  <SpotCard key={spot.id} spot={spot} />
-                ))}
-              </div>
+              <SpotGroups spots={query.data.spots} />
             )}
           </section>
         </>
+      )}
+    </div>
+  );
+}
+
+const FINISHED = new Set(["settled", "refunded", "cancelled"]);
+
+// Active spots first; finished ones (paid out, refunded, split in a dispute) stay as history, never removed.
+function SpotGroups({ spots }: { spots: SponsorSpot[] }) {
+  const active = spots.filter((spot) => !FINISHED.has(spot.state));
+  const history = spots.filter((spot) => FINISHED.has(spot.state));
+  return (
+    <div className="flex flex-col gap-6">
+      {active.length > 0 ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          {active.map((spot) => (
+            <SpotCard key={spot.id} spot={spot} />
+          ))}
+        </div>
+      ) : (
+        <p className="rounded-card border border-dashed border-line px-4 py-6 text-center text-small text-muted">
+          nothing active right now.{" "}
+          <Link href="/browse" className="font-medium text-accent hover:underline">
+            browse spaces
+          </Link>
+        </p>
+      )}
+      {history.length > 0 && (
+        <div className="flex flex-col gap-3">
+          <h3 className="text-body font-semibold text-muted">
+            history <span className="font-normal">({history.length})</span>
+          </h3>
+          <div className="grid gap-3 md:grid-cols-2">
+            {history.map((spot) => (
+              <SpotCard key={spot.id} spot={spot} />
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
