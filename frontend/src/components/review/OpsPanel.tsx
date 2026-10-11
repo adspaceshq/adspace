@@ -158,7 +158,16 @@ export function OpsPanel() {
           </>
         }
       >
-        {!paused && <Input label="confirmation" value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />}
+        {!paused && (
+          <div className="flex flex-col gap-3">
+            <ul className="flex flex-col gap-1 rounded-card bg-canvas p-3 text-small text-muted">
+              <li>stops: new listings, claims and bids</li>
+              <li>keeps working: proof, payouts, refunds, disputes and withdrawals, so no money gets stuck</li>
+              <li className="text-warning">deadlines keep running: auctions that end while paused go to the current top bidder</li>
+            </ul>
+            <Input label="confirmation" value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />
+          </div>
+        )}
         {pause.isError && <p className="mt-2 text-small text-danger">{pause.error.message}</p>}
       </Modal>
     </div>
