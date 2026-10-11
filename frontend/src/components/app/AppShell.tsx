@@ -10,20 +10,23 @@ export function AppShell({ children, variant = "public" }: { children: React.Rea
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-canvas">
       <TopBar />
-      <div id="scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {variant === "public" ? (
+      {variant === "public" ? (
+        <div id="scroll" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <main id="main" className="mx-auto w-full max-w-7xl px-4 py-8 pb-28 sm:px-6 lg:py-10">
             {children}
           </main>
-        ) : (
-          <div className="mx-auto flex w-full max-w-7xl gap-8 px-4 py-8 pb-24 sm:px-6 lg:pb-10">
-            <AppSidebar />
-            <main id="main" className="min-w-0 flex-1">
+        </div>
+      ) : (
+        // The sidebar is its own column outside the scroll area, so it never moves; only the content scrolls.
+        <div className="mx-auto flex min-h-0 w-full max-w-7xl flex-1 gap-8 px-4 sm:px-6">
+          <AppSidebar />
+          <div id="scroll" className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+            <main id="main" className="py-8 pb-24 lg:pb-10">
               {children}
             </main>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       <CompactFooter />
       {variant === "app" && <BottomTabs />}
     </div>
