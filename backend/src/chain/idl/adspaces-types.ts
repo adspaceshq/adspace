@@ -142,6 +142,45 @@ export type Adspaces = {
           }
         },
         {
+          "name": "reviewer",
+          "docs": [
+            "Spots added after listing approval need the review authority's co-signature, like the listing itself."
+          ],
+          "signer": true
+        },
+        {
+          "name": "reviewAuthority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  118,
+                  105,
+                  101,
+                  119,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ]
+          }
+        },
+        {
           "name": "spot",
           "writable": true
         },
@@ -481,6 +520,16 @@ export type Adspaces = {
         {
           "name": "vault",
           "writable": true
+        },
+        {
+          "name": "sellerAta",
+          "docs": [
+            "Receives anything sent to the open spot's vault (donations), so nobody can block closing it."
+          ],
+          "writable": true
+        },
+        {
+          "name": "usdcMint"
         },
         {
           "name": "tokenProgram",
@@ -1269,6 +1318,32 @@ export type Adspaces = {
         {
           "name": "tokenProgram",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "proof",
+          "docs": [
+            "Proof submitted before a seller-initiated refund; closed so its rent returns to the seller."
+          ],
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  111,
+                  102
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "spot"
+              }
+            ]
+          }
         }
       ],
       "args": []
