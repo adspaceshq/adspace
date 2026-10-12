@@ -1,4 +1,5 @@
 import type { ApiListing, ApiMode, ApiSpot } from "./types";
+import { DEFAULT_FEES, feeFor } from "@/lib/fees";
 import { MAC_HERO_PHOTO, MAC_INSIDE_PHOTO, MAC_LID_PHOTO } from "./assets";
 export { MAC_HERO_PHOTO, MAC_INSIDE_PHOTO, MAC_LID_PHOTO };
 
@@ -143,28 +144,28 @@ export interface Listing {
   mockup: { views: MockupView[] };
 }
 
+// Same integer math as the program (via feeFor); with no policy yet, the default for the mode.
 export function expectedListingPayout(listing: Listing): { gross: number; fee: number; net: number } {
-  const feeBps = listing.feeBps ?? 250;
-  const upliftFeeBps = listing.upliftFeeBps ?? feeBps;
-  const maxFeeBps = listing.maxFeeBps ?? feeBps;
-  let gross = 0;
-  let fee = 0;
+  const mode = listing.priceType === "auction" ? "auction" : "fixed";
+  const defaults = DEFAULT_FEES[mode];
+  const policy = {
+    feeBps: listing.feeBps ?? defaults.feeBps,
+    upliftFeeBps: listing.upliftFeeBps ?? defaults.upliftFeeBps,
+    maxFeeBps: listing.maxFeeBps ?? defaults.maxFeeBps,
+  };
+  const units = (usdc: number) => BigInt(Math.round(usdc * 1_000_000));
+  let gross = 0n;
+  let fee = 0n;
 
   for (const spot of listing.spots) {
     if (!spot.claimedBy && !spot.bidBy) continue;
-    const balance = listing.priceType === "auction" ? (spot.bid ?? spot.price) : spot.price;
+    const balance = units(mode === "auction" ? (spot.bid ?? spot.price) : spot.price);
     gross += balance;
-    if (listing.priceType === "fixed") {
-      fee += balance * feeBps / 10_000;
-      continue;
-    }
-    const base = Math.min(balance, spot.price);
-    const uplift = Math.max(0, balance - base);
-    const calculated = base * feeBps / 10_000 + uplift * upliftFeeBps / 10_000;
-    fee += Math.min(calculated, balance * maxFeeBps / 10_000);
+    fee += feeFor(mode, policy, units(spot.price), balance);
   }
 
-  return { gross, fee, net: Math.max(0, gross - fee) };
+  const usdc = (value: bigint) => Number(value) / 1_000_000;
+  return { gross: usdc(gross), fee: usdc(fee), net: usdc(gross - fee) };
 }
 
 export const surfaceLabels: Record<string, string> = {
