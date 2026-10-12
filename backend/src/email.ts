@@ -53,7 +53,7 @@ export const ctaLabel = (type: string | null | undefined) => (type && CTA_LABELS
 
 const MAIN_SITE = "https://adspaces.fun";
 const X_URL = "https://x.com/adspacesfun";
-const LOGO_URL = "https://adspaces.fun/email-logo.png";
+const LOGO_URL = "https://res.cloudinary.com/jvd3gsf7/image/upload/w_128,f_png/adspaces/static/email/logo.png";
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 
 // Email-client-safe layout (tables, inline styles, 600px max) shared in look with the waitlist welcome email.
