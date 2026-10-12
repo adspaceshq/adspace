@@ -1,9 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import type { ChainPublication } from "./listing-chain.js";
-import { REVIEW_WINDOW_MS, TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
-import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, SponsorDashboard, Spot, SponsorSpotStatus } from "./types.js";
+import { REVIEW_WINDOW_MS, TERMS_VERSION } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingFeePolicy, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, SponsorDashboard, Spot, SponsorSpotStatus } from "./types.js";
 import { isHostedAssetUrl } from "./cloudinary.js";
 
 export interface MarketplaceRepository {
@@ -14,9 +13,7 @@ export interface MarketplaceRepository {
   update(slug: string, actorUserId: string, patch: { title?: string; story?: string }): Promise<Listing>;
   claim(spotId: string, buyer: SessionUser, assets?: PurchaseAssets): Promise<Spot>;
   placeBid(spotId: string, bidder: SessionUser, amount: number, assets?: PurchaseAssets): Promise<Spot>;
-  close(slug: string, actorUserId: string): Promise<Listing>;
   reopen(slug: string, actorUserId: string): Promise<Listing>;
-  remove(slug: string, actorUserId: string): Promise<{ ok: true }>;
   reviewQueue(): Promise<Listing[]>;
   approveReview(slug: string, policy?: ListingFeePolicy): Promise<Listing>;
   recordChainPublication(slug: string, publication: ChainPublication): Promise<void>;
@@ -27,11 +24,6 @@ export interface MarketplaceRepository {
   confirmSpot(spotId: string, actor: SessionUser): Promise<Spot>;
   disputeSpot(spotId: string, actor: SessionUser, reason: string): Promise<Spot>;
   withdrawDispute(spotId: string, actor: SessionUser): Promise<Spot>;
-  resolveDispute(spotId:string,reference:string):Promise<Spot>;
-  recordRefund(spotId:string,reference:string):Promise<Spot>;
-  payableQueue(): Promise<PayoutItem[]>;
-  disputeQueue():Promise<DisputeItem[]>;
-  paySpot(spotId: string, reference: string): Promise<Spot>;
   approve(spotId: string, actorUserId: string): Promise<Spot>;
   reject(spotId: string, actorUserId: string): Promise<Spot>;
   fulfill(spotId: string, actorUserId: string): Promise<Spot>;
@@ -310,10 +302,6 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return (await this.get(slug))!;
   }
 
-  async close(slug: string, actorUserId: string): Promise<Listing> {
-    return this.setStatus(slug, actorUserId, "closed");
-  }
-
   async reopen(slug: string, actorUserId: string): Promise<Listing> {
     // Reopening resubmits for review — it must never self-publish.
     const current = await this.pool.query("SELECT status, seller_user_id FROM listings WHERE slug=$1", [slug]);
@@ -404,19 +392,6 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
       !existing.rows[0] ? "listing not found" : "listing is not awaiting review",
       !existing.rows[0] ? 404 : 409,
     );
-  }
-
-  async remove(slug: string, actorUserId: string): Promise<{ ok: true }> {
-    const owned = await this.pool.query("SELECT id, seller_user_id FROM listings WHERE slug=$1", [slug]);
-    if (!owned.rows[0]) throw httpError("listing not found", 404);
-    if (owned.rows[0].seller_user_id !== actorUserId) throw httpError("forbidden", 403);
-    const activity = await this.pool.query(
-      `SELECT 1 FROM spots WHERE listing_id=$1 AND (buyer_user_id IS NOT NULL OR current_bid IS NOT NULL) LIMIT 1`,
-      [owned.rows[0].id],
-    );
-    if (activity.rows[0]) throw httpError("cannot delete a listing with buyers or bids — close it instead", 409);
-    await this.pool.query("DELETE FROM listings WHERE id=$1", [owned.rows[0].id]);
-    return { ok: true };
   }
 
   async claim(spotId: string, buyer: SessionUser, assets?: PurchaseAssets): Promise<Spot> {
@@ -531,66 +506,6 @@ export class PostgresMarketplaceRepository implements MarketplaceRepository {
     return (await this.getSpot(spotId))!;
   }
 
-  async resolveDispute(spotId:string,reference:string):Promise<Spot>{const result=await this.pool.query(`UPDATE spots SET disputed_at=NULL,dispute_reason='',paid_at=now(),payout_reference=$2,updated_at=now() WHERE id=$1 AND disputed_at IS NOT NULL RETURNING id`,[spotId,reference]);if(!result.rows[0])throw httpError("spot has no open dispute",409);return(await this.getSpot(spotId))!;}
-  async recordRefund(spotId:string,reference:string):Promise<Spot>{const result=await this.pool.query(`UPDATE spots SET paid_at=now(),payout_amount=0,payout_fee=0,payout_reference=$2,updated_at=now() WHERE id=$1 AND paid_at IS NULL RETURNING id`,[spotId,reference]);if(!result.rows[0])throw httpError("spot is already settled",409);return(await this.getSpot(spotId))!;}
-
-  async payableQueue(): Promise<PayoutItem[]> {
-    const result = await this.pool.query(
-      `SELECT s.id spot_id, l.id listing_id, l.slug listing_slug, l.title listing_title, s.label spot_label,
-        l.seller_handle seller, s.buyer_handle buyer, COALESCE(s.current_bid, s.price) amount, s.currency,
-        s.confirmed_at, s.fulfilled_at
-       FROM spots s JOIN listings l ON l.id=s.listing_id
-       WHERE s.status='sold' AND s.fulfilled_at IS NOT NULL AND s.paid_at IS NULL AND s.disputed_at IS NULL
-         AND (s.confirmed_at IS NOT NULL OR s.fulfilled_at <= now() - ($1 || ' milliseconds')::interval)
-       ORDER BY s.fulfilled_at`,
-      [String(REVIEW_WINDOW_MS)],
-    );
-    return result.rows.map((r) => {
-      const base = r.confirmed_at ? new Date(r.confirmed_at).getTime() : new Date(r.fulfilled_at).getTime() + REVIEW_WINDOW_MS;
-      return {
-        spotId: r.spot_id, listingId: r.listing_id, listingSlug: r.listing_slug, listingTitle: r.listing_title,
-        spotLabel: r.spot_label, seller: r.seller_handle, buyer: r.buyer_handle,
-        amount: Number(r.amount), currency: r.currency, releasedAt: new Date(base).toISOString(),
-      };
-    });
-  }
-
-  async disputeQueue():Promise<DisputeItem[]>{const result=await this.pool.query(`SELECT s.id spot_id,l.id listing_id,l.slug listing_slug,l.title listing_title,s.label spot_label,l.seller_handle seller,s.buyer_handle buyer,COALESCE(s.current_bid,s.price) amount,s.currency,s.dispute_reason reason FROM spots s JOIN listings l ON l.id=s.listing_id WHERE s.disputed_at IS NOT NULL AND s.paid_at IS NULL ORDER BY s.disputed_at`);return result.rows.map(r=>({spotId:r.spot_id,listingId:r.listing_id,listingSlug:r.listing_slug,listingTitle:r.listing_title,spotLabel:r.spot_label,seller:r.seller,buyer:r.buyer,amount:Number(r.amount),currency:r.currency,reason:r.reason||undefined}));}
-
-  async paySpot(spotId: string, reference: string): Promise<Spot> {
-    if (typeof reference === "string" && reference.trim().length > 200) {
-      throw httpError("reference must be at most 200 characters", 400);
-    }
-    const found = await this.pool.query<SpotRow & { seller_payout_wallet: string | null }>(
-      `SELECT s.*, u.payout_wallet AS seller_payout_wallet FROM spots s
-       JOIN listings l ON l.id=s.listing_id LEFT JOIN users u ON u.id=l.seller_user_id WHERE s.id=$1`,
-      [spotId],
-    );
-    const row = found.rows[0];
-    if (!row) throw httpError("spot not found", 404);
-    if (row.status !== "sold" || !row.fulfilled_at) throw httpError("only delivered spots can be paid", 409);
-    if (row.paid_at) return (await this.getSpot(spotId))!;
-    if (!payoutReleased({
-      fulfilledAt: row.fulfilled_at?.toISOString(), confirmedAt: row.confirmed_at?.toISOString(),
-      disputedAt: row.disputed_at?.toISOString(),
-    })) throw httpError("spot is not released for payout", 409);
-    if (!row.seller_payout_wallet) throw httpError("seller payout wallet is not set", 409);
-    const amount = Number(row.current_bid ?? row.price);
-    const fee = Math.round(amount * (platformFeeBps() / 10_000) * 100) / 100;
-    // Manual USDC: the reference is the Solana transfer signature; verified
-    // on-chain when it looks like one and an RPC is configured (required
-    // when PAYOUT_REQUIRE_ONCHAIN=1).
-    const note = await resolvePayoutReference({
-      reference,
-      destination: row.seller_payout_wallet,
-      expectedNet: Math.round((amount - fee) * 100) / 100,
-    });
-    await this.pool.query(
-      `UPDATE spots SET paid_at=now(), payout_amount=$2, payout_fee=$3, payout_reference=$4, payout_destination=$5, updated_at=now() WHERE id=$1`,
-      [spotId, amount, fee, note, row.seller_payout_wallet],
-    );
-    return (await this.getSpot(spotId))!;
-  }
 
   async approve(spotId:string, actorUserId:string):Promise<Spot>{
     const result=await this.pool.query(`UPDATE spots s SET status='sold',updated_at=now() FROM listings l

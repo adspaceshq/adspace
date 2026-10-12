@@ -1,6 +1,5 @@
-import { TERMS_VERSION, payoutReleased, platformFeeBps } from "./types.js";
-import { resolvePayoutReference } from "./payout.js";
-import type { Bid, CreateListingRequest, DisputeItem, Listing, ListingFeePolicy, ListingSummary, PayoutItem, PurchaseAssets, SellerDashboard, SessionUser, SponsorDashboard, SponsorSpotStatus, Spot } from "./types.js";
+import { TERMS_VERSION } from "./types.js";
+import type { Bid, CreateListingRequest, Listing, ListingFeePolicy, ListingSummary, PurchaseAssets, SellerDashboard, SessionUser, SponsorDashboard, SponsorSpotStatus, Spot } from "./types.js";
 import type { ChainPublication } from "./listing-chain.js";
 import { isHostedAssetUrl } from "./cloudinary.js";
 
@@ -254,57 +253,6 @@ export class Store {
     return spot;
   }
 
-  payableQueue(): PayoutItem[] {
-    const items: PayoutItem[] = [];
-    for (const slug of this.order) {
-      const l = this.listings.get(slug)!;
-      for (const s of l.spots) {
-        if (s.status !== "sold" || !s.fulfilledAt || s.paidAt || !payoutReleased(s)) continue;
-        const base = s.confirmedAt ? new Date(s.confirmedAt).getTime() : new Date(s.fulfilledAt).getTime() + 3 * 86_400_000;
-        items.push({
-          spotId: s.id, listingId: l.id, listingSlug: l.slug, listingTitle: l.title, spotLabel: s.label,
-          seller: l.seller, buyer: s.buyer!, amount: s.currentBid ?? s.price, currency: s.currency,
-          releasedAt: new Date(base).toISOString(),
-        });
-      }
-    }
-    return items.sort((a, b) => a.releasedAt.localeCompare(b.releasedAt));
-  }
-
-  /** Demo seam: the memory adapter has no users table, so tests register seller wallets here. */
-  private sellerWallets = new Map<string, string>();
-  registerSellerWallet(userId: string, wallet: string): void {
-    if (wallet) this.sellerWallets.set(userId, wallet);
-    else this.sellerWallets.delete(userId);
-  }
-
-  async paySpot(spotId: string, reference: string): Promise<Spot> {
-    if (typeof reference === "string" && reference.trim().length > 200) {
-      throw Object.assign(new Error("reference must be at most 200 characters"), { status: 400 });
-    }
-    const found = this.findSpot(spotId);
-    if (!found) throw Object.assign(new Error("spot not found"), { status: 404 });
-    const { listing, spot } = found;
-    if (spot.status !== "sold" || !spot.fulfilledAt) throw Object.assign(new Error("only delivered spots can be paid"), { status: 409 });
-    if (spot.paidAt) return spot;
-    if (!payoutReleased(spot)) throw Object.assign(new Error("spot is not released for payout"), { status: 409 });
-    const sellerWallet = listing.sellerUserId ? this.sellerWallets.get(listing.sellerUserId) : undefined;
-    if (!sellerWallet) throw Object.assign(new Error("seller payout wallet is not set"), { status: 409 });
-    const amount = spot.currentBid ?? spot.price;
-    const fee = Math.round(amount * (platformFeeBps() / 10_000) * 100) / 100;
-    const note = await resolvePayoutReference({
-      reference,
-      destination: sellerWallet,
-      expectedNet: Math.round((amount - fee) * 100) / 100,
-    });
-    spot.paidAt = new Date().toISOString();
-    spot.payoutAmount = amount;
-    spot.payoutFee = fee;
-    spot.payoutReference = note || undefined;
-    spot.payoutDestination = sellerWallet;
-    return spot;
-  }
-
   /** Buyer receipt: confirm (idempotent), dispute (replaces reason), withdraw. Fulfilled-only, buyer-only. */
   private buyerSpot(spotId: string, actor: SessionUser | string): Spot {
     const found = this.findSpot(spotId);
@@ -387,12 +335,6 @@ export class Store {
     return listing;
   }
 
-  close(slug: string, actorUserId: string): Listing {
-    const listing = this.ownedListing(slug, actorUserId);
-    listing.status = "closed";
-    return listing;
-  }
-
   reopen(slug: string, actorUserId: string): Listing {
     const listing = this.ownedListing(slug, actorUserId);
     // Reopening resubmits for review — it must never self-publish.
@@ -420,11 +362,6 @@ export class Store {
     listing.deliveryDeadline = policy?.deliveryDeadline;
     return listing;
   }
-
-  disputeQueue():DisputeItem[]{const items:DisputeItem[]=[];for(const listing of this.listings.values())for(const spot of listing.spots)if(spot.disputedAt&&!spot.paidAt)items.push({spotId:spot.id,listingId:listing.id,listingSlug:listing.slug,listingTitle:listing.title,spotLabel:spot.label,seller:listing.sellerHandle,buyer:spot.buyer??"",amount:spot.currentBid??spot.price,currency:spot.currency,reason:spot.disputeReason});return items;}
-
-  resolveDispute(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});if(!found.spot.disputedAt)throw Object.assign(new Error("spot has no open dispute"),{status:409});found.spot.disputedAt=undefined;found.spot.disputeReason=undefined;found.spot.paidAt=new Date().toISOString();found.spot.payoutReference=reference;return found.spot;}
-  recordRefund(spotId:string,reference:string):Spot{const found=this.findSpot(spotId);if(!found)throw Object.assign(new Error("spot not found"),{status:404});found.spot.paidAt=new Date().toISOString();found.spot.payoutAmount=0;found.spot.payoutReference=reference;return found.spot;}
 
   recordChainPublication(slug: string, publication: ChainPublication): void {
     const listing = this.listings.get(slug);
@@ -463,16 +400,6 @@ export class Store {
     listing.status = "closed";
     listing.reviewNote = note || undefined;
     return listing;
-  }
-
-  remove(slug: string, actorUserId: string): { ok: true } {
-    const listing = this.ownedListing(slug, actorUserId);
-    if (listing.spots.some((s) => s.buyer || s.currentBid != null || (s.bids?.length ?? 0) > 0)) {
-      throw Object.assign(new Error("cannot delete a listing with buyers or bids — close it instead"), { status: 409 });
-    }
-    this.listings.delete(slug);
-    this.order = this.order.filter((s) => s !== slug);
-    return { ok: true };
   }
 
   private ownedSpot(spotId: string, actorUserId: string): { listing: Listing; spot: Spot } {

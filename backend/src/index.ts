@@ -6,21 +6,14 @@ import { cookieOptions, privyConfigured, sessionCookieName, userFromAccessToken 
 import { csrfMatches, isReviewer, MemoryProfileRepository, type AuthRepository, type ProfileRepository, type StoredSession } from "./db.js";
 import type { MarketplaceRepository } from "./market.js";
 import { TERMS_TEXT, TERMS_VERSION } from "./types.js";
-import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, TermsDoc, UpdateProfileRequest } from "./types.js";
+import type { AuthenticatedIdentity, CreateListingRequest, PurchaseAssets, SessionUser, TermsDoc } from "./types.js";
 import { adspacesProgramId, type SolanaCluster } from "./config.js";
-import { MemoryWithdrawalRepository, type WithdrawalRepository } from "./withdrawals.js";
-import type { WalletWithdrawal } from "./withdrawals.js";
 import type { ListingPublisher } from "./listing-chain.js";
 import type { ReviewPolicy } from "./adspaces-program.js";
 import type { FixedClaimExecutor } from "./fixed-claim-chain.js";
 import type { AuctionBidExecutor } from "./auction-bid-chain.js";
 import type { ProofChainExecutor } from "./proof-chain.js";
-import type { SettlementExecutor } from "./settlement-chain.js";
 import type { DisputeChainExecutor } from "./dispute-chain.js";
-import type { DisputeResolutionExecutor } from "./dispute-resolution-chain.js";
-import type { RefundChainExecutor } from "./refund-chain.js";
-import type { CloseSpotsChainExecutor } from "./close-spots-chain.js";
-import type { ChainReconciler } from "./chain-reconciliation.js";
 import { isHostedAssetUrl, signedUploadPayload } from "./cloudinary.js";
 
 declare global { namespace Express { interface Request { user?: SessionUser; authSession?: StoredSession } } }
@@ -36,19 +29,12 @@ export interface AppDependencies {
   frontendUrl?: string;
   trustProxy?: number;
   chain?: { cluster: SolanaCluster; programId: string };
-  withdrawals?: WithdrawalRepository;
-  withdrawalSponsor?: { send(user: SessionUser, withdrawal: WalletWithdrawal): Promise<string> };
   sellerIdentities?: { get(userId: string): Promise<SessionUser | undefined> };
   listingPublisher?: ListingPublisher;
   fixedClaimExecutor?: FixedClaimExecutor;
   auctionBidExecutor?: AuctionBidExecutor;
   proofChainExecutor?: ProofChainExecutor;
-  settlementExecutor?: SettlementExecutor;
   disputeChainExecutor?: DisputeChainExecutor;
-  disputeResolutionExecutor?: DisputeResolutionExecutor;
-  refundChainExecutor?: RefundChainExecutor;
-  closeSpotsChainExecutor?: CloseSpotsChainExecutor;
-  chainReconciler?: ChainReconciler;
   /** Rebuilt API on the app schema; mounted at /api/v2 alongside the legacy routes. */
   v2Router?: Router;
 }
@@ -80,26 +66,19 @@ export function createApp({
   frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000",
   trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
   chain = { cluster: "devnet", programId: adspacesProgramId },
-  withdrawals = new MemoryWithdrawalRepository(),
-  withdrawalSponsor,
   sellerIdentities,
   listingPublisher,
   fixedClaimExecutor,
   auctionBidExecutor,
   proofChainExecutor,
-  settlementExecutor,
   disputeChainExecutor,
-  disputeResolutionExecutor,
-  refundChainExecutor,
-  closeSpotsChainExecutor,
-  chainReconciler,
   v2Router,
 }: AppDependencies) {
   const repo: MarketplaceRepository = market ?? {
     migrate: () => store.migrate(), summaries: async () => store.summaries(), get: async slug => store.get(slug),
     create: async (body, seller) => store.createForUser(body, seller), update: async (slug,user,patch) => store.update(slug,user,patch),
     claim: async (id,user,assets) => store.claim(id,user,assets), placeBid: async (id,user,amount,assets) => store.placeBid(id,user,amount,assets),
-    close: async (slug,user) => store.close(slug,user), reopen: async (slug,user) => store.reopen(slug,user), remove: async (slug,user) => store.remove(slug,user),
+    reopen: async (slug,user) => store.reopen(slug,user),
     approve: async (id,user) => store.approve(id,user), reject: async (id,user) => store.reject(id,user), fulfill: async (id,user) => store.fulfill(id,user),
     dashboard: async user => store.dashboard(user),
     buyerSpots: async user => store.buyerSpots(user),
@@ -112,11 +91,6 @@ export function createApp({
     confirmSpot: async (id,user) => store.confirmSpot(id,user),
     disputeSpot: async (id,user,reason) => store.disputeSpot(id,user,reason),
     withdrawDispute: async (id,user) => store.withdrawDispute(id,user),
-    resolveDispute: async (id,reference) => store.resolveDispute(id,reference),
-    recordRefund: async (id,reference) => store.recordRefund(id,reference),
-    payableQueue: async () => store.payableQueue(),
-    disputeQueue: async () => store.disputeQueue(),
-    paySpot: async (id,reference) => store.paySpot(id,reference),
   };
   const app = express();
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
@@ -209,59 +183,8 @@ export function createApp({
     res.clearCookie(sessionCookieName, { ...cookieOptions(), maxAge: undefined });
     res.json({ ok: true });
   });
-  app.get("/api/users/:handle", attachUser, async (req, res) => {
-    try {
-      const profile = await profiles.getProfileByHandle(req.params.handle);
-      if (!profile) return void res.status(404).json({ error: "profile not found" });
-      // payoutWallet is owner-only; everyone else gets the public shape.
-      if (!req.user || req.user.id !== profile.id) {
-        const { payoutWallet: _stripped, ...pub } = profile;
-        return void res.json(pub);
-      }
-      res.json(profile);
-    } catch (e) { sendErr(res, e); }
-  });
-  app.patch("/api/users/me", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
-    const body = (req.body ?? {}) as Partial<UpdateProfileRequest>;
-    const patch: UpdateProfileRequest = {
-      ...(typeof body.bio === "string" ? { bio: body.bio } : {}),
-      ...(typeof body.payoutWallet === "string" ? { payoutWallet: body.payoutWallet } : {}),
-    };
-    try { res.json(await profiles.updateProfile(req.user!.id, patch)); } catch (e) { sendErr(res, e); }
-  });
   app.post("/api/uploads/sign", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     try { res.json(signedUploadPayload((req.body as { kind?: unknown } | null)?.kind)); } catch (e) { sendErr(res, e); }
-  });
-  app.get("/api/wallet/withdrawals", attachUser, requireUser, async (req, res) => {
-    try { res.json(await withdrawals.list(req.user!.id)); } catch (e) { sendErr(res, e); }
-  });
-  app.post("/api/wallet/withdrawals", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
-    const body = (req.body ?? {}) as { destination?: unknown; amount?: unknown };
-    if (!req.user!.walletAddress) return void res.status(409).json({ error: "embedded wallet is not ready" });
-    try {
-      res.status(201).json(await withdrawals.create(
-        req.user!.id,
-        req.user!.walletAddress,
-        typeof body.destination === "string" ? body.destination.trim() : "",
-        Number(body.amount),
-      ));
-    } catch (e) { sendErr(res, e); }
-  });
-  app.post("/api/wallet/withdrawals/:id/confirm", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
-    const signature = (req.body as { signature?: unknown } | null)?.signature;
-    try { res.json(await withdrawals.confirm(req.params.id, req.user!.id, typeof signature === "string" ? signature : "")); } catch (e) { sendErr(res, e); }
-  });
-  app.post("/api/wallet/withdrawals/:id/execute", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
-    if (!withdrawalSponsor) return void res.status(503).json({ error: "withdrawal sponsorship is unavailable" });
-    try {
-      const withdrawal = await withdrawals.get(req.params.id, req.user!.id);
-      if (withdrawal.status !== "pending") return void res.status(409).json({ error: "withdrawal is not pending" });
-      const signature = await withdrawalSponsor.send(req.user!, withdrawal);
-      res.json(await withdrawals.confirm(withdrawal.id, req.user!.id, signature));
-    } catch (e) { sendErr(res, e); }
-  });
-  app.post("/api/wallet/withdrawals/:id/fail", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
-    try { res.json(await withdrawals.fail(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); }
   });
   app.get("/api/review/queue", attachUser, requireUser, requireReviewer, async (_req, res) => {
     try { res.json(await repo.reviewQueue()); } catch (e) { sendErr(res, e); }
@@ -315,9 +238,7 @@ export function createApp({
     try { res.status(201).json(await repo.create({ ...body, title: body.title }, req.user!)); } catch (e) { sendErr(res, e); }
   });
   app.patch("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.update(req.params.slug, req.user!.id, req.body as { title?: string; story?: string })); } catch (e) { sendErr(res, e); } });
-  app.post("/api/listings/:slug/close", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { if(closeSpotsChainExecutor)await closeSpotsChainExecutor.close(req.params.slug,req.user!);res.json(await repo.close(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/listings/:slug/reopen", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reopen(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
-  app.delete("/api/listings/:slug", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { if(closeSpotsChainExecutor)await closeSpotsChainExecutor.close(req.params.slug,req.user!);res.json(await repo.remove(req.params.slug, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/claim", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => {
     const assets = purchaseAssets(req.body);
     try {
@@ -374,20 +295,6 @@ export function createApp({
       res.json(await repo.withdrawDispute(req.params.id, req.user!));
     } catch (e) { sendErr(res, e); }
   });
-  app.get("/api/review/payable", attachUser, requireUser, requireReviewer, async (_req, res) => {
-    try { res.json(await repo.payableQueue()); } catch (e) { sendErr(res, e); }
-  });
-  app.post("/api/spots/:id/pay", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async (req, res) => {
-    const reference = (req.body as { reference?: unknown } | null)?.reference;
-    try {
-      const signature = settlementExecutor ? await settlementExecutor.settle(req.params.id) : typeof reference === "string" ? reference : "";
-      res.json(await repo.paySpot(req.params.id, signature));
-    } catch (e) { sendErr(res, e); }
-  });
-  app.post("/api/spots/:id/refund",mutationLimiter,attachUser,requireUser,requireCsrf,async(req,res)=>{try{if(!refundChainExecutor)return void res.status(503).json({error:"on-chain refunds are unavailable"});const signature=await refundChainExecutor.refund(req.params.id,req.user!);res.json(await repo.recordRefund(req.params.id,signature));}catch(e){sendErr(res,e);}});
-  app.get("/api/review/disputes",attachUser,requireUser,requireReviewer,async(_req,res)=>{try{res.json(await repo.disputeQueue());}catch(e){sendErr(res,e);}});
-  app.post("/api/review/reconcile",mutationLimiter,attachUser,requireUser,requireCsrf,requireReviewer,async(_req,res)=>{try{if(!chainReconciler)return void res.status(503).json({error:"chain reconciliation is unavailable"});res.json(await chainReconciler.reconcile())}catch(e){sendErr(res,e)}});
-  app.post("/api/spots/:id/resolve", mutationLimiter, attachUser, requireUser, requireCsrf, requireReviewer, async(req,res)=>{try{if(!disputeResolutionExecutor)return void res.status(503).json({error:"dispute resolution is unavailable"});const body=(req.body??{}) as {sellerShareBps?:unknown;decision?:unknown};const signature=await disputeResolutionExecutor.resolve(req.params.id,Number(body.sellerShareBps),typeof body.decision==="string"?body.decision:"");res.json(await repo.resolveDispute(req.params.id,signature));}catch(e){sendErr(res,e);}});
   app.post("/api/spots/:id/approve", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.approve(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/reject", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.reject(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
   app.post("/api/spots/:id/fulfill", mutationLimiter, attachUser, requireUser, requireCsrf, async (req, res) => { try { res.json(await repo.fulfill(req.params.id, req.user!.id)); } catch (e) { sendErr(res, e); } });
