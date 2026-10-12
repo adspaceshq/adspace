@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { ArrowRight, X } from 'lucide-react'
-import { MAC_LID_PHOTO } from '@/lib/listings'
+import { MAC_LID_PHOTO } from '@/lib/assets'
 import { TEE_PREVIEW_IMAGE as TSHIRT_PREVIEW_IMAGE } from '@/lib/assets'
 
 interface SurfacePickerContextType {
@@ -31,7 +31,7 @@ export function SurfacePickerProvider({ children }: { children: ReactNode }) {
 
   const handleSelect = () => {
     closePicker()
-    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/list')) {
+    if (typeof window !== 'undefined' && window.location.pathname.startsWith('/sell')) {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   }
@@ -85,7 +85,7 @@ export function SurfacePickerProvider({ children }: { children: ReactNode }) {
               <div className="grid gap-6 md:grid-cols-2">
                 {/* MacBook Lid Card */}
                 <Link
-                  href="/list/mac"
+                  href="/sell/new?surface=laptop"
                   onClick={handleSelect}
                   className="group relative flex flex-col overflow-hidden rounded-3xl bg-white p-5 text-left shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_-12px_rgba(2,8,23,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#020817]"
                 >
@@ -118,7 +118,7 @@ export function SurfacePickerProvider({ children }: { children: ReactNode }) {
 
                 {/* T-Shirt Card */}
                 <Link
-                  href="/list/tshirt"
+                  href="/sell/new?surface=tshirt"
                   onClick={handleSelect}
                   className="group relative flex flex-col overflow-hidden rounded-3xl bg-white p-5 text-left shadow-[0_4px_20px_rgba(0,0,0,0.03)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_-12px_rgba(2,8,23,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#020817]"
                 >

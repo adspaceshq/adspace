@@ -14,19 +14,42 @@ import {
 import Header from '@/components/Header'
 import Footer from '@/components/Footer'
 import PageShell from '@/components/PageShell'
-import SellerAvatar from '@/components/SellerAvatar'
-import { cardPhoto, listingUrl, sellerDisplay } from '@/lib/listings'
+import { useQuery } from '@tanstack/react-query'
+import { SellerAvatar } from '@/components/market/SellerAvatar'
+import { api } from '@/lib/api/v2'
+import type { ListingSeller, PublicListing } from '@/lib/api/types'
+import { listingHref } from '@/lib/listing-display'
+import { queryKeys } from '@/lib/query'
 import {
   CTA_GRADIENT_IMAGE,
   HERO_IMAGE_1,
   HERO_IMAGE_2,
   HERO_IMAGE_3,
+  MAC_HERO_PHOTO,
   STEP_IMAGE_1,
   STEP_IMAGE_2,
   STEP_IMAGE_3,
 } from '@/lib/assets'
-import { useStore } from '@/components/StoreProvider'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
+
+const LIVE_FILTERS = { sort: 'newest', limit: 3 } as const
+
+/** Card thumbnail: the listing's own photo, else a stock shot for laptops and tees. */
+function cardPhoto(listing: PublicListing): string {
+  const photo = listing.photos[0]?.url
+  if (photo) return photo
+  if (listing.surface === 'laptop') return MAC_HERO_PHOTO
+  if (listing.surface === 'tshirt') return '/tee/tee-front.png'
+  return ''
+}
+
+/** "Name @handle", or just "@handle" when the name adds nothing. */
+function sellerDisplay(seller: ListingSeller): string {
+  const handle = `@${seller.handle.replace(/^@+/, '')}`
+  const name = seller.displayName.trim()
+  if (!name || name.replace(/^@+/, '').toLowerCase() === handle.slice(1).toLowerCase()) return handle
+  return `${name} ${handle}`
+}
 
 const HERO_IMAGES = [HERO_IMAGE_1, HERO_IMAGE_2, HERO_IMAGE_3]
 const STEP_IMAGES = [STEP_IMAGE_1, STEP_IMAGE_2, STEP_IMAGE_3]
@@ -105,7 +128,11 @@ const FAQ_MOTION = {
 } as const
 
 export default function Home() {
-  const { listings } = useStore()
+  const { data } = useQuery({
+    queryKey: queryKeys.listings(LIVE_FILTERS),
+    queryFn: () => api.listings.published(LIVE_FILTERS),
+  })
+  const listings = data?.items ?? []
   const { openPicker } = useSurfacePicker()
   const [slide, setSlide] = useState(0)
   const [paused, setPaused] = useState(false)
@@ -289,7 +316,7 @@ export default function Home() {
                   {listings.slice(0, 3).map((listing) => {
                     const photo = cardPhoto(listing)
                     return (
-                      <Link key={listing.id} href={listingUrl(listing, listings)} className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2">
+                      <Link key={listing.id} href={listingHref(listing.seller.handle, listing.slug)} className="group block rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2">
                         <div className="overflow-hidden rounded-2xl bg-[#e9edfe]">
                           {photo ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -303,7 +330,7 @@ export default function Home() {
                             <div
                               aria-hidden="true"
                               className="grid aspect-[4/3] w-full place-items-center"
-                              style={{ background: `linear-gradient(135deg, ${listing.seller.color}22, #e9edfe)` }}
+                              style={{ background: `linear-gradient(135deg, #4166fb22, #e9edfe)` }}
                             >
                               <span className="font-mono text-xs font-medium uppercase tracking-[0.08em] text-[#64748b]">
                                 {listing.title}
@@ -314,7 +341,7 @@ export default function Home() {
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-4">
                           <span className="text-[17px] font-semibold text-[#020817]">{listing.title}</span>
                           <span className="text-sm text-[#64748b]">by</span>
-                          <SellerAvatar seller={listing.seller} className="h-6 w-6 text-xs" />
+                          <SellerAvatar seller={listing.seller} size={24} />
                           <span className="text-[15px] font-medium text-[#020817] underline decoration-[#e7e5e0] underline-offset-4 transition group-hover:decoration-[#020817]">
                             {sellerDisplay(listing.seller)}
                           </span>

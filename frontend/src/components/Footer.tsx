@@ -103,7 +103,7 @@ export default function Footer() {
                 <Link href="/browse" className="transition-colors hover:text-white">
                   browse
                 </Link>
-                <Link href="/list" className="transition-colors hover:text-white">
+                <Link href="/sell" className="transition-colors hover:text-white">
                   list a space
                 </Link>
                 <Link href="/#how" className="transition-colors hover:text-white">
@@ -121,7 +121,7 @@ export default function Footer() {
             {/* FUTURE: wireframe action boxes — restore when footer CTAs are wanted.
             <div className="grid gap-4 sm:grid-cols-2">
               <Link
-                href="/list"
+                href="/sell"
                 className="group flex items-center justify-between rounded-xl border border-white/[0.08] bg-white/[0.02] p-4 text-[14px] font-medium text-white/85 backdrop-blur-sm transition hover:border-white/20 hover:bg-white/[0.05]"
               >
                 <span className="flex items-center gap-2.5">
@@ -162,7 +162,7 @@ export default function Footer() {
                 <Link href="/browse" className="transition-colors hover:text-white">
                   Browse live spaces
                 </Link>
-                <Link href="/list" className="transition-colors hover:text-white">
+                <Link href="/sell" className="transition-colors hover:text-white">
                   List your surface
                 </Link>
                 <Link href="/#how" className="transition-colors hover:text-white">

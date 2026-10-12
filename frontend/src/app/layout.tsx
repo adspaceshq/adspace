@@ -1,8 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import StoreProvider from "@/components/StoreProvider";
 import PrivyAppProvider from "@/components/PrivyAppProvider";
-import AuthSessionProvider from "@/components/AuthSessionProvider";
 import { SurfacePickerProvider } from "@/components/SurfacePickerModal";
 import ToastProvider from "@/components/ToastProvider";
 import { QueryProvider } from "@/lib/query";
@@ -31,11 +29,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <QueryProvider>
             <SessionProvider>
               <ToastProvider>
-                <AuthSessionProvider>
-                  <StoreProvider>
-                    <SurfacePickerProvider>{children}</SurfacePickerProvider>
-                  </StoreProvider>
-                </AuthSessionProvider>
+                <SurfacePickerProvider>{children}</SurfacePickerProvider>
               </ToastProvider>
             </SessionProvider>
           </QueryProvider>

@@ -14,17 +14,18 @@ import {
   X,
 } from 'lucide-react'
 import Logo from '@/components/Logo'
-import { useAuthSession } from '@/components/AuthSessionProvider'
+import { useSession } from '@/lib/session'
 import { useSurfacePicker } from '@/components/SurfacePickerModal'
 import { PRIVY_ENABLED } from '@/lib/privy'
-import { sellerUrl, surfaceLabels } from '@/lib/listings'
+import { profileHref, SURFACE_LABELS } from '@/lib/listing-display'
 
-const surfaces = Object.entries(surfaceLabels)
+// Browse filters use the v2 surface keys; labels capitalised for the menu.
+const surfaces = Object.entries(SURFACE_LABELS).map(([key, label]) => [key, label.charAt(0).toUpperCase() + label.slice(1)] as const)
 
 export default function Header() {
   const router = useRouter()
   const pathname = usePathname()
-  const auth = useAuthSession()
+  const { ready, session, signIn, signOut } = useSession()
   const { openPicker } = useSurfacePicker()
   const [exploreOpen, setExploreOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
@@ -43,14 +44,14 @@ export default function Header() {
   }, [])
 
   const copyWallet = () => {
-    if (!auth.walletAddress) return
-    navigator.clipboard.writeText(auth.walletAddress)
+    if (!session?.walletAddress) return
+    navigator.clipboard.writeText(session?.walletAddress)
     setCopiedWallet(true)
     setTimeout(() => setCopiedWallet(false), 2000)
   }
 
-  const loggedIn = PRIVY_ENABLED && auth.authenticated
-  const cleanHandle = auth.handle ? (auth.handle.startsWith('@') ? auth.handle : `@${auth.handle}`) : null
+  const loggedIn = PRIVY_ENABLED && Boolean(session)
+  const cleanHandle = session?.handle ? (session?.handle.startsWith('@') ? session?.handle : `@${session?.handle}`) : null
 
   return (
     <header className="relative bg-[#f4f4f4]">
@@ -86,7 +87,7 @@ export default function Header() {
             >
               Marketplace
             </Link>
-            {auth.isReviewer && (
+            {(session?.isReviewer || session?.isAdmin) && (
               <Link
                 href="/review"
                 className={`transition-colors ${
@@ -181,17 +182,17 @@ export default function Header() {
                   aria-haspopup="true"
                   aria-label="User menu"
                 >
-                  {auth.avatar ? (
+                  {session?.avatar ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={auth.avatar}
+                      src={session?.avatar}
                       alt=""
                       className="h-8 w-8 rounded-full object-cover ring-1 ring-black/10"
                       referrerPolicy="no-referrer"
                     />
                   ) : (
                     <span className="grid h-8 w-8 place-items-center rounded-full bg-[#020817] text-xs font-semibold text-white">
-                      {(auth.handle ?? 'U').replace('@', '').charAt(0).toUpperCase()}
+                      {(session?.handle ?? 'U').replace('@', '').charAt(0).toUpperCase()}
                     </span>
                   )}
                 </button>
@@ -200,14 +201,14 @@ export default function Header() {
                   <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl border border-[#ecebe6] bg-white p-2 shadow-xl z-50">
                     <div className="px-3 py-2 border-b border-[#ecebe6]/60">
                       <p className="text-[14px] font-medium text-[#020817] truncate">
-                        {auth.name ?? cleanHandle}
+                        {session?.name ?? cleanHandle}
                       </p>
                       {cleanHandle && (
                         <p className="text-[12px] text-[#64748b] truncate">{cleanHandle}</p>
                       )}
-                      {auth.walletAddress && (
+                      {session?.walletAddress && (
                         <div className="mt-2 flex items-center justify-between font-mono text-[11px] text-[#64748b]">
-                          <span>{auth.walletAddress.slice(0, 6)}...{auth.walletAddress.slice(-4)}</span>
+                          <span>{session?.walletAddress.slice(0, 6)}...{session?.walletAddress.slice(-4)}</span>
                           <button
                             type="button"
                             onClick={copyWallet}
@@ -222,7 +223,7 @@ export default function Header() {
 
                     <div className="py-1">
                       <Link
-                        href={sellerUrl(auth.handle ?? 'seller')}
+                        href={profileHref(session?.handle ?? 'seller')}
                         onClick={() => setUserMenuOpen(false)}
                         className="flex items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-[#020817] transition hover:bg-[#fafaf7]"
                       >
@@ -244,7 +245,7 @@ export default function Header() {
                         type="button"
                         onClick={() => {
                           setUserMenuOpen(false)
-                          void auth.logout()
+                          void signOut()
                         }}
                         className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-[13px] text-red-600 transition hover:bg-red-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                       >
@@ -262,11 +263,11 @@ export default function Header() {
               {PRIVY_ENABLED && (
                 <button
                   type="button"
-                  onClick={auth.login}
-                  disabled={!auth.ready || auth.loggingIn}
+                  onClick={signIn}
+                  disabled={!ready}
                   className="min-h-[40px] rounded text-[15px] font-medium text-[#020817] transition-colors hover:text-[#4166fb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2 disabled:opacity-60 cursor-pointer"
                 >
-                  {auth.loggingIn ? 'Connecting…' : 'Log in'}
+                  Log in
                 </button>
               )}
               <button
@@ -319,13 +320,13 @@ export default function Header() {
                   Marketplace
                 </Link>
                 <Link
-                  href={sellerUrl(auth.handle ?? 'seller')}
+                  href={profileHref(session?.handle ?? 'seller')}
                   onClick={() => setMenuOpen(false)}
                   className="rounded-lg px-2 py-2 hover:bg-[#f1f0ec] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
                 >
                   My Profile ({cleanHandle})
                 </Link>
-                {auth.isReviewer && (
+                {(session?.isReviewer || session?.isAdmin) && (
                   <Link
                     href="/review"
                     onClick={() => setMenuOpen(false)}
@@ -338,7 +339,7 @@ export default function Header() {
                   type="button"
                   onClick={() => {
                     setMenuOpen(false)
-                    void auth.logout()
+                    void signOut()
                   }}
                   className="rounded-lg px-2 py-2 text-left text-red-600 hover:bg-red-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2"
                 >
@@ -370,12 +371,12 @@ export default function Header() {
                 type="button"
                 onClick={() => {
                   setMenuOpen(false)
-                  auth.login()
+                  signIn()
                 }}
-                disabled={!auth.ready || auth.loggingIn}
+                disabled={!ready}
                 className="inline-flex min-h-[42px] items-center justify-center rounded-xl border border-[#020817]/25 text-[14px] font-medium text-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
               >
-                {auth.loggingIn ? 'Connecting…' : 'Log in'}
+                Log in
               </button>
             )}
             <button
