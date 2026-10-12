@@ -1,20 +1,11 @@
 import { getAccessToken, getIdentityToken } from "@privy-io/react-auth";
 import type {
   ApiCreateListingRequest,
-  ReviewPolicyRequest,
   ApiListing,
   ApiListingSummary,
   Onboarding,
   ApiSpot,
-  DisputeItem,
-  PayoutItem,
-  PublicProfile,
   SessionUser,
-  SellerDashboard,
-  SponsorDashboard,
-  TermsDoc,
-  UpdateProfileRequest,
-  WalletWithdrawal,
 } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
@@ -91,24 +82,6 @@ export async function apiPostEmpty<T>(path: string): Promise<T> {
   });
 }
 
-/** Owner DELETE: session cookie + Privy Bearer + CSRF. */
-export async function apiDelete<T>(path: string): Promise<T> {
-  return withCsrfRetry(async () => {
-    let token: string | null = null;
-    try {
-      token = await getAccessToken();
-    } catch {
-      token = null;
-    }
-    return request<T>(path, {
-      method: "DELETE",
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-      },
-    });
-  });
-}
 /** Authenticated POST: session cookie + Privy Bearer so the API can verify X. */
 export async function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
   return withCsrfRetry(async () => {
@@ -150,35 +123,6 @@ export async function apiGet<T>(path: string): Promise<T> {
   });
 }
 
-/** Authenticated PATCH: session cookie + Privy Bearer + CSRF. */
-export async function apiPatch<T>(path: string, body: unknown = {}): Promise<T> {
-  return withCsrfRetry(async () => {
-    let token: string | null = null;
-    try {
-      token = await getAccessToken();
-    } catch {
-      token = null;
-    }
-    return request<T>(path, {
-      method: "PATCH",
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
-      },
-      body: JSON.stringify(body),
-    });
-  });
-}
-
-export function fetchProfile(handle: string): Promise<PublicProfile> {
-  const clean = handle.trim().replace(/^@+/, "");
-  return apiGet<PublicProfile>(`/api/users/${encodeURIComponent(clean)}`);
-}
-
-export function updateMyProfile(patch: UpdateProfileRequest): Promise<PublicProfile> {
-  return apiPatch<PublicProfile>("/api/users/me", patch);
-}
-
 export async function saveOnboarding(input: Onboarding): Promise<Onboarding> {
   return withCsrfRetry(async () => {
     let token: string | null = null;
@@ -198,26 +142,6 @@ export async function saveOnboarding(input: Onboarding): Promise<Onboarding> {
   });
 }
 
-export function fetchWalletWithdrawals(): Promise<WalletWithdrawal[]> {
-  return apiGet<WalletWithdrawal[]>("/api/wallet/withdrawals");
-}
-
-export function createWalletWithdrawal(destination: string, amount: number): Promise<WalletWithdrawal> {
-  return apiPost<WalletWithdrawal>("/api/wallet/withdrawals", { destination, amount });
-}
-
-export function executeWalletWithdrawal(id: string): Promise<WalletWithdrawal> {
-  return apiPostEmpty<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/execute`);
-}
-
-export function confirmWalletWithdrawal(id: string, signature: string): Promise<WalletWithdrawal> {
-  return apiPost<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/confirm`, { signature });
-}
-
-export function failWalletWithdrawal(id: string): Promise<WalletWithdrawal> {
-  return apiPostEmpty<WalletWithdrawal>(`/api/wallet/withdrawals/${encodeURIComponent(id)}/fail`);
-}
-
 export function fetchListingSummaries(): Promise<ApiListingSummary[]> {
   return apiGet<ApiListingSummary[]>("/api/listings");
 }
@@ -228,18 +152,6 @@ export function fetchListing(slug: string): Promise<ApiListing> {
 
 export function createApiListing(req: ApiCreateListingRequest): Promise<ApiListing> {
   return apiPost<ApiListing>("/api/listings", req);
-}
-
-export function closeApiListing(slug: string): Promise<ApiListing> {
-  return apiPostEmpty<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/close`);
-}
-
-export function reopenApiListing(slug: string): Promise<ApiListing> {
-  return apiPostEmpty<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/reopen`);
-}
-
-export function deleteApiListing(slug: string): Promise<{ ok: boolean }> {
-  return apiDelete<{ ok: boolean }>(`/api/listings/${encodeURIComponent(slug)}`);
 }
 
 export function claimApiSpot(spotId: string, assets?: { website?: string; logoUrl?: string }): Promise<ApiSpot> {
@@ -268,68 +180,6 @@ export function disputeSpotDelivery(spotId: string, reason: string): Promise<Api
 
 export function withdrawSpotDispute(spotId: string): Promise<ApiSpot> {
   return apiPostEmpty<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/withdraw`);
-}
-
-export function fetchSellerDashboard(): Promise<SellerDashboard> {
-  return apiGet<SellerDashboard>("/api/seller/dashboard");
-}
-
-export function fetchSponsorDashboard(): Promise<SponsorDashboard> {
-  return apiGet<SponsorDashboard>("/api/sponsor/dashboard");
-}
-
-export function fetchReviewQueue(): Promise<ApiListing[]> {
-  return apiGet<ApiListing[]>("/api/review/queue");
-}
-
-export function approveReviewListing(slug: string, policy: ReviewPolicyRequest): Promise<ApiListing> {
-  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/approve`, {
-    ...policy,
-    feeBps: policy.feeBps ?? policy.platformFeeBps ?? 250,
-    reviewWindowSeconds: policy.reviewWindowSeconds ?? Math.max(1, Math.round(policy.settlementWindowHours ?? 48)) * 3600,
-  });
-}
-
-export function rejectReviewListing(slug: string, reason: string): Promise<ApiListing> {
-  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/reject`, { reason });
-}
-
-export function fetchTerms(): Promise<TermsDoc> {
-  return apiGet<TermsDoc>("/api/terms");
-}
-
-export function acceptListingTerms(slug: string, version: string): Promise<ApiListing> {
-  return apiPost<ApiListing>(`/api/listings/${encodeURIComponent(slug)}/accept-terms`, { version });
-}
-
-export function approveApiSpot(spotId: string): Promise<ApiSpot> {
-  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/approve`, {});
-}
-
-export function rejectApiSpot(spotId: string): Promise<ApiSpot> {
-  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/reject`, {});
-}
-
-export function fulfillApiSpot(spotId: string): Promise<ApiSpot> {
-  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/fulfill`, {});
-}
-
-export function fetchPayableQueue(): Promise<PayoutItem[]> {
-  return apiGet<PayoutItem[]>("/api/review/payable");
-}
-export function refundApiSpot(spotId:string):Promise<ApiSpot>{return apiPostEmpty<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/refund`)}
-
-export function fetchDisputeQueue(): Promise<DisputeItem[]> {
-  return apiGet<DisputeItem[]>("/api/review/disputes");
-}
-export function reconcileChain():Promise<{checked:number;updated:number;missing:number}>{return apiPostEmpty('/api/review/reconcile')}
-
-export function resolveSpotDispute(spotId: string, sellerShareBps: number, decision: string): Promise<ApiSpot> {
-  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/resolve`, { sellerShareBps, decision });
-}
-
-export function payApiSpot(spotId: string, reference: string): Promise<ApiSpot> {
-  return apiPost<ApiSpot>(`/api/spots/${encodeURIComponent(spotId)}/pay`, { reference });
 }
 
 /** Exchange the Privy access token for an API session cookie. */
