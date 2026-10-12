@@ -85,6 +85,13 @@
       "when": 1791705616511,
       "tag": "0011_staff_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1791811984888,
+      "tag": "0012_fee_policy_complete",
+      "breakpoints": true
     }
   ]
 }

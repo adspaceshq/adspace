@@ -215,6 +215,11 @@ export const listings = app.table(
           ELSE fee_bps <= max_fee_bps AND max_fee_bps <= uplift_fee_bps AND uplift_fee_bps <= 10000
         END)`,
     ),
+    // The fee check above passes on NULLs, so the three columns must be set together or not at all.
+    check(
+      "listings_fee_policy_complete",
+      sql`(fee_bps IS NULL) = (uplift_fee_bps IS NULL) AND (fee_bps IS NULL) = (max_fee_bps IS NULL)`,
+    ),
     check("listings_auction_increment", sql`mode = 'fixed' OR double_up OR min_increment > 0`),
     check(
       "listings_reviewed_fees",
