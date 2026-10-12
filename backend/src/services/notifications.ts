@@ -24,6 +24,11 @@ const usd = (value: unknown) => {
   return `$${(base / 1_000_000n).toLocaleString("en-US")}.${cents}`;
 };
 
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+// Short, readable UTC time for notification text, e.g. "oct 13, 12:00 utc".
+export const formatUtc = (date: Date) =>
+  `${MONTHS[date.getUTCMonth()]} ${date.getUTCDate()}, ${String(date.getUTCHours()).padStart(2, "0")}:${String(date.getUTCMinutes()).padStart(2, "0")} utc`;
+
 // Idempotent: a repeated dedupe key is ignored, so producers can safely re-run.
 export async function notify(db: Db, inputs: NotificationInput[]) {
   if (inputs.length === 0) return;
@@ -80,7 +85,7 @@ export function notificationsForEvent(event: EventRow): NotificationInput[] {
       break;
     case "proof_submitted": {
       const reviewBy = payoutAvailableAt(event);
-      to(event.buyerId, { type: "proof_submitted", category: "delivery", title: `proof is in for ${spot}`, body: `check it and raise a dispute before ${reviewBy.toUTCString()} if something's wrong. otherwise the creator gets paid.` });
+      to(event.buyerId, { type: "proof_submitted", category: "delivery", title: `proof is in for ${spot}`, body: `check it and raise a dispute before ${formatUtc(reviewBy)} if something's wrong. otherwise the creator gets paid.` });
       break;
     }
     case "dispute_raised":
@@ -153,7 +158,7 @@ export async function scheduleReminders(db: Db, now = new Date()) {
       type: "proof_due_soon",
       category: "delivery",
       title: `proof due within a day for spot ${row.index + 1} on "${row.title}"`,
-      body: `post your proof before ${row.dueAt.toUTCString()} or the sponsor can take a refund.`,
+      body: `post your proof before ${formatUtc(row.dueAt)} or the sponsor can take a refund.`,
       href: `/dashboard/spots/${row.spotId}`,
       dedupeKey: `reminder:proof_due:${row.spotId}`,
     });
@@ -172,7 +177,7 @@ export async function scheduleReminders(db: Db, now = new Date()) {
       type: "review_closing",
       category: "delivery",
       title: `review window closes soon for spot ${row.index + 1} on "${row.title}"`,
-      body: `after ${closes.toUTCString()} the creator can be paid. dispute before then if the proof isn't right.`,
+      body: `after ${formatUtc(closes)} the creator can be paid. dispute before then if the proof isn't right.`,
       href: `/dashboard/spots/${row.spotId}`,
       dedupeKey: `reminder:review_closing:${row.spotId}`,
     });
@@ -352,7 +357,7 @@ export async function scheduleSettlementNotices(db: Db, now = new Date()) {
         type: "auction_won",
         category: "bidding",
         title: `you won ${spotLabel(row.index, row.title)}`,
-        body: `your ${usd(row.amount)} bid is in escrow. the creator delivers by ${row.deliveryDueAt.toUTCString()}.`,
+        body: `your ${usd(row.amount)} bid is in escrow. the creator delivers by ${formatUtc(row.deliveryDueAt)}.`,
         href: `/dashboard/spots/${row.spotId}`,
         dedupeKey: `auction_won:${row.spotId}`,
       });

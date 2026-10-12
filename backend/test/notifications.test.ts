@@ -3,12 +3,14 @@ import { after, before, test } from "node:test";
 import { eq } from "drizzle-orm";
 import type { Db } from "../src/db/client.js";
 import { notifications, spotEvents, users, watchlist } from "../src/db/schema.js";
-import { renderNotificationEmail } from "../src/email.js";
+import { ctaLabel, renderNotificationEmail } from "../src/email.js";
 import {
   deliverEmails,
+  formatUtc,
   getPrefs,
   listNotifications,
   markRead,
+  notificationsForEvent,
   processSpotEvents,
   scheduleReminders,
   setPrefs,
@@ -160,4 +162,41 @@ test("deposits notify only for unexplained incoming USDC, after a first baseline
   assert.equal(await detectDeposits(db, read), 0);
   balance = 30n * USDC;
   assert.equal(await detectDeposits(db, read), 0);
+});
+
+test("notification emails use a contextual button, escape user text and show readable dates", () => {
+  assert.equal(formatUtc(new Date("2026-10-13T12:00:00Z")), "oct 13, 12:00 utc");
+  assert.equal(formatUtc(new Date("2026-01-05T07:09:00Z")), "jan 5, 07:09 utc");
+  const [proof] = notificationsForEvent({
+    id: "1",
+    type: "proof_submitted",
+    actorId: "seller",
+    data: {},
+    spotId: "spot-1",
+    spotIndex: 0,
+    buyerId: "buyer",
+    sellerId: "seller",
+    listingTitle: `<script>alert("x")</script> & co`,
+    reviewWindowSeconds: 2 * 24 * 60 * 60,
+    deliveryDueAt: new Date("2026-10-11T12:00:00Z"),
+  });
+  assert.match(proof.body!, /before oct 13, 12:00 utc if/);
+  assert.doesNotMatch(proof.body!, /GMT/);
+
+  const email = renderNotificationEmail({ ...proof, body: proof.body!, href: proof.href! }, "https://devnet.adspaces.fun/");
+  assert.equal(email.subject, proof.title);
+  const has = (text: string, part: string) => assert.ok(text.includes(part), `expected ${JSON.stringify(part)}`);
+  has(email.html, ">see the proof</a>");
+  assert.ok(!email.html.includes("open adspaces"));
+  assert.ok(!email.html.includes("<script>"));
+  has(email.html, "&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; co");
+  has(email.html, 'href="https://devnet.adspaces.fun/dashboard/spots/spot-1"');
+  has(email.html, "oct 13, 12:00 utc");
+  has(email.html, "attention is everywhere");
+  has(email.html, "https://devnet.adspaces.fun/settings#notifications");
+  has(email.text, "see the proof: https://devnet.adspaces.fun/dashboard/spots/spot-1");
+
+  assert.equal(ctaLabel("payout_ready"), "collect payout");
+  assert.equal(ctaLabel("something_new"), "open adspaces");
+  has(renderNotificationEmail({ title: "hi", body: "", href: null }, "https://devnet.adspaces.fun").html, ">open adspaces</a>");
 });
