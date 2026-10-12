@@ -375,6 +375,9 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
         systemProgram: SystemProgram.programId,
         tokenProgram: TOKEN_PROGRAM_ID,
         rent: SYSVAR_RENT_PUBKEY,
+        // Spots after approval need the review authority; the reviewer key is the fee payer and signs.
+        reviewer: deps.reviewer.publicKey,
+        reviewAuthority: addresses.reviewAuthority(config),
       })
       .instruction();
     await deps.runTx({

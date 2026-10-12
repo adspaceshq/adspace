@@ -78,6 +78,8 @@ export async function refundSpot(
         buyerAta: associatedTokenAddress(buyer, deps.mint),
         usdcMint: deps.mint,
         tokenProgram: TOKEN_PROGRAM_ID,
+        // Proof exists once submitted; the program closes it so its rent returns to the seller.
+        proof: spot.proofSubmittedAt ? pdas(deps.program.programId).proof(new PublicKey(spot.chainAddress!)) : null,
       })
       .instruction(),
   );
@@ -124,6 +126,7 @@ export async function closeSpot(deps: RefundDeps, sellerId: string, seller: TxSi
   if (listing.sellerId !== sellerId) throw new RefundError("only the creator can close a spot", 403);
   if (spot.state !== "open") throw new RefundError("only unsold spots can be closed");
   if (seller.publicKey.toBase58() !== listing.sellerWallet) throw new RefundError("close with your listing wallet");
+  // Anything sent to the open spot's vault is swept to the creator's token account before it closes.
   const instruction = await deps.program.methods
     .closeSpot()
     .accountsStrict({
@@ -131,6 +134,8 @@ export async function closeSpot(deps: RefundDeps, sellerId: string, seller: TxSi
       listing: new PublicKey(listing.chainAddress!),
       spot: new PublicKey(spot.chainAddress!),
       vault: new PublicKey(spot.vaultAddress!),
+      sellerAta: associatedTokenAddress(seller.publicKey, deps.mint),
+      usdcMint: deps.mint,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .instruction();
@@ -140,7 +145,7 @@ export async function closeSpot(deps: RefundDeps, sellerId: string, seller: TxSi
     listingId: listing.id,
     spotId: spot.id,
     actorId: sellerId,
-    instructions: [instruction],
+    instructions: [createAtaIdempotent(deps.feePayer.publicKey, seller.publicKey, deps.mint), instruction],
     feePayer: deps.feePayer,
     signers: [seller],
   });
