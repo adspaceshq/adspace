@@ -352,8 +352,8 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
     } else if (spots.some((spot) => !(Number(spot.price) > 0))) {
       issues.push({ id: 'spots', label: 'Price every sponsor spot above zero.', targetId: 'spot-price' })
     }
-    if (priceType === 'auction' && !(Number(minIncrement) > 0)) {
-      issues.push({ id: 'increment', label: 'Set a minimum bid increment above zero.', targetId: 'min-increment' })
+    if (priceType === 'auction' && !(Number(minIncrement) >= 0.01)) {
+      issues.push({ id: 'increment', label: 'Set a minimum bid increment of at least 0.01 USDC.', targetId: 'min-increment' })
     }
     return issues
   }, [deadline, minIncrement, priceType, spots, title])
@@ -415,8 +415,8 @@ function ListingStudioInner({ initialSurface }: { initialSurface: 'gear' | 'appa
       setReviewing(false)
       return
     }
-    if (priceType === 'auction' && !(Number(minIncrement) > 0)) {
-      setError('Enter an auction bid increment above zero.')
+    if (priceType === 'auction' && !(Number(minIncrement) >= 0.01)) {
+      setError('Enter an auction bid increment of at least 0.01 USDC.')
       return
     }
     setPublishing(true)
