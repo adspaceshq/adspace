@@ -3,13 +3,6 @@ import test from "node:test";
 import request from "supertest";
 import { loadConfig, adspacesProgramId } from "../src/config.js";
 import { createApp } from "../src/index.js";
-import type { AuthRepository } from "../src/db.js";
-
-const auth: AuthRepository = {
-  async createSession() { throw new Error("not used"); },
-  async readSession() { return undefined; },
-  async destroySession() {},
-};
 
 test("configuration validates backend and chain boundaries", () => {
   const config = loadConfig({
@@ -28,14 +21,12 @@ test("configuration validates backend and chain boundaries", () => {
   assert.throws(() => loadConfig({ DATABASE_URL: "postgresql://localhost/db", ADSPACES_PROGRAM_ID: "not-a-key" }), /ADSPACES_PROGRAM_ID/);
 });
 
-test("health reports chain integration state", async () => {
+test("health reports the chain", async () => {
   const response = await request(createApp({
-    auth,
     chain: { cluster: "devnet", programId: adspacesProgramId },
   })).get("/health").expect(200);
   assert.deepEqual(response.body.chain, {
     cluster: "devnet",
     programId: adspacesProgramId,
-    integration: "disabled",
   });
 });

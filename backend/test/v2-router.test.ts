@@ -16,8 +16,6 @@ before(async () => {
   ({ db, close } = await createTestDb());
   auth = new AppAuthRepository(db);
   app = createApp({
-    auth,
-    reviewers: ["@reviewer_one"],
     v2Router: createV2Router({ db, reviewers: ["did:privy:reviewer_one", "@impostor_one"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
   });
 });
@@ -143,4 +141,18 @@ test("roles match only ids or Privy DIDs, never a handle someone can claim", asy
   assert.equal((await request(app).get("/api/v2/review/queue").set("Cookie", impostor.cookie)).status, 403);
   const me = await request(app).get("/api/v2/auth/me").set("Cookie", impostor.cookie);
   assert.equal(me.body.isReviewer, false);
+});
+
+test("logout revokes the session server-side", async () => {
+  const user = await signIn("logout_one");
+  assert.equal((await request(app).get("/api/v2/auth/me").set("Cookie", user.cookie)).status, 200);
+  assert.equal((await request(app).post("/api/v2/auth/logout").set("Cookie", user.cookie)).status, 403);
+  assert.equal((await request(app).post("/api/v2/auth/logout").set("Cookie", user.cookie).set("X-CSRF-Token", user.csrf)).status, 200);
+  assert.equal((await request(app).get("/api/v2/auth/me").set("Cookie", user.cookie)).status, 401);
+});
+
+test("session exchange is rate limited", async () => {
+  const limited = createApp({ v2Router: createV2Router({ db, reviewers: [], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }) });
+  for (let i = 0; i < 20; i++) assert.equal((await request(limited).post("/api/v2/auth/session")).status, 401);
+  assert.equal((await request(limited).post("/api/v2/auth/session")).status, 429);
 });

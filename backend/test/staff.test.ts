@@ -18,7 +18,6 @@ before(async () => {
   ({ db, close } = await createTestDb());
   auth = new AppAuthRepository(db);
   app = createApp({
-    auth,
     v2Router: createV2Router({ db, reviewers: [], admins: ["did:privy:owner_admin"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
   });
 });

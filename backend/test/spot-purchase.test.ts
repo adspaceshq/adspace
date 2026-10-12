@@ -217,3 +217,28 @@ test("checkout stops implausible bids and missing funds before anything is sent"
   await placeBid(funded, spot.id, alice.purchaser, 100n * USDC, BRAND);
   assert.equal(sentTxs.length, sentBefore + 1);
 });
+
+test("claims and bids are refused once the listing deadline passes, before touching the chain", async () => {
+  const closed = (): PurchaseDeps => ({ ...deps(), now: () => DEADLINE });
+  const fixed = await createSpot("fixed");
+  const auction = await createSpot("auction");
+  const { purchaser } = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
+  await assert.rejects(claimSpot(closed(), fixed.spot.id, purchaser, BRAND), /closed/);
+  await assert.rejects(placeBid(closed(), auction.spot.id, purchaser, 100n * USDC, BRAND), /closed/);
+  assert.equal(sentTxs.length, 0);
+  const [stored] = await db.select().from(spots).where(eq(spots.id, fixed.spot.id));
+  assert.equal(stored.state, "open");
+});
+
+test("a higher bid replaces the spot's brand with the new leader's", async () => {
+  const { spot } = await createSpot("auction");
+  const alice = await createUser(`alice_${randomUUID().slice(0, 8)}`);
+  const bob = await createUser(`bob_${randomUUID().slice(0, 8)}`);
+  await placeBid(deps(), spot.id, alice.purchaser, 100n * USDC, BRAND);
+  const bobBrand = { name: "Bobco", link: "https://bob.example", logoUrl: LOGO };
+  const result = await placeBid(deps(), spot.id, bob.purchaser, 110n * USDC, bobBrand);
+  assert.equal(result.spot.brand?.name, "Bobco");
+  const [stored] = await db.select().from(spots).where(eq(spots.id, spot.id));
+  assert.equal(stored.brand?.name, "Bobco");
+  assert.equal(stored.brand?.link, "https://bob.example");
+});
