@@ -7,6 +7,8 @@ const nextConfig: NextConfig = {
   // /listings/:id has no per-listing target and lands on browse.
   async redirects() {
     return [
+      // The app lives on its own host; adspaces.fun is the marketing site, so the app root opens browse.
+      { source: '/', destination: '/browse', permanent: false },
       { source: '/list', has: [{ type: 'query', key: 'surface', value: 'apparel' }], destination: '/sell/new?surface=tshirt', permanent: true },
       { source: '/list', destination: '/sell', permanent: true },
       { source: '/list/mac', destination: '/sell/new?surface=laptop', permanent: true },

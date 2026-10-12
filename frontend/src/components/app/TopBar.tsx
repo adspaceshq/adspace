@@ -22,7 +22,7 @@ export function TopBar({ inSidebar = false }: { inSidebar?: boolean }) {
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-canvas/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-6 px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2" aria-label="adspaces home">
+        <Link href="/browse" className="flex items-center gap-2" aria-label="adspaces home">
           <Logo size={28} />
           <span className="text-lead font-semibold tracking-tight">adspaces</span>
         </Link>

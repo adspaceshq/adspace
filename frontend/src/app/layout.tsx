@@ -10,10 +10,10 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://adspaces.fun";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: "adspaces — sell ad space on anything", template: "%s · adspaces" },
+  title: { default: "adspaces (devnet) — sell ad space on anything", template: "%s · adspaces (devnet)" },
   description: "Sell ad space on anything people see. Sponsors pay in USDC, held in escrow until delivery.",
   icons: { icon: "/logo.svg" },
-  openGraph: { type: "website", siteName: "adspaces", url: "/" },
+  openGraph: { type: "website", siteName: "adspaces (devnet)", url: "/" },
   twitter: { card: "summary_large_image", site: "@adspacesfun" },
 };
 

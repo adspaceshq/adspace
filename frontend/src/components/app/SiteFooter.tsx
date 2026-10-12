@@ -9,7 +9,7 @@ export function SiteFooter() {
     <footer className="border-t border-line bg-ink text-white">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
         <div className="flex flex-col gap-3">
-          <Link href="/" className="flex items-center gap-2" aria-label="adspaces home">
+          <Link href="/browse" className="flex items-center gap-2" aria-label="adspaces home">
             <Logo size={28} />
             <span className="text-lead font-semibold">adspaces</span>
           </Link>
@@ -20,13 +20,14 @@ export function SiteFooter() {
           links={[
             { href: "/browse", label: "browse spaces" },
             { href: "/sell", label: "list your space" },
-            { href: "/#how", label: "how it works" },
+            { href: "https://adspaces.fun/#how", label: "how it works" },
           ]}
         />
         <FooterColumn
           title="company"
           links={[
-            { href: "/#faq", label: "faq" },
+            { href: "https://adspaces.fun", label: "adspaces.fun" },
+            { href: "https://adspaces.fun/#faq", label: "faq" },
             { href: "https://x.com/adspacesfun", label: "x / twitter" },
             { href: "mailto:support@adspaces.fun", label: "support" },
           ]}
@@ -69,6 +70,7 @@ export function CompactFooter() {
           <Link href="/terms" className="hover:text-ink">terms</Link>
           <Link href="/privacy" className="hover:text-ink">privacy</Link>
           <a href="mailto:support@adspaces.fun" className="hover:text-ink">support</a>
+          <a href="https://adspaces.fun" className="hover:text-ink">adspaces.fun</a>
         </nav>
       </div>
     </footer>
