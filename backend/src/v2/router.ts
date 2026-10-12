@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import { PublicKey } from "@solana/web3.js";
 import { hasRole, invalidRoleEntries } from "./roles.js";
 import { grantStaffRole, listStaff, revokeStaffRole, staffRoleOf, type StaffRole } from "../services/staff.js";
@@ -192,6 +193,17 @@ export function createV2Router(options: {
   };
   const me = (req: Request) => req.v2Session!.user;
   const mutate = [mutationLimiter, requireUser, requireCsrf];
+
+  // Readiness: unlike /health, this checks the database and the RPC node. 503 when either is down.
+  router.get("/health", async (_req, res) => {
+    const within = <T,>(promise: Promise<T>) =>
+      Promise.race([promise, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out")), 5_000))]);
+    const result = async (check: () => Promise<unknown>) => within(check()).then(() => "ok", (error: Error) => error.message);
+    const database = await result(() => db.execute(sql`select 1`));
+    const rpc = chain ? await result(() => chain.connection.getSlot("confirmed")) : "not configured";
+    const ok = database === "ok" && (rpc === "ok" || rpc === "not configured");
+    res.status(ok ? 200 : 503).json({ status: ok ? "ok" : "degraded", database, rpc });
+  });
 
   router.use(attach);
 

@@ -1,3 +1,4 @@
+import { alertNotifier, collectAlerts, type MonitorInput } from "./services/monitor.js";
 import { PublicKey } from "@solana/web3.js";
 import "dotenv/config";
 import { createApp } from "./index.js";
@@ -70,15 +71,21 @@ async function start() {
     withdrawalDailyLimit: BigInt(Math.round(Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000) * 1_000_000)),
   });
   const reconcileEveryMs = Number(process.env.RECONCILE_INTERVAL_MS ?? 5 * 60 * 1000);
+  let lastReconcile: MonitorInput["lastReconcile"];
   if (v2Chain && reconcileEveryMs > 0) {
     const run = () =>
       reconcile({ db, signatureOutcomes: v2Chain.signatureOutcomes, readSpotStatus: v2Chain.readSpotStatus })
         .then((report) => {
+          lastReconcile = { at: new Date(), report };
           if (report.confirmedTxs || report.failedTxs || report.withdrawalsUpdated || report.spotDrift.length) {
             console.log("reconcile:", JSON.stringify(report));
           }
         })
-        .catch((error) => console.error("reconcile failed:", error instanceof Error ? error.message : error));
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          lastReconcile = { at: new Date(), error: message };
+          console.error("reconcile failed:", message);
+        });
     setInterval(run, reconcileEveryMs).unref();
   }
   // Notifications run without the chain: they read what services already recorded.
@@ -111,6 +118,35 @@ async function start() {
       }
     };
     setInterval(() => void runNotifier(), notifyEveryMs).unref();
+  }
+  // Operator alerts: failed txs, reconciler drift or stalls, and a low fee payer. Logged as ALERT lines
+  // and emailed to ALERT_EMAILS (comma-separated), each condition at most once an hour.
+  const monitorEveryMs = Number(process.env.MONITOR_INTERVAL_MS ?? 5 * 60 * 1000);
+  if (v2Chain && monitorEveryMs > 0) {
+    const notifyAlerts = alertNotifier({
+      send: sendEmail,
+      to: (process.env.ALERT_EMAILS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
+      repeatMs: 60 * 60 * 1000,
+    });
+    const startedAt = new Date();
+    const runMonitor = async () => {
+      try {
+        const feePayerLamports = await v2Chain.connection.getBalance(v2Chain.reviewer.publicKey, "confirmed").catch(() => undefined);
+        const alerts = await collectAlerts(db, {
+          now: new Date(),
+          feePayerLamports,
+          minFeePayerLamports: Number(process.env.MIN_FEE_PAYER_LAMPORTS ?? 1_000_000_000),
+          // Give the reconciler its first run before calling it stalled.
+          lastReconcile: lastReconcile ?? { at: startedAt },
+          reconcileEveryMs,
+          failedTxWindowMs: monitorEveryMs,
+        });
+        await notifyAlerts(alerts);
+      } catch (error) {
+        console.error("monitor failed:", error instanceof Error ? error.message : error);
+      }
+    };
+    setInterval(() => void runMonitor(), monitorEveryMs).unref();
   }
   await auth.migrate();
   await market.migrate();
