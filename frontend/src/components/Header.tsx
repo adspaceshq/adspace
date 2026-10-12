@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import {
   Check,
   ChevronDown,
@@ -15,7 +15,6 @@ import {
 } from 'lucide-react'
 import Logo from '@/components/Logo'
 import { useSession } from '@/lib/session'
-import { useSurfacePicker } from '@/components/SurfacePickerModal'
 import { PRIVY_ENABLED } from '@/lib/privy'
 import { profileHref, SURFACE_LABELS } from '@/lib/listing-display'
 
@@ -23,10 +22,8 @@ import { profileHref, SURFACE_LABELS } from '@/lib/listing-display'
 const surfaces = Object.entries(SURFACE_LABELS).map(([key, label]) => [key, label.charAt(0).toUpperCase() + label.slice(1)] as const)
 
 export default function Header() {
-  const router = useRouter()
   const pathname = usePathname()
   const { ready, session, signIn, signOut } = useSession()
-  const { openPicker } = useSurfacePicker()
   const [exploreOpen, setExploreOpen] = useState(false)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -164,13 +161,6 @@ export default function Header() {
           {loggedIn ? (
             /* AUTHENTICATED ACTIONS: Single List button + User Profile Dropdown */
             <>
-              <button
-                type="button"
-                onClick={openPicker}
-                className="inline-flex h-9 items-center rounded-full bg-[#020817] px-4 text-[13px] font-medium text-white transition hover:bg-[#1a2436] active:scale-[0.98] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
-              >
-                List your space
-              </button>
 
               {/* User Menu Dropdown */}
               <div className="relative" ref={userMenuRef}>
@@ -270,13 +260,6 @@ export default function Header() {
                   Log in
                 </button>
               )}
-              <button
-                type="button"
-                onClick={openPicker}
-                className="inline-flex min-h-[42px] items-center rounded-full bg-[#020817] px-5 text-[14px] font-medium text-white transition hover:bg-[#1a2436] cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
-              >
-                List your space
-              </button>
               <Link
                 href="/browse"
                 className="inline-flex min-h-[42px] items-center rounded-full border border-[#020817]/25 px-5 text-[14px] font-medium text-[#020817] transition hover:border-[#020817] hover:bg-[#fafaf7] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
@@ -379,16 +362,6 @@ export default function Header() {
                 Log in
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                setMenuOpen(false)
-                openPicker()
-              }}
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-[#020817] text-[14px] font-medium text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
-            >
-              List your space
-            </button>
           </div>
         </div>
       )}

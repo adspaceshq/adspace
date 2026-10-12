@@ -30,7 +30,6 @@ import {
   STEP_IMAGE_2,
   STEP_IMAGE_3,
 } from '@/lib/assets'
-import { useSurfacePicker } from '@/components/SurfacePickerModal'
 
 const LIVE_FILTERS = { sort: 'newest', limit: 3 } as const
 
@@ -133,7 +132,6 @@ export default function Home() {
     queryFn: () => api.listings.published(LIVE_FILTERS),
   })
   const listings = data?.items ?? []
-  const { openPicker } = useSurfacePicker()
   const [slide, setSlide] = useState(0)
   const [paused, setPaused] = useState(false)
   const [activeStep, setActiveStep] = useState(0)
@@ -489,13 +487,6 @@ export default function Home() {
                 <Link href="/browse" className="inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-white/15 bg-white/[0.06] px-9 py-4 text-[17px] font-medium text-white backdrop-blur motion-safe:transition-[transform,background-color,border-color] motion-safe:duration-150 hover:-translate-y-px hover:bg-white/[0.12] active:translate-y-0 active:scale-[0.98]">
                   Browse live spaces
                 </Link>
-                <button
-                  type="button"
-                  onClick={openPicker}
-                  className="group inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-[#4166fb] px-9 py-4 text-[17px] font-medium text-white shadow-[0_10px_40px_-8px_rgba(65,102,251,0.7)] motion-safe:transition-[transform,background-color] motion-safe:duration-150 hover:-translate-y-px hover:bg-[#3558e8] active:translate-y-0 active:scale-[0.98]"
-                >
-                  List your space <ArrowRight size={19} aria-hidden="true" className="motion-safe:transition-transform motion-safe:duration-150 group-hover:translate-x-0.5" />
-                </button>
               </div>
 
             </motion.div>
