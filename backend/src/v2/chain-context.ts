@@ -1,3 +1,4 @@
+import { txEventReader, type TxEventReader } from "../chain/events.js";
 import type { PrivyClient } from "@privy-io/node";
 import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
@@ -25,6 +26,7 @@ export interface ChainContext {
   configFeeFloorBps: () => Promise<number>;
   readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
+  readTxEvent: TxEventReader;
   accountExists: (address: PublicKey) => Promise<boolean>;
   readDisputeTimeoutSeconds: () => Promise<number>;
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
@@ -114,6 +116,8 @@ export function createChainContext(options: {
         },
       };
     },
+
+    readTxEvent: txEventReader(connection, program),
 
     async readVaultBalance(vault) {
       const { value } = await connection.getTokenAccountBalance(vault, "confirmed");

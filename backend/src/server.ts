@@ -25,7 +25,7 @@ async function start() {
   const pool = createDatabasePool(config.databaseUrl, { max: config.databasePoolSize });
   const auth = new PostgresAuthRepository(pool);
   const market = new PostgresMarketplaceRepository(pool);
-  if (!config.solana.rpcUrl) throw new Error("SOLANA_RPC_URL is required for withdrawal verification");
+  if (!config.solana.rpcUrl) throw new Error("SOLANA_RPC_URL is required for on-chain actions");
   const sellerIdentities = new PostgresSellerIdentityRepository(pool);
   const listingPublisher = config.solana.reviewerWalletPath
     ? new PrivyListingPublisher(

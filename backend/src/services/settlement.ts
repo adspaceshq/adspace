@@ -1,3 +1,4 @@
+import { eventAmount, type TxEventReader } from "../chain/events.js";
 import { and, eq } from "drizzle-orm";
 import { PublicKey, SystemProgram, TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
@@ -29,6 +30,8 @@ export interface SettlementDeps {
   readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
+  // Reads the program's event from the confirmed tx; amounts recorded are what actually moved.
+  readTxEvent?: TxEventReader;
   now?: () => Date;
 }
 
@@ -110,6 +113,12 @@ export async function payoutSeller(deps: SettlementDeps, spotId: string, trigger
     instructions,
     feePayer: deps.caller,
   });
+  // Tokens can land in the vault between the balance read and the transfer; trust the program's event.
+  const paid = await deps.readTxEvent?.(tx.signature, "SellerWithdrawn").catch(() => null);
+  const paidNet = paid ? eventAmount(paid, "amount", "amount") : null;
+  const paidFee = paid ? eventAmount(paid, "fee", "fee") : null;
+  const recordedFee = paidNet !== null && paidFee !== null ? paidFee : fee;
+  const recordedGross = paidNet !== null && paidFee !== null ? paidNet + paidFee : balance;
 
   return deps.db.transaction(async (trx) => {
     const to = nextSpotState("delivered", "seller_paid");
@@ -124,9 +133,9 @@ export async function payoutSeller(deps: SettlementDeps, spotId: string, trigger
       .values({
         spotId: spot.id,
         kind: "payout",
-        gross: balance,
-        fee,
-        sellerNet: balance - fee,
+        gross: recordedGross,
+        fee: recordedFee,
+        sellerNet: recordedGross - recordedFee,
         buyerRefund: 0n,
         chainTxId: tx.chainTxId,
       })

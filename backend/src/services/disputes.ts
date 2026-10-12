@@ -1,3 +1,4 @@
+import { eventAmount, type TxEventReader } from "../chain/events.js";
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { PublicKey, SystemProgram, type TransactionInstruction } from "@solana/web3.js";
@@ -24,11 +25,13 @@ export interface DisputeDeps {
   // Must be the program's config authority: only it can resolve disputes on-chain.
   resolver: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
-  // The buyer pays rent for the on-chain dispute record; top up their SOL first.
+  // Tops up a seller's SOL for rent. Buyers never need SOL: the platform pays dispute rent.
   ensureRent: (payer: PublicKey) => Promise<void>;
   readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
+  // Reads the program's event from the confirmed tx; amounts recorded are what actually moved.
+  readTxEvent?: TxEventReader;
   readDisputeTimeoutSeconds: () => Promise<number>;
   listingBaseUrl: string;
   now?: () => Date;
@@ -268,6 +271,19 @@ export async function resolveDispute(
     feePayer: deps.feePayer,
     signers: deps.resolver.publicKey.equals(deps.feePayer.publicKey) ? [] : [deps.resolver],
   });
+  // Tokens can land in the vault between the balance read and the transfer; trust the program's event.
+  const resolved = await deps.readTxEvent?.(tx.signature, "DisputeResolved").catch(() => null);
+  const moved = resolved
+    ? {
+        buyerRefund: eventAmount(resolved, "buyerRefund", "buyer_refund"),
+        sellerNet: eventAmount(resolved, "sellerAmount", "seller_amount"),
+        fee: eventAmount(resolved, "fee", "fee"),
+      }
+    : null;
+  const recorded =
+    moved && moved.buyerRefund !== null && moved.sellerNet !== null && moved.fee !== null
+      ? { buyerRefund: moved.buyerRefund, sellerNet: moved.sellerNet, fee: moved.fee }
+      : { buyerRefund: split.buyerRefund, sellerNet: split.sellerNet, fee: split.fee };
 
   return deps.db.transaction(async (trx) => {
     const to = nextSpotState("disputed", "dispute_resolved");
@@ -286,10 +302,10 @@ export async function resolveDispute(
       .values({
         spotId: spot.id,
         kind: "dispute_split",
-        gross: balance,
-        fee: split.fee,
-        sellerNet: split.sellerNet,
-        buyerRefund: split.buyerRefund,
+        gross: recorded.buyerRefund + recorded.sellerNet + recorded.fee,
+        fee: recorded.fee,
+        sellerNet: recorded.sellerNet,
+        buyerRefund: recorded.buyerRefund,
         chainTxId: tx.chainTxId,
       })
       .returning();
