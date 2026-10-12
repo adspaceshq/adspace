@@ -54,8 +54,3 @@ export function isOwnUpload(url: string, kind: CloudinaryUploadKind): boolean {
   const folder = `${rootFolder}/${kind}/`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`^(?:v\\d+/)?${folder}[^/]+$`).test(url.slice(prefix.length));
 }
-
-export function isHostedAssetUrl(value: string | undefined): boolean {
-  if (!value) return false;
-  return /^https:\/\/res\.cloudinary\.com\/[^/\s]+\/(?:image|video|raw)\/upload\//i.test(value);
-}

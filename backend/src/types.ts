@@ -1,23 +1,8 @@
 export type Mode = "fixed" | "auction";
 export type SpotStatus = "open" | "claimed" | "sold";
 
-/** Current seller terms. Bumped by hand; accept calls pin this exact version. */
+/** Current seller terms version recorded when a listing is published. */
 export const TERMS_VERSION = "v1";
-
-export const TERMS_TEXT = `Adspaces seller terms (v1, demo).
-
-1. Demo only — claims and bids mark spots. No real money moves yet.
-2. Describe your surface honestly: what buyers get, where, and for how long.
-3. Deliver the campaign as listed, or refund the buyer off-platform.
-4. You approve every claim; unapproved spots never count as sold.
-5. Artwork closes on the date you set. Late artwork may forfeit the spot.
-6. The platform may remove listings that mislead buyers, with a reason.
-7. Payouts are manual until on-chain settlement ships.`;
-
-export interface TermsDoc {
-  version: string;
-  text: string;
-}
 
 export interface Bid {
   bidder: string;
@@ -73,40 +58,6 @@ export interface Spot {
   payoutDestination?: string;
 }
 
-/** One released-but-unpaid spot for the reviewer ops console. */
-export interface PayoutItem {
-  spotId: string;
-  listingId: string;
-  listingSlug: string;
-  listingTitle: string;
-  spotLabel: string;
-  seller: string;
-  buyer: string;
-  amount: number;
-  currency: string;
-  releasedAt: string;
-}
-
-/** Lazy 3-day review window from fulfillment (no scheduler). */
-export const REVIEW_WINDOW_MS = Number(process.env.REVIEW_WINDOW_MS ?? 3 * 86_400_000);
-
-/** Platform fee in basis points, shown on every payout record — accounted off-chain, not moved on-chain. */
-export function platformFeeBps(env: NodeJS.ProcessEnv = process.env): number {
-  const parsed = Number(env.PLATFORM_FEE_BPS ?? 0);
-  if (!Number.isSafeInteger(parsed) || parsed < 0 || parsed > 10_000) {
-    throw Object.assign(new Error("PLATFORM_FEE_BPS must be 0–10000"), { status: 500 });
-  }
-  return parsed;
-}
-
-/** Payout-releasable: undisputed AND (confirmed OR the window elapsed). */
-export function payoutReleased(spot: { fulfilledAt?: string | null; confirmedAt?: string | null; disputedAt?: string | null }, now = Date.now()): boolean {
-  if (!spot.fulfilledAt) return false;
-  if (spot.disputedAt) return false;
-  if (spot.confirmedAt) return true;
-  return new Date(spot.fulfilledAt).getTime() + REVIEW_WINDOW_MS <= now;
-}
-
 export interface Listing {
   id: string;
   slug: string;
@@ -141,64 +92,6 @@ export interface Listing {
   spots: Spot[];
 }
 
-export interface DisputeItem extends Omit<PayoutItem,"releasedAt"> { reason?: string }
-
-export interface ListingFeePolicy {
-  feeBps: number;
-  upliftFeeBps: number;
-  maxFeeBps: number;
-  reviewWindowSeconds: number;
-  deliveryDeadline: string;
-}
-
-export interface ListingSummary {
-  id: string;
-  slug: string;
-  title: string;
-  seller: string;
-  surface: string;
-  image: string;
-  mode: Mode;
-  currency: string;
-  fromPrice: number;
-  raised: number;
-  open: number;
-  total: number;
-}
-
-export interface CreateListingRequest {
-  title: string;
-  surface?: string;
-  story?: string;
-  /** Seller's surface photo as a data:image/* URL (inline until object storage). */
-  image?: string;
-  fabric?: string;
-  mode?: string;
-  minIncrement?: number;
-  doubleUp?: boolean;
-  currency?: string;
-  deadline?: string;
-  artworkClose?: string;
-  spots?: CreateSpotRequest[];
-}
-
-export interface CreateSpotRequest {
-  label?: string;
-  location?: string;
-  size?: string;
-  price?: number;
-  view?: string;
-  x?: number;
-  y?: number;
-  w?: number;
-}
-
-/** Brand assets a buyer attaches when claiming or bidding. */
-export interface PurchaseAssets {
-  website?: string;
-  logoUrl?: string;
-}
-
 export interface SessionUser {
   id: string;
   did: string;
@@ -212,8 +105,6 @@ export interface SessionUser {
 }
 
 export interface AuthenticatedIdentity extends Omit<SessionUser, "id"> { xUserId?: string }
-export interface SessionResponse extends SessionUser { csrfToken: string; expiresAt: string; isReviewer: boolean }
-
 /** Public seller profile at 3000/{username}. payoutWallet is only ever returned to the owner. */
 export interface PublicProfile {
   id: string;
@@ -244,84 +135,4 @@ export interface UpdateProfileRequest {
   avatar?: string | null;
   bio?: string;
   payoutWallet?: string;
-}
-
-export interface SellerDashboardListing {
-  id: string;
-  slug: string;
-  title: string;
-  image: string;
-  status: "active" | "approved" | "submitted" | "closed";
-  deadline: string;
-  reviewNote?: string;
-  paid: number;
-  mode: Mode;
-  currency: string;
-  sold: number;
-  open: number;
-  total: number;
-  revenue: number;
-  platformFeeBps?: number;
-  feeBps?: number;
-  upliftFeeBps?: number;
-  maxFeeBps?: number;
-  reviewWindowSeconds?: number;
-  settlementWindowHours?: number;
-  deliveryDeadline?: string;
-}
-
-export interface SellerAttentionItem {
-  spotId: string;
-  listingId: string;
-  listingSlug: string;
-  listingTitle: string;
-  spotLabel: string;
-  buyer: string;
-  amount: number;
-  currency: string;
-  submittedAt: string;
-  status: "pending" | "approved" | "delivered" | "disputed";
-  artworkReceived: boolean;
-  disputeReason?: string;
-}
-
-export interface SellerDashboard {
-  summary: { activeListings: number; openSpots: number; pendingApproval: number; revenue: number; paidOut: number; currency: string };
-  listings: SellerDashboardListing[];
-  attention: SellerAttentionItem[];
-}
-
-/** Buyer-side lifecycle. `refunded` also covers losing an auction takeover. */
-export type SponsorSpotStatus = "pending" | "sold" | "delivered" | "disputed" | "paid" | "refunded";
-
-/** One spot a sponsor holds, seen from the buyer side. */
-export interface SponsorSpot {
-  spotId: string;
-  listingId: string;
-  listingSlug: string;
-  listingTitle: string;
-  listingImage: string;
-  sellerHandle: string;
-  spotLabel: string;
-  location: string;
-  amount: number;
-  currency: string;
-  mode: Mode;
-  status: SponsorSpotStatus;
-  /** Sold, still mine, and artwork not submitted yet. */
-  artworkDue: boolean;
-  artworkSubmittedAt?: string;
-  proofPhotos: string[];
-  proofPost?: string;
-  claimedAt?: string;
-  fulfilledAt?: string;
-  confirmedAt?: string;
-  disputedAt?: string;
-  disputeReason?: string;
-  paidAt?: string;
-}
-
-export interface SponsorDashboard {
-  summary: { active: number; pendingApproval: number; awaitingArtwork: number; delivering: number; committed: number; currency: string };
-  campaigns: SponsorSpot[];
 }

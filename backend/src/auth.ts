@@ -8,9 +8,6 @@ export const privyConfigured = Boolean(appId && appSecret);
 
 export const privy = privyConfigured ? new PrivyClient({ appId, appSecret }) : null;
 
-const COOKIE = "adspaces_sid";
-export const sessionCookieName = COOKIE;
-
 export function cookieOptions() {
   // Deployed the API (onrender) and the frontend (workers.dev) are cross-site,
   // and browsers never attach SameSite=Lax cookies to cross-site fetch — every
