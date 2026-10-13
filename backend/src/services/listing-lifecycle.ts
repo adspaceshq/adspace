@@ -102,6 +102,21 @@ async function loadOwned(db: Db, listingId: string, sellerId: string): Promise<L
 
 const MAX_PHOTOS = 6;
 
+// A spot's `view` is the index (as a string) of the photo it sits on; absent means the cover.
+// "0" is stored as absent so every cover spot looks the same.
+function normalizeView(view: unknown, photoCount: number): string | undefined {
+  if (view === undefined || view === null) return undefined;
+  const index = typeof view === "string" && /^\d{1,2}$/.test(view) ? Number(view) : Number.NaN;
+  if (!Number.isInteger(index) || index >= Math.max(photoCount, 1)) {
+    throw new ListingError(
+      photoCount > 1
+        ? `each spot must sit on one of the listing's ${photoCount} photos (view "0" to "${photoCount - 1}")`
+        : "spots can only sit on the cover photo until you add more photos",
+    );
+  }
+  return index === 0 ? undefined : String(index);
+}
+
 function normalizeDraft(input: DraftInput, now: Date) {
   const title = input.title.trim();
   if (!title || title.length > 80) throw new ListingError("title is required (max 80 characters)");
@@ -123,6 +138,16 @@ function normalizeDraft(input: DraftInput, now: Date) {
   }
   const photoIds = [...new Set(input.photoAssetIds ?? [])];
   if (photoIds.length > MAX_PHOTOS) throw new ListingError(`add at most ${MAX_PHOTOS} photos`);
+  const spotRows = input.spots.map((spot, index) => {
+    const { view, ...layout } = spot.layout;
+    const normalizedView = normalizeView(view, photoIds.length);
+    return {
+      index,
+      label: spot.label?.trim() ?? "",
+      price: spot.price,
+      layout: normalizedView === undefined ? layout : { ...layout, view: normalizedView },
+    };
+  });
   return {
     fields: {
       surface: input.surface,
@@ -136,7 +161,7 @@ function normalizeDraft(input: DraftInput, now: Date) {
       minIncrement,
       doubleUp,
     },
-    spots: input.spots.map((spot, index) => ({ index, label: spot.label?.trim() ?? "", price: spot.price, layout: spot.layout })),
+    spots: spotRows,
     photoIds,
   };
 }

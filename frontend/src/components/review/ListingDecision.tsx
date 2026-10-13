@@ -17,7 +17,7 @@ import { Input, Textarea } from "@/components/ui/Field";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Skeleton } from "@/components/ui/Skeleton";
-import { SpotMockup } from "@/components/ui/SpotMockup";
+import { SpotPhotos } from "@/components/ui/SpotPhotos";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
 
@@ -77,7 +77,6 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
   const sampleFee = feeFor(listing.mode, fees, sample, sample);
   const hotAuction = sample * 3n;
   const hotFee = feeFor(listing.mode, fees, sample, hotAuction);
-  const cover = listing.photos[0]?.url;
   const setBps = (key: keyof FeePolicy, percent: string) => {
     const bps = Math.round(Number(percent) * 100);
     setFees((current) => (listing.mode === "fixed" ? { feeBps: bps, upliftFeeBps: 0, maxFeeBps: bps } : { ...current, [key]: bps }));
@@ -104,20 +103,12 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-w-0 flex-col gap-5">
           <h1 className="text-title font-semibold">{listing.title}</h1>
-          {cover && (
-            <SpotMockup
-              photoUrl={cover}
+          {listing.photos.length > 0 && (
+            <SpotPhotos
+              photos={listing.photos.map((photo) => ({ url: photo.url }))}
               alt={listing.title}
               spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: "open", price: spot.price, label: spot.label }))}
             />
-          )}
-          {listing.photos.length > 1 && (
-            <div className="no-scrollbar flex gap-2 overflow-x-auto">
-              {listing.photos.slice(1).map((photo) => (
-                // eslint-disable-next-line @next/next/no-img-element -- review thumbnails
-                <img key={photo.url} src={photo.url} alt="" className="h-24 rounded-control object-cover" />
-              ))}
-            </div>
           )}
           {listing.description && <p className="whitespace-pre-line text-body text-muted">{listing.description}</p>}
           <dl className="grid gap-3 text-body sm:grid-cols-3">

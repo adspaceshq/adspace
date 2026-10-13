@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
 import { SpotMockup } from "@/components/ui/SpotMockup";
+import { spotsOnView } from "@/lib/spot-views";
 import { Stat } from "@/components/ui/Stat";
 import { ListingStateBadge } from "@/components/ui/StateBadge";
 import { ActivityFeed } from "./ActivityFeed";
@@ -40,7 +41,7 @@ function ListingTile({ listing }: { listing: CreatorListing }) {
             photoUrl={cover}
             alt=""
             size="thumb"
-            spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state }))}
+            spots={spotsOnView(listing.spots, 0, listing.photos?.length ?? 0).map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state }))}
           />
         ) : (
           <div className="aspect-[4/3] rounded-card bg-ink/5" />

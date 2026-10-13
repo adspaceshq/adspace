@@ -10,13 +10,14 @@ import { mockupChoiceFor, mockupPresets, mockupUploaded, photoSourceFor, presetF
 import { uploadImage } from "@/lib/upload";
 import { emptyWizard, STEPS, toDraftInput, validateStep, type StepErrors, type WizardState, type WizardStep } from "@/lib/sell-draft";
 import { SURFACE_LABELS } from "@/lib/listing-display";
+import { viewLabel } from "@/lib/spot-views";
 import { formatUsd, toBaseUnits } from "@/lib/money";
 import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { cx } from "@/lib/cx";
 import { Button } from "@/components/ui/Button";
 import { Input, Textarea } from "@/components/ui/Field";
-import { SpotMockup } from "@/components/ui/SpotMockup";
+import { SpotPhotos } from "@/components/ui/SpotPhotos";
 import { Timeline } from "@/components/ui/Timeline";
 import { MacMockupPicker } from "./MacMockupPicker";
 import { PhotoUploader } from "./PhotoUploader";
@@ -166,6 +167,8 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
   };
 
   const cover = state.photos[0]?.url;
+  // Spots can go on any photo; mockup photos are named after the part of the laptop they show.
+  const views = state.photos.map((photo, index) => ({ url: photo.url, label: viewLabel(index, photo.preset) }));
 
   return (
     <div className="flex flex-col gap-8">
@@ -214,7 +217,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
           </div>
           <div className="flex flex-col gap-2">
             <p className="text-small font-medium">photos</p>
-            <p className="text-small text-muted">the first photo is the cover; sponsors place their brand on it.</p>
+            <p className="text-small text-muted">the first photo is the cover. you can place spots on any photo.</p>
             {state.surface === "laptop" && (
               <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="photo source">
                 {[
@@ -262,7 +265,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
       )}
 
       {step === "spots" && cover && (
-        <SpotEditor photoUrl={cover} spots={state.spots} errors={errors} onChange={(update) => setState((current) => ({ ...current, spots: update(current.spots) }))} />
+        <SpotEditor photos={views} spots={state.spots} errors={errors} onChange={(update) => setState((current) => ({ ...current, spots: update(current.spots) }))} />
       )}
 
       {step === "pricing" && (
@@ -337,8 +340,8 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
       {step === "preview" && (
         <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           {cover && (
-            <SpotMockup
-              photoUrl={cover}
+            <SpotPhotos
+              photos={views}
               alt={state.title}
               spots={state.spots.map((spot, index) => {
                 let price: string | undefined;

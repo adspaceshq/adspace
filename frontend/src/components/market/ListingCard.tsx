@@ -6,6 +6,7 @@ import { formatFollowers, listingHref, priceSummary, spotsLeft, SURFACE_LABELS }
 import { Countdown } from "@/components/ui/Countdown";
 import { Money } from "@/components/ui/Money";
 import { SpotMockup } from "@/components/ui/SpotMockup";
+import { spotsOnView } from "@/lib/spot-views";
 import { SellerAvatar } from "./SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
 
@@ -26,7 +27,7 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           photoUrl={cover}
           alt={listing.title}
           size="thumb"
-          spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state, logoUrl: spot.brand?.logoUrl }))}
+          spots={spotsOnView(listing.spots, 0, listing.photos.length).map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state, logoUrl: spot.brand?.logoUrl }))}
           className="transition-transform group-hover:scale-[1.01]"
         />
       ) : (

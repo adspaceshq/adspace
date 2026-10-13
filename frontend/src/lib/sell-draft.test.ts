@@ -39,6 +39,23 @@ describe("sell draft", () => {
     expect(draft.minIncrement).toBeUndefined();
   });
 
+  it("keeps each spot on its photo, moving spots of a removed photo to the cover", () => {
+    const state = {
+      ...emptyWizard("laptop", NOW),
+      photos: [
+        { assetId: "a1", url: "https://x/1.png" },
+        { assetId: "a2", url: "https://x/2.png" },
+      ],
+      spots: [
+        { key: "s1", label: "", price: "5", layout: { x: 10, y: 10, w: 10 } },
+        { key: "s2", label: "", price: "5", layout: { x: 10, y: 10, w: 10, view: "1" } },
+        { key: "s3", label: "", price: "5", layout: { x: 10, y: 10, w: 10, view: "2" } },
+        { key: "s4", label: "", price: "5", layout: { x: 10, y: 10, w: 10, view: "0" } },
+      ],
+    };
+    expect(toDraftInput(state).spots.map((spot) => spot.layout.view)).toEqual([undefined, "1", undefined, undefined]);
+  });
+
   it("round-trips a saved draft back into the wizard", () => {
     const listing = {
       surface: "car",

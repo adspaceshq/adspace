@@ -11,6 +11,7 @@ import { useNow } from "@/lib/use-now";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
 import { SpotMockup } from "@/components/ui/SpotMockup";
+import { spotView } from "@/lib/spot-views";
 import { ShareSpotButton } from "./ShareSpotButton";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { MessagesPanel } from "./MessagesPanel";
@@ -49,7 +50,8 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
 
   const detail = query.data;
   const { spot, listing, seller } = detail;
-  const photo = listing.photos[0]?.url;
+  // The photo this spot sits on (the cover unless the seller placed it on another photo).
+  const photo = listing.photos[spotView(spot.layout, listing.photos.length)]?.url;
 
   return (
     <div className="flex flex-col gap-6">

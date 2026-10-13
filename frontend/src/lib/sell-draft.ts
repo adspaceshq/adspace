@@ -1,6 +1,7 @@
 import type { DraftInput, OwnedListing, PricingMode, SpotLayout, Surface } from "@/lib/api/types";
 import type { MacPreset, MockupChoice } from "@/lib/mac-mockup";
 import { toBaseUnits, toInputValue } from "@/lib/money";
+import { normalizeView } from "@/lib/spot-views";
 
 export interface WizardSpot {
   key: string;
@@ -151,7 +152,8 @@ export function toDraftInput(state: WizardState): DraftInput {
     deadline: deadline.toISOString(),
     deliveryDueAt: new Date(deadline.getTime() + Number(state.deliveryDays) * DAY).toISOString(),
     ...(state.mode === "auction" ? { doubleUp: state.doubleUp, ...(state.doubleUp ? {} : { minIncrement: state.minIncrement }) } : {}),
-    spots: state.spots.map((spot) => ({ label: spot.label.trim() || undefined, price: spot.price.trim(), layout: spot.layout })),
+    // A spot whose photo was removed goes back to the cover rather than failing the save.
+    spots: state.spots.map((spot) => ({ label: spot.label.trim() || undefined, price: spot.price.trim(), layout: normalizeView(spot.layout, state.photos.length) })),
     photoAssetIds: state.photos.map((photo) => photo.assetId),
   };
 }

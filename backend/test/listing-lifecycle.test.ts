@@ -195,6 +195,45 @@ test("unapproved listings cannot be published", async () => {
   assert.equal(sent.length, 0);
 });
 
+test("spots can sit on any of the listing's photos; view must name one", async () => {
+  const seller = await createUser();
+  const photos = [await photoFor(seller.id), await photoFor(seller.id)];
+  const layout = { x: 20, y: 20, w: 10 };
+  const { spots: created } = await createDraft(
+    db,
+    seller.id,
+    draftInput({
+      photoAssetIds: photos,
+      spots: [
+        { price: USDC, layout },
+        { price: USDC, layout: { ...layout, view: "0" } },
+        { price: USDC, layout: { ...layout, view: "1" } },
+      ],
+    }),
+    NOW,
+  );
+  assert.deepEqual(
+    created.map((spot) => spot.layout.view),
+    [undefined, undefined, "1"],
+  );
+  assert.equal("view" in created[1].layout, false);
+  for (const view of ["2", "-1", "1.0", "01x", "", " 1", "lid"]) {
+    await assert.rejects(
+      createDraft(db, seller.id, draftInput({ photoAssetIds: photos, spots: [{ price: USDC, layout: { ...layout, view } }] }), NOW),
+      (error: unknown) => error instanceof ListingError && error.status === 400 && /one of the listing's 2 photos/.test(error.message),
+      `view ${JSON.stringify(view)} should be rejected`,
+    );
+  }
+  await assert.rejects(
+    createDraft(db, seller.id, draftInput({ photoAssetIds: [photos[0]], spots: [{ price: USDC, layout: { ...layout, view: "1" } }] }), NOW),
+    /only sit on the cover/,
+  );
+  await assert.rejects(
+    createDraft(db, seller.id, draftInput({ photoAssetIds: photos, spots: [{ price: USDC, layout: { ...layout, view: 1 as unknown as string } }] }), NOW),
+    /one of the listing's 2 photos/,
+  );
+});
+
 test("submitting needs a photo; photos must be the seller's own", async () => {
   const seller = await createUser();
   const other = await createUser();
