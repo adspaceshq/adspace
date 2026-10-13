@@ -262,7 +262,7 @@ export function SpotEditor({
             </div>
             {multi && (
               <div className="flex flex-col gap-1.5">
-                <p className="text-small font-medium">on photo</p>
+                <p className="text-small font-medium">on surface</p>
                 <div className="flex flex-wrap gap-1 rounded-control bg-ink/5 p-1" role="radiogroup" aria-label={`photo for spot ${selectedIndex + 1}`}>
                   {photos.map((photo, index) => (
                     <button

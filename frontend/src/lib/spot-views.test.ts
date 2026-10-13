@@ -37,6 +37,6 @@ describe("spot views", () => {
   it("names mockup photos after the part of the laptop", () => {
     expect(viewLabel(0, "lid-silver")).toBe("lid");
     expect(viewLabel(1, "inside-midnight")).toBe("keyboard deck");
-    expect(viewLabel(2)).toBe("photo 3");
+    expect(viewLabel(2)).toBe("surface 3");
   });
 });

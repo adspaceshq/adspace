@@ -30,9 +30,9 @@ export function spotsOnView<T extends { layout: Pick<SpotLayout, "view"> }>(spot
   return spots.filter((spot) => spotView(spot.layout, photoCount) === view);
 }
 
-// "lid" / "keyboard deck" for the built-in MacBook mockup photos, otherwise "photo N".
+// "lid" / "keyboard deck" for the built-in MacBook mockup photos, otherwise "surface N".
 export function viewLabel(index: number, preset?: string): string {
   if (preset?.startsWith("lid-")) return "lid";
   if (preset?.startsWith("inside-")) return "keyboard deck";
-  return `photo ${index + 1}`;
+  return `surface ${index + 1}`;
 }
