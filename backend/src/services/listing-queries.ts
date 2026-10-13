@@ -37,11 +37,17 @@ async function hydrate(db: Db, rows: ListingRow[]) {
   }));
 }
 
-// Buyers' identities and wallets are not public; only state, amounts and the brand they chose to show.
-export function publicSpot(spot: SpotRow) {
-  const sold = ["funded", "delivered", "disputed", "settled"].includes(spot.state);
+type SponsorProfile = { handle: string; displayName: string; avatarUrl: string | null };
+const SOLD = ["funded", "delivered", "disputed", "settled"];
+
+// Wallets stay private. Once a spot is sold (or has a leading bid) its brand is public, and so is the
+// sponsor's adspaces profile when `sponsors` is given, so anyone can click through to them.
+export function publicSpot(spot: SpotRow, sponsors?: Map<string, SponsorProfile>) {
+  const sold = SOLD.includes(spot.state);
+  const sponsor = sold && spot.buyerId ? sponsors?.get(spot.buyerId) : undefined;
   return {
     brand: sold && spot.brand ? { name: spot.brand.name, logoUrl: spot.brand.logoUrl, link: spot.brand.link, handle: spot.brand.handle } : null,
+    sponsor: sponsor ?? null,
     id: spot.id,
     index: spot.index,
     label: spot.label,
@@ -61,7 +67,18 @@ export async function getPublishedListing(db: Db, slug: string) {
     .where(and(eq(listings.slug, slug), inArray(listings.state, ["published", "closed"])));
   if (!row) return undefined;
   const [listing] = await hydrate(db, [row.listing]);
-  return { ...listing, spots: listing.spots.map(publicSpot), seller: publicSeller(row.seller) };
+  const buyerIds = [...new Set(listing.spots.filter((spot) => SOLD.includes(spot.state) && spot.buyerId).map((spot) => spot.buyerId!))];
+  const sponsors = new Map<string, SponsorProfile>(
+    buyerIds.length
+      ? (
+          await db
+            .select({ id: users.id, handle: users.handle, displayName: users.displayName, avatarUrl: users.avatarUrl })
+            .from(users)
+            .where(inArray(users.id, buyerIds))
+        ).map(({ id, ...profile }) => [id, profile])
+      : [],
+  );
+  return { ...listing, spots: listing.spots.map((spot) => publicSpot(spot, sponsors)), seller: publicSeller(row.seller) };
 }
 
 export interface BrowseFilters {
@@ -131,7 +148,7 @@ export async function listPublished(db: Db, filters: BrowseFilters = {}, now = n
   return {
     items: hydrated.map((listing, index) => ({
       ...listing,
-      spots: listing.spots.map(publicSpot),
+      spots: listing.spots.map((spot) => publicSpot(spot)),
       seller: publicSeller(page[index].seller),
     })),
     hasMore: rows.length > limit,

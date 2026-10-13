@@ -76,6 +76,8 @@ export interface PublicSpot {
   taken: boolean;
   // The sponsor's chosen brand, public once the spot is sold.
   brand: { name: string; logoUrl?: string; link?: string; handle?: string } | null;
+  // The sponsor's adspaces profile, on the listing page once the spot is sold or has a top bid.
+  sponsor?: { handle: string; displayName: string; avatarUrl: string | null } | null;
 }
 
 export interface Spot {

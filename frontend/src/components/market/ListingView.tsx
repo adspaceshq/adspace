@@ -203,7 +203,7 @@ function PurchasePanel({
         </p>
         <SpotStateBadge state={spot.state} bidding={listing.mode === "auction" && canPurchase(listing, spot, now)} />
       </div>
-      {spot.brand && <SponsorLine brand={spot.brand} leading={listing.mode === "auction" && spot.state === "funded"} />}
+      {spot.brand && <SponsorLine brand={spot.brand} sponsor={spot.sponsor ?? undefined} leading={listing.mode === "auction" && spot.state === "funded"} />}
       <div>
         <p className="text-small text-muted">{headline.label}</p>
         <p className="text-display font-semibold leading-none">
@@ -298,7 +298,17 @@ function SpotList({ listing, selectedId, onSelect, now }: { listing: PublicListi
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-body font-medium">{spot.label || `spot ${spot.index + 1}`}</span>
-                  {spot.brand && <span className="block truncate text-small text-muted">sponsored by {spot.brand.name}</span>}
+                  {spot.brand && (
+                    <span className="block truncate text-small text-muted">
+                      sponsored by {spot.brand.name}
+                      {spot.sponsor && (
+                        <>
+                          {" · "}
+                          <UserLink handle={spot.sponsor.handle} nested />
+                        </>
+                      )}
+                    </span>
+                  )}
                   <span className="text-small text-muted">
                     {headline.label} <Money value={headline.amount} />
                     {spread && ` · ${viewLabel(spotView(spot.layout, photoCount))}`}
@@ -315,7 +325,15 @@ function SpotList({ listing, selectedId, onSelect, now }: { listing: PublicListi
 }
 
 // Who holds a sold spot (or leads an auction), linked to their site when they gave one.
-function SponsorLine({ brand, leading }: { brand: NonNullable<PublicListing["spots"][number]["brand"]>; leading: boolean }) {
+function SponsorLine({
+  brand,
+  sponsor,
+  leading,
+}: {
+  brand: NonNullable<PublicListing["spots"][number]["brand"]>;
+  sponsor?: { handle: string };
+  leading: boolean;
+}) {
   const name = brand.link ? (
     <a href={safeHref(brand.link)} target="_blank" rel="noreferrer nofollow sponsored" className="font-medium text-ink hover:underline">
       {brand.name}
@@ -332,6 +350,12 @@ function SponsorLine({ brand, leading }: { brand: NonNullable<PublicListing["spo
       <p className="text-small text-muted">
         {leading ? "top bid by " : "sponsored by "}
         {name}
+        {sponsor && (
+          <span>
+            {" · on adspaces "}
+            <UserLink handle={sponsor.handle} />
+          </span>
+        )}
         {brand.handle && (
           <span>
             {" · "}
