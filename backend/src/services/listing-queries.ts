@@ -1,0 +1,178 @@
+import { and, asc, desc, eq, gt, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import type { Db } from "../db/client.js";
+import { listingPhotos, listings, mediaAssets, spots, users } from "../db/schema.js";
+
+type ListingRow = typeof listings.$inferSelect;
+type SpotRow = typeof spots.$inferSelect;
+type Surface = ListingRow["surface"];
+
+const sellerColumns = {
+  id: users.id,
+  handle: users.handle,
+  displayName: users.displayName,
+  avatarUrl: users.avatarUrl,
+  hasX: users.xUserId,
+  verified: users.verified,
+};
+
+type SellerRow = { id: string; handle: string; displayName: string; avatarUrl: string | null; hasX: string | null; verified: boolean };
+const publicSeller = (seller: SellerRow) => ({ ...seller, hasX: Boolean(seller.hasX) });
+
+async function hydrate(db: Db, rows: ListingRow[]) {
+  if (rows.length === 0) return [];
+  const ids = rows.map((row) => row.id);
+  const [allSpots, photos] = await Promise.all([
+    db.select().from(spots).where(inArray(spots.listingId, ids)).orderBy(asc(spots.index)),
+    db
+      .select({ listingId: listingPhotos.listingId, id: mediaAssets.id, url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
+      .from(listingPhotos)
+      .innerJoin(mediaAssets, eq(mediaAssets.id, listingPhotos.assetId))
+      .where(inArray(listingPhotos.listingId, ids))
+      .orderBy(asc(listingPhotos.position)),
+  ]);
+  return rows.map((row) => ({
+    ...row,
+    spots: allSpots.filter((spot) => spot.listingId === row.id),
+    photos: photos.filter((photo) => photo.listingId === row.id).map(({ listingId: _listingId, ...photo }) => photo),
+  }));
+}
+
+// Buyers' identities and wallets are not public; only state, amounts and the brand they chose to show.
+export function publicSpot(spot: SpotRow) {
+  const sold = ["funded", "delivered", "disputed", "settled"].includes(spot.state);
+  return {
+    brand: sold && spot.brand ? { name: spot.brand.name, logoUrl: spot.brand.logoUrl, link: spot.brand.link, handle: spot.brand.handle } : null,
+    id: spot.id,
+    index: spot.index,
+    label: spot.label,
+    price: spot.price,
+    layout: spot.layout,
+    state: spot.state,
+    amount: spot.amount,
+    taken: spot.state !== "open" && spot.state !== "cancelled" && spot.state !== "refunded",
+  };
+}
+
+export async function getPublishedListing(db: Db, slug: string) {
+  const [row] = await db
+    .select({ listing: listings, seller: sellerColumns })
+    .from(listings)
+    .innerJoin(users, eq(users.id, listings.sellerId))
+    .where(and(eq(listings.slug, slug), inArray(listings.state, ["published", "closed"])));
+  if (!row) return undefined;
+  const [listing] = await hydrate(db, [row.listing]);
+  return { ...listing, spots: listing.spots.map(publicSpot), seller: publicSeller(row.seller) };
+}
+
+export interface BrowseFilters {
+  q?: string;
+  surface?: Surface;
+  mode?: "fixed" | "auction";
+  sort?: "closing" | "newest" | "price";
+  includeClosed?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+const SURFACES: readonly Surface[] = ["laptop", "tshirt", "car", "suitcase", "bike", "digital", "other"];
+
+export function parseBrowseFilters(query: Record<string, unknown>): BrowseFilters {
+  const text = (key: string) => (typeof query[key] === "string" ? (query[key] as string).trim() : "");
+  const surface = text("surface") as Surface;
+  const mode = text("mode");
+  const sort = text("sort");
+  return {
+    q: text("q").slice(0, 80) || undefined,
+    surface: SURFACES.includes(surface) ? surface : undefined,
+    mode: mode === "fixed" || mode === "auction" ? mode : undefined,
+    sort: sort === "newest" || sort === "price" ? sort : "closing",
+    includeClosed: text("includeClosed") === "true",
+    limit: Math.min(Math.max(Number(text("limit")) || 24, 1), 48),
+    offset: Math.max(Number(text("offset")) || 0, 0),
+  };
+}
+
+// Public discovery feed; `hasMore` drives "load more".
+export async function listPublished(db: Db, filters: BrowseFilters = {}, now = new Date()) {
+  const limit = filters.limit ?? 24;
+  const conditions: SQL[] = [eq(listings.state, "published")];
+  if (!filters.includeClosed) conditions.push(gt(listings.deadline, now));
+  if (filters.surface) conditions.push(eq(listings.surface, filters.surface));
+  if (filters.mode) conditions.push(eq(listings.mode, filters.mode));
+  if (filters.q) {
+    const pattern = `%${filters.q.replace(/[%_\\]/g, (char) => `\\${char}`)}%`;
+    conditions.push(
+      or(
+        ilike(listings.title, pattern),
+        ilike(listings.description, pattern),
+        ilike(users.handle, pattern),
+        sql`${listings.audience}->>'event' ILIKE ${pattern}`,
+        sql`${listings.audience}->>'location' ILIKE ${pattern}`,
+      )!,
+    );
+  }
+  const minPrice = sql`(SELECT min(${spots.price}) FROM ${spots} WHERE ${spots.listingId} = ${listings.id})`;
+  const order =
+    filters.sort === "newest"
+      ? [desc(listings.publishedAt)]
+      : filters.sort === "price"
+        ? [asc(minPrice), asc(listings.deadline)]
+        : [asc(listings.deadline)];
+  const rows = await db
+    .select({ listing: listings, seller: sellerColumns })
+    .from(listings)
+    .innerJoin(users, eq(users.id, listings.sellerId))
+    .where(and(...conditions))
+    .orderBy(...order, asc(listings.id))
+    .limit(limit + 1)
+    .offset(filters.offset ?? 0);
+  const page = rows.slice(0, limit);
+  const hydrated = await hydrate(db, page.map((row) => row.listing));
+  return {
+    items: hydrated.map((listing, index) => ({
+      ...listing,
+      spots: listing.spots.map(publicSpot),
+      seller: publicSeller(page[index].seller),
+    })),
+    hasMore: rows.length > limit,
+  };
+}
+
+export async function getOwnedListing(db: Db, sellerId: string, listingId: string) {
+  const [row] = await db.select().from(listings).where(and(eq(listings.id, listingId), eq(listings.sellerId, sellerId)));
+  if (!row) return undefined;
+  const [listing] = await hydrate(db, [row]);
+  return listing;
+}
+
+export async function listForSeller(db: Db, sellerId: string) {
+  const rows = await db.select().from(listings).where(eq(listings.sellerId, sellerId)).orderBy(desc(listings.updatedAt));
+  return hydrate(db, rows);
+}
+
+export async function reviewQueue(db: Db) {
+  const rows = await db
+    .select({ listing: listings, seller: sellerColumns })
+    .from(listings)
+    .innerJoin(users, eq(users.id, listings.sellerId))
+    .where(eq(listings.state, "in_review"))
+    .orderBy(asc(listings.updatedAt));
+  const hydrated = await hydrate(db, rows.map((row) => row.listing));
+  return hydrated.map((listing, index) => ({ ...listing, seller: publicSeller(rows[index].seller) }));
+}
+
+const SPONSORED = ["funded", "delivered", "disputed", "settled"];
+
+// Public "sponsored by" data for a sold spot: the brand the sponsor chose to display.
+// The sponsor's account and wallet stay private.
+export async function getSponsoredSpot(db: Db, slug: string, index: number) {
+  if (!Number.isInteger(index) || index < 0) return undefined;
+  const listing = await getPublishedListing(db, slug);
+  if (!listing) return undefined;
+  const [row] = await db
+    .select({ id: spots.id, index: spots.index, state: spots.state, brand: spots.brand })
+    .from(spots)
+    .where(and(eq(spots.listingId, listing.id), eq(spots.index, index)));
+  if (!row || !SPONSORED.includes(row.state) || !row.brand) return undefined;
+  return { listing, spot: { id: row.id, index: row.index, state: row.state }, brand: row.brand };
+}

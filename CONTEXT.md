@@ -1,17 +1,17 @@
-# Spotboard — project context
+# Adspaces — project context
 
 Temporary shared source of truth for architecture, decisions, and working notes.
 Remove this file when it is no longer needed. Canonical product copy stays in
 `README.md`; the API contract stays in `CONTRACT.md`. Keep this file in sync
 when those change.
 
-Last updated: 2026-09-19 (API-only frontend, dashboard + CSRF session).
+Last updated: 2026-10-07 (Cross-site session cookie: SameSite=None+Secure in production).
 
 ---
 
 ## What we are building
 
-Spotboard is a **peer-to-peer ad-space marketplace**. Anyone lists a surface
+Adspaces is a **peer-to-peer ad-space marketplace**. Anyone lists a surface
 people see (gear, body, physical space, digital space, reach). Buyers claim
 fixed-price spots or bid in auctions. Crypto is the reason it works globally
 (cheap, fast payouts). Tokenization is explicitly out of scope for now.
@@ -20,11 +20,11 @@ The thesis comes from Josip Volarević’s Colosseum/Alliance ask
 ([thread](https://x.com/JosipVolarevic2/status/2096935262743900240)): the
 behavior already exists — Solana sold logo space for Nepal flood relief,
 people sell X banners, TikTokers sell forehead space — but every campaign
-is a custom one-off site. Spotboard is the one marketplace so they don’t
+is a custom one-off site. Adspaces is the one marketplace so they don’t
 have to ship their own.
 
 **One-line pitch:** people already sell ad space on suitcases, bikes,
-laptops, and bodies; Spotboard is the marketplace for that.
+laptops, and bodies; Adspaces is the marketplace for that.
 
 ---
 
@@ -52,22 +52,28 @@ Shared pattern in every campaign:
 
 ## Current status (honest)
 
-Working **demo marketplace**, not a payments product.
+Working **devnet marketplace**: purchases and payouts move devnet USDC
+through the on-chain program when the backend is configured for chain
+(`SOLANA_RPC_URL` + reviewer keypair); without that config the same
+routes fall back to marking spots.
 
 | Have | Don’t have yet |
 |---|---|
-| List / browse / claim / bid | Real money (USDC on Solana, or Stripe like Marc) |
-| Two pricing modes, including `doubleUp` | Escrow, refunds on outbid, seller payouts |
-| Postgres persistence for users, sessions, listings, spots, claims, and bids | Image upload, real mockup editor |
-| X identity via Privy (session + CSRF for mutations) | Wallet login, on-chain verification |
-| Generic photo-grid / overlay mockup | Vincent-style sticker overlay editor, Marc-style 3D body |
-| Seller dashboard with approve / reject / fulfill | Artwork intake, proof uploads, buyer notifications |
+| List / browse / claim / bid | Mainnet money, Stripe rail (like Marc) |
+| Two pricing modes, including `doubleUp` | Escrow, refunds on outbid |
+| Devnet USDC claim/bid/settlement via chain executors | Image upload, real mockup editor |
+| Postgres persistence for users, sessions, listings, spots, claims, and bids | Wallet login, mainnet verification |
+| X identity via Privy (session + CSRF for mutations) | Vincent-style sticker overlay editor, Marc-style 3D body |
+| Generic photo-grid / overlay mockup | Buyer notifications |
+| Seller dashboard with approve / reject / fulfill | Sponsor-side payments UI, role switching after the fact |
+| Creator/sponsor roles at login + role-split `/dashboard` |  |
 
-Money is mock. Claims and bids mark spots. `txSignature` is accepted and
-logged as a Solana hook; nothing is verified on-chain. Stripe and Solana
-packages sit in the frontend unused.
+Claims/bids run the on-chain executor first when configured (devnet USDC
+moves), then record the purchase in Postgres; settlement, refunds, and
+dispute resolution follow the same pattern. Stripe and escrow are still
+out of scope.
 
-Next layer (from `README.md`): **image workflow + Stripe/crypto**. The HTTP
+Next layer: **mainnet + object storage**. The HTTP
 contract is meant to stay stable.
 
 ---
@@ -75,7 +81,7 @@ contract is meant to stay stable.
 ## Repo layout
 
 ```
-spotboard/
+adspaces/
   README.md              product + local-dev
   CONTRACT.md            API contract both sides code against
   CONTEXT.md             this file (temporary)
@@ -99,7 +105,7 @@ browser
   └── Next.js (Privy X OAuth → access token)
         ├── GET  /api/listings, /api/listings/:slug     (public)
         └── POST /api/auth/session  Bearer <Privy access token>
-              └── Express verifies token, Set-Cookie: spotboard_sid
+              └── Express verifies token, Set-Cookie: adspaces_sid
                     ├── GET  /api/auth/me
                     └── POST /api/listings, /api/spots/:id/claim|bid
                           identity = session handle, never the request body
@@ -119,7 +125,8 @@ send the session cookie plus the CSRF token issued at login.
 | `/browse` | Search + surface filter over all listings |
 | `/list` | Create a listing (spots, fixed vs auction) |
 | `/listings/[id]` | Detail: spec sheet, claim/bid modal, bid feed |
-| `/dashboard` | Seller view: listings, pending approvals, fulfill |
+| `/dashboard` | Role-split: creators get the seller view, sponsors the buyer view |
+| `/[handle]` | Seller profile: X avatar, verified badge, bio, owner edit + onboarding nudge, listings grid |
 
 `id` in the URL is the listing **slug**.
 
@@ -153,7 +160,7 @@ survive restarts. The in-memory store remains only as the test/demo adapter.
 
 ---
 
-## API contract (v1, mock money)
+## API contract (v1, devnet USDC)
 
 Full spec: `CONTRACT.md`. Summary:
 
@@ -169,7 +176,10 @@ Full spec: `CONTRACT.md`. Summary:
 | POST | `/api/spots/{id}/claim` | Fixed-price only. 409 on auction or already taken. |
 | POST | `/api/spots/{id}/bid` | Auction only. Must beat current by `minIncrement`, or double if `doubleUp`. |
 
+| GET | `/api/users/{handle}` | Public `Profile` (payout wallet owner-only, 404 if unknown) |
+| PATCH | `/api/users/me` | Owner-only bio/payout-wallet edit |
 | GET | `/api/seller/dashboard` | Seller view: listings + pending approvals |
+| GET | `/api/sponsor/dashboard` | Sponsor view: my spots, artwork due, delivery to verify |
 | PATCH | `/api/listings/{slug}` | Owner-only title/story edit |
 | POST | `/api/spots/{id}/approve` | Owner approves a claimed spot → `sold` |
 | POST | `/api/spots/{id}/reject` | Owner reopens a claimed spot |
@@ -177,6 +187,8 @@ Full spec: `CONTRACT.md`. Summary:
 
 Errors: `{ "error": string }`. List/claim/bid require the session cookie;
 mutating calls additionally require the `X-CSRF-Token` issued at login.
+A valid Privy Bearer with no session cookie is a 401 (log in again), never
+a 403 — retrying CSRF without a session cannot succeed.
 Identity is always the session user — never the request body. Ownership
 checks compare stable user IDs, not X handles.
 
@@ -216,10 +228,12 @@ Bid { bidder, amount, at }
 ```
 
 UI listings add `mockup.views` (photo overlay coordinates or a 12-col grid).
-Backend listings have no mockup yet — the adapter lays spots on a simple
-grid, or a photo view if `image` is a real URL. The backend starts empty
-(no seed images); the frontend treats missing images as a grid. Vincent’s
-MacBook photos (`frontend/public/mac/`) were removed with the demo seed.
+Backend listings have no mockup yet — the frontend adapter lays gear
+listings out as stickers on the MacBook lid photo (`public/mac/macbook.png`,
+layout in `gearPhotoView`, price captioned under each sticker), with the
+open shot (`macbook-open.png`) as the card hero and `mac-inside.png` as a
+read-only “MacBook inside” tab. Other surfaces keep the 12-col grid, and the
+backend still starts empty (no seed images).
 
 Surface keys used by the list form: `gear`, `body`, `physical`, `digital`,
 `reach`. There are no seed listings left to mismatch — user-created
@@ -232,7 +246,7 @@ listings store the key directly, so the browse filter matches.
 - **Provider:** Privy is the X IdP in the browser. The **API owns the
   session**. After OAuth, the frontend POSTs the access token to
   `/api/auth/session`; the API verifies it with the App Secret and sets
-  an httpOnly `spotboard_sid` cookie. List/claim/bid require that session.
+  an httpOnly `adspaces_sid` cookie. List/claim/bid require that session.
 - **Frontend:** `NEXT_PUBLIC_PRIVY_APP_ID`. Login uses
   `useLoginWithOAuth({ provider: 'twitter' })`. Wallets are off.
 - **Backend:** `PRIVY_APP_ID` + `PRIVY_APP_SECRET` (secret never in the
@@ -264,7 +278,7 @@ Stripe can exist as a parallel rail; do not make it the only path.
 
 ## Design tokens
 
-Warm off-white, serif display, one accent.
+Warm off-white, Inter sans everywhere, one accent.
 
 | Token | Value |
 |---|---|
@@ -273,12 +287,14 @@ Warm off-white, serif display, one accent.
 | Muted | `#64748b` |
 | Border | `#e7e5e0` |
 | Accent | `#4166fb` |
-| Display font | Hedvig Letters Serif |
-| Body font | Inter |
-| Mono | Roboto Mono |
+| Display font | Inter (Apple stack fallback) |
+| Body font | Inter (Apple stack fallback) |
+| Mono | Inter (Apple stack fallback — no monospace) |
 
-Hero is a dark radial gradient (teal/pink/blue) used only on `/`. Do not
-spread that treatment to browse/list/detail.
+Hero sits on the plain page bg (no gradient since 2026-09-30) with ink type
+and a deep-mint italic accent (`#059669` — the `#28e7b5` mint fails
+contrast on light). The dark gradient + grid treatment is retired, not
+resting — do not reintroduce it elsewhere.
 
 Copy voice: short, concrete, no marketplace jargon. Demo disclaimers stay
 visible until real money ships (FAQ, footer, claim modal).
@@ -301,8 +317,8 @@ commit `.env`.
 Docker (backend only):
 
 ```sh
-docker build -t spotboard-api ./backend
-docker run -p 8080:8080 spotboard-api
+docker build -t adspaces-api ./backend
+docker run -p 8080:8080 adspaces-api
 ```
 
 ---
@@ -312,7 +328,7 @@ docker run -p 8080:8080 spotboard-api
 1. **Generalize the four demos, don’t clone one of them.** Modes and rules
    exist because vana/winny/Vincent/Marc already ran. New modes need a
    real campaign.
-2. **Mock money first, contract stable.** Persistence and payments swap
+2. **Devnet money first, contract stable.** Persistence and payments swap
    behind the same HTTP shapes.
 3. **Split frontend/backend deploys.** Vercel + Docker. CORS via
    `FRONTEND_URL` (open `*` in local default).
@@ -326,13 +342,339 @@ docker run -p 8080:8080 spotboard-api
 8. **API-first mutations, local fallback only on network failure.** Do not
    swallow 409s — “already taken” must reach the UI.
 9. **Seller approval / escrow / fulfillment are later.** Homepage copy
-   currently over-claims (“you approve every claim”, “Spotboard does not
+   currently over-claims (“you approve every claim”, “Adspaces does not
    hold your money”) relative to the code. Treat that as aspirational
    until it is true.
 10. **API-only frontend, no demo seed (2026-09-19).** Reverses 7–8: the
     in-memory store ships empty (test adapter only), production uses
     Postgres, and the frontend shows an empty state instead of a local
     seed/localStorage fallback. Mutations throw instead of falling back.
+11. **Gear mockup = MacBook lid photo with stick-on spots (2026-09-23).**
+    `gearPhotoView` places spots on `public/mac/macbook.png` at preset %
+    slots (`MAC_LID_SLOTS`), spread per spot count and clear of the Apple
+   logo, with the label + price captioned under each sticker. Stickers
+   shrink as rows stack (18% one row, 13% stacked) so caption + tile stay
+   in their lane down to phone widths. Cards use `macbook-open.png`.
+   Two states only — open (dashed) or taken (seller colour) — no
+   paid/unpaid badges, no drag-and-drop placement (that is gap 1 below).
+12. **Sticker place / move / resize / remove in the list-form preview (2026-09-23).**
+    The `Preview` panel on `/list` is an editor, still preview-only —
+    publishing lays spots out automatically, since the API has no mockup
+    column yet. Clicking bare lid drops a spot at that point; dragging a
+    sticker (or arrow keys / shift-arrow on it) moves it; dragging the
+    corner handle (or ←/→ on the handle, shift for bigger steps) resizes
+    it, and double-clicking the handle drops back to the auto width.
+    `LidPlacement` is now `{ x?, y?, w? }`: an omitted field falls back to
+    the auto slot/width, so a sticker can be moved without resizing it and
+    vice versa. Width is clamped to 6–34% (`clampStickerWidth`) and the
+    position is re-clamped against the new width so sticker + caption stay
+    on the lid. Hovering a sticker also reveals a small × on its top
+    corner (always visible on touch, where there is no hover, and
+    Delete/Backspace works on a focused sticker) that drops that spot and
+    its row above; it hides once the listing is down to one spot, matching
+    the row button. Buyer pages never get the editor props, so they stay
+    read-only. This closes the “drag-and-drop placement” half of gap 1;
+    image upload and persisting the layout server-side are still open.
+13. **“MacBook inside” is a read-only reference tab (2026-09-23).** Gear
+    spec sheets carry two views: “MacBook lid” (the sticker surface, from
+    `gearPhotoView`) and “MacBook inside” (`mac-inside.png`, a top-down
+    flat-lay of the keyboard deck, from `gearInsideView`). The inside view
+    has no `spots` list, so no stickers land on it and `SpecSheet` keeps
+    the seller editor off it (`editing = !!onPlaceSpot && !!active.spots`):
+    a click there cannot drop a lid-relative sticker onto another photo.
+    Its footer swaps the claimed count for “stickers live on the lid”. The
+    tab strip only renders when `views.length > 1`, so single-view listings
+    (a listing with its own photo, or a 12-col grid) are unchanged. Both the
+    `/list` preview and `apiListingToUi` build their views through the same
+    two factories, so buyer pages get the inside tab too. The inside shot is
+    a 1.5 MB PNG — compress it to WebP (as `macbook-open.png` was) before
+    real traffic. `frontend/public/mac/` was untracked until now, so the
+    in-use lid and hero shots 404’d on a fresh clone; all three are tracked.
+14. **Spot `view` persisted: lid/inside placement survives publish (2026-09-25).**
+    Reverses the second half of 13: the inside view is a real sticker
+    surface for buyers too, not a reference tab. New `Spot.view`
+    (`"lid"` | `"inside"`, omitted → `"lid"`) in `CONTRACT.md`,
+    `backend/src/types.ts`, Postgres (`spots.view`, backfilled `"lid"`),
+    the in-memory store, and `frontend/src/lib/types.ts`. `/list`
+    publishes each spot with its view and `apiListingToUi` partitions lid
+    vs deck spots into the two     views. Listings published before this change
+    keep all spots on the lid — republish to move stickers inside.
+15. **Editor pins positions; nothing teleports (2026-09-26).** Adding the
+    2nd sticker used to re-run the per-count auto layout, yanking placed
+    stickers to new slots. Now `pinDraftPositions` freezes every unpinned
+    draft at its current slot whenever a sticker is added or removed;
+    click-drops land at the cursor, toolbar adds take the emptiest preset
+    slot (`freeSlotOnView`), width stays auto until hand-resized. Pinned
+    x/y publish through the existing columns, so the buyer layout is the
+    seller layout, exactly.
+16. **T-shirt category with a 3D buyer view (2026-09-26).** New `apparel`
+    surface beside `gear`; the Mac flow is untouched. Sellers pick
+    MacBook lid vs T-shirt on `/list`: the tee editor reuses the `SpecSheet`
+    click/drag/resize treatment on flat front/back photos
+    (`public/tee/tee-front.svg`, `tee-back.svg`, views `"tee-front"` /
+    `"tee-back"`, chest-first preset slots, wider auto widths for print
+    zones). Buyers get `TeeViewer` (three.js + OrbitControls, SSR-off):
+    orbit/zoom, white/black fabric dots, front/side/back presets, spin
+    toggle, and tap-a-zone claim/bid with buyer logos as canvas textures.
+    `Spot.view` allowlist grew to lid/inside/tee-front/tee-back in
+    `CONTRACT.md`, `backend/src/types.ts`, `store.ts`, `market.ts`
+    (unknown → `"lid"`, as before), and `frontend/src/lib/types.ts` +
+    `listings.ts`. Tee listings skip the `mac-N` short key and redirect to
+    `/listings/[slug]` after publish; browse filter and cards pick the new
+    surface up automatically.
+17. **Tee colors (2026-09-26).** Sellers pick one of five fabric swatches on
+    `/list` (white/black/navy/forest/sand); it tints the flat preview via a
+    shirt-masked multiply overlay in `SpecSheet`, persists as `Listing.fabric`
+    (`#rrggbb`, anything else → `#f6f6f7`, in `CONTRACT.md`, both backend
+    repos sharing the identical rule, and `ApiListing`), and loads as the
+    buyer 3D default — buyers can still switch swatches live (preview-only).
+    Browse cards keep the white flat art.
+18. **Avatar fitting-room mode (2026-09-26).** The 3D viewer has a Tee/Avatar
+    toggle; Avatar arms once `frontend/public/tee/avatar.glb` exists
+    (auto-detected, procedural tee stays the fallback). Any full-body file
+    works — it is normalized to scene height with feet on the floor — and
+    materials with TeeFabric/shirt in the name follow the fabric swatches.
+    Print zones pin to chest constants (`AVATAR_CHEST_Z`), retune when the
+    real file lands. Easiest path to a file: readyplayer.me full-body
+    avatar → download `.glb` → rename to `avatar.glb`.
+    Landed 2026-09-26: `summonn_boy_avatar.glb` (stylized boy, vertex
+    colors, dedicated `T_Shirt_REPLACE_ME` mesh, no materials). It is
+    authored Z-up, so the viewer tips it -90° about X into Y-up facing +Z,
+    normalizes height, and tints by mesh/material name match (shirt follows
+    swatches).     Chest constants measured from its accessors
+    (`AVATAR_CHEST_Z` 0.235, `AVATAR_CHEST_X` 0.55).
+    Seller side too: `/list` renders the same viewer below the flat editor
+    for tee listings (claim/bid no-ops; preview spots carry view/x/y/w).
+19. **Model-file detection must read magic bytes, not status (2026-09-26).**
+    `HEAD /tee/tshirt.glb` returns **200** with HTML — the
+    `/[handle]/[listing]` route matches any two-segment path — so the old
+    `r.ok` gate armed the GLB loader for a missing file and drei threw
+    (`<!DOCTYPE is not valid JSON`), crashing `/list`. Detection now
+    fetches `Range: bytes=0-3` and requires the `glTF` magic, and a
+    `ModelErrorBoundary` falls back to the procedural tee if a present file
+    ever fails to parse.
+20. **T-shirt/3D feature removed entirely (2026-09-26).** Reverses 16–19:
+    `TeeViewer.tsx`, `public/tee/` (`avatar.glb`, flat SVGs), the three.js
+    deps, `apparel` surface, `tee-front`/`tee-back` views, `Listing.fabric`,
+    and all seller/buyer wiring are gone from frontend and backend
+    (`CONTRACT.md` back to lid/inside). `/list` is Mac-only again. History
+    above stays as record.
+21. **Tee back without 3D (2026-09-26).** Reverses the 3D half of 16–19:
+    no `TeeViewer`, no three.js deps, no avatar, no model detection. The
+    T-shirt stays a sellable `apparel` surface with the flat front/back
+    editor, tinted preview, fabric colors, and buyer `SpecSheet` views —
+    claim/bid on the flat photos exactly like the Mac lid.
+22. **Tee model photo replaces the flat SVGs (2026-09-26).** One `Tee`
+    view on `public/tee/tee-model.png` (seller editor + buyer view);
+    `tee-front.svg` / `tee-back.svg` deleted. Legacy `tee-back` spots
+    render as front, so no contract change. No fabric tint — the shot is
+    full-bleed (skin, backdrop), not white flat art — and new tee listings
+    record `fabric` `#1b1b20` to match the black tee in the photo. Chest
+    slots re-tuned to the print box; retune once final art lands.
+23. **Four tee views — front/back/left/right model shots (2026-09-26).**
+    Supersedes the single-view half of 22: back + both side profiles join
+    the front as seller editor surfaces and buyer views, each with its own
+    preset slots. `Spot.view` allowlist grows to
+    `tee-front`/`tee-back`/`tee-left`/`tee-right` in `CONTRACT.md`,
+    both backend repos, and the frontend adapter (unknown → `"lid"`, as
+    before). Buyer pages get the same four tabs through the shared
+    factories — no buyer-side work outstanding.
+24. **Real seller profile at `/{username}` (2026-09-27, workflow Step 1).**
+    Every X login owns a profile row (created in `createSession`, so the
+    page resolves with zero listings). `Profile` is
+    `{ id, handle, displayName?, avatar?, bio, payoutWallet?, verified }`
+    in `CONTRACT.md`, both `types.ts` mirrors, and Postgres (`users.bio`,
+    `users.payout_wallet`, `users.verified`, default true = X-linked — no
+    separate KYC yet). `GET /api/users/:handle` is public and
+    case-insensitive/`@`-optional; `payoutWallet` is stripped for
+    non-owners. `PATCH /api/users/me` (session + CSRF) takes only
+    `bio` (≤280) and `payoutWallet` (empty = clear, else Solana base58
+    32–44); unknown fields ignored. The page fetches the profile first
+    and falls back to the old listings-derived display when the API 404s
+    or is down. Owner UI compares stable user IDs (`AuthSession.userId`,
+    new) and shows an incomplete-profile nudge until bio + wallet are
+    set. Wallet format is validated, ownership is not verified — that
+    lands with real payments (gap 2).
+25. **Submit listing lands as `submitted` (2026-09-27, workflow Step 2).**
+    Jev picked strand over interim-publish/auto-approve (0.99), no draft
+    state (0.30), data-URL images (0.77), guarded reopen (0.94).
+    `Listing.status` is `"active" | "submitted" | "closed"` in `CONTRACT.md`,
+    both `types.ts` mirrors, Postgres (CHECK migrated), and the in-memory
+    store. `POST /api/listings` creates `submitted` (hidden from summaries
+    and claim/bid, owner-visible via dashboard + direct link); closing
+    withdraws from any status; reopen resubmits (`closed` → `submitted`,
+    `submitted` → 409, `active` → no-op) so nothing self-publishes before
+    platform review (Step 3). `image` is a `data:image/*` URL ≤ ~3 MB
+    (same inline pattern as buyer logos; `express.json` raised to 4 MB),
+    client-shrunk to 1200px JPEG on `/list`, whose dialog now reads
+    “Submit for review” and lands on `/dashboard` (Submitted badge +
+    Close/Delete, closed rows offer Resubmit). Submissions stay PATCH-editable
+    while pending. Buyer happy-path HTTP coverage is thin until review can
+    activate listings — purchase/authz tests assert the strand (409s) meanwhile.
+26. **Platform review with allowlist (2026-09-27, workflow Step 3).**
+    No admin system: reviewers are named in `PLATFORM_REVIEWERS`
+    (handles or stable user IDs, IDs survive renames; empty = no
+    reviewers). `GET /api/review/queue` + `POST
+    /api/listings/:slug/approve|reject` are session + CSRF + reviewer
+    gated (401/403 otherwise; 404 unknown, 409 not-submitted). Approve →
+    `active` (summaries, claim/bid work again); reject → `closed` with a
+    `reviewNote` (≤500) surfaced on the seller dashboard and cleared on
+    approve/resubmit. Self-approval allowed until RBAC. Buyer happy-path
+    HTTP coverage is restored via approval in the tests (25 pass). The
+    operator sets `PLATFORM_REVIEWERS=@you` (see `backend/.env.example`);
+    reviewers work the `/review` page (`review` added to the profile
+    `RESERVED` set so the route can't collide with a username).
+27. **Accept terms goes live (2026-09-27, workflow Step 4).**
+    Jev picked per-listing acceptance (1.0), a distinct `approved` state
+    (0.87), and version pinning (0.92). `GET /api/terms` serves the
+    versioned doc (`TERMS_VERSION = "v1"`, short demo terms in
+    `backend/src/types.ts`); reviewer approval now lands `submitted` →
+    `approved` (still hidden, unbuyable). Owners activate with `POST
+    /api/listings/:slug/accept-terms` (`{ version }` must equal current,
+    else 400; non-approved → 409; non-owner → 403; live → no-op),
+    recording `termsVersion` + `termsAcceptedAt` and flipping `active`.
+    Reopening an `approved` listing resubmits it. The dashboard shows an
+    Approved badge with a Review-terms modal (Accept & go live); the
+    `/list` dialog notes terms follow approval. Buyer happy-path tests
+    now run approve → accept → claim/bid (28 pass).
+28. **Lazy deadline enforcement (2026-09-27, workflow Step 5).**
+    Jev picked lazy over scheduler/ended-status (0.99), resolving direct
+    links (0.89), artwork display-only until intake (0.15), no deadline
+    extension (0.42). No migration, no new status: Postgres summaries
+    exclude past-deadline actives (`AND l.deadline > now()`), claim/bid
+    409 with `listing has ended` (explicit check in `placeBid`, diagnostic
+    on claim's failure path), direct links still resolve. `artworkClose`
+    stays display-only — intake enforcement lands in Step 7. Deadlines
+    can't be extended; close and relist. UI: `isEnded()` helper gates
+    browse/landing/profile grids, Ended badges on cards/detail/dashboard
+    (dashboard rows carry `deadline` now), detail disables claim/bid with
+    an ended notice. Tests use a 1s deadline + sleep (31 pass, including
+    accept-past-deadline → 409 close-and-relist). Follow-up fixes Jev
+    surfaced: dashboard `activeListings` counts only live listings (not
+    ended actives), and `acceptTerms` refuses past-deadline approvals.
+    Fixed alongside: the client store exposes `refresh()` (dashboard calls
+    it after mutations — accepting terms used to land on a 404 detail page)
+    and `GET /api/review/queue` dropped its CSRF gate (reads need the
+    session only). Also fixed: session-less Bearer mutations now 401
+    ("log out and log in again") instead of a misleading 403.
+29. **Artwork intake (2026-09-27, workflow Step 7).**
+    Jev picked sold-only intake (1.0), a real optional date for
+    `artworkClose` (0.89), and replace-in-place storage (0.93). `POST
+    /api/spots/:id/artwork` (buyer + CSRF) takes the same assets (no
+    client shrink, at least one required): sold spots only (409),
+    buyer-only (403), locked after `artworkClose` (409). It replaces
+    `website`/`logoUrl` in place and stamps `artworkSubmittedAt`, which
+    the seller dashboard reads as awaiting-artwork vs artwork-in.
+    `artworkClose` is validated date-or-empty at create (was free text)
+    with a new optional due-date input on `/list`. Buyers upload from
+    the detail page (sold own spots); reminders are UI surfacing only.
+    Tests: new `artwork-intake.test.ts` (35 pass).
+30. **Deliver gated on artwork (2026-09-27, workflow Step 8).**
+    Jev picked the fulfill gate (0.85), gate-only scope (0.81), and buyer
+    receipt (0.80). `fulfill` now requires intake art or the purchase-time
+    logo (else 409 `awaiting artwork`, diagnosed on the failure path) —
+    no new columns, no new endpoints. `fulfilledAt` passes through to the
+    UI: buyers see a DELIVERED marker on own fulfilled spots (artwork
+    controls hide once delivered).     Tests: gate cases in
+    `artwork-intake.test.ts` (36 pass).
+31. **Logo required at purchase; fulfill ungated (2026-09-27).**
+    Simplification the seller asked for: Jev agreed (0.77) that
+    requiring `logoUrl` on claim/bid beats optional-logo plus gated
+    fulfill — every sold spot carries art by construction, no stuck
+    "awaiting artwork" states. `fulfill` is unconditional on sold again;
+    intake stays as an optional art replace (0.84). The buy modal marks
+    the logo required and blocks submit without one; the dashboard nag
+    is gone (quiet Artwork-in marker remains).
+32. **Upload proof (2026-09-27, workflow Step 9).**
+    Jev: required for honest payout (0.66), spot-fields shape (0.97),
+    seller-only (0.91). `POST /api/spots/:id/proof`
+    (`{ photos[1..5], postUrl? }`, seller + CSRF): photos are
+    `data:image/*` ≤3 MB, post must be an X link; fulfilled spots only
+    (409 — fulfill first), seller-only (403), replaces the set. Stored
+    as `proof_photos text[]` + `proof_post` (Postgres) and on the Spot
+    in memory; surfaced on the detail page gallery and in `get`.
+    Dashboard attention keeps fulfilled-without-proof rows as
+    `delivered` (new attention status) with an Upload-proof link; proof
+    clears the cue. Detail page carries the seller upload form (pending
+    spots) and the buyer gallery. Tests: new `proof.test.ts` (39 pass).
+33. **Review period: confirm/dispute (2026-09-27).**
+    Jev: required before payout (0.81), confirm-or-timeout shape (1.0),
+    3-day window (0.99). No scheduler: `POST
+    /api/spots/:id/confirm|dispute|withdraw` are buyer-only (403),
+    fulfilled-only (409). Confirm is idempotent early release; dispute
+    carries an optional reason (≤500, replaced on repeat, blocked once
+    confirmed — confirm first also blocks disputing); withdraw lifts it.
+    `payoutReleased` (shared helper both sides) = undisputed AND
+    (confirmed OR window elapsed), enforced by payout next. Disputes
+    surface in seller attention (`disputed` status + reason). Buyer
+    controls live on own fulfilled rows (Confirm / Dispute w/ reason /
+    Withdraw, days-left, Released marker); no email rail. Tests: new
+    `review-window.test.ts` (42 pass).
+34. **Get paid: manual USDC + verify (2026-09-27).**
+    No custody, no escrow, no Stripe yet: the reviewer moves real USDC
+    from their own wallet and pastes the tx signature as the pay
+    `reference`. Sig-like refs verify amount + destination + USDC mint
+    (mainnet `EPjFW…`, devnet/testnet `4zMM…`, overridable via
+    `USDC_MINT`) against `SOLANA_RPC_URL` (`getTransaction`,
+    jsonParsed); `PAYOUT_REQUIRE_ONCHAIN=1` makes sig + verification
+    mandatory (memos 400). `PLATFORM_FEE_BPS` stays 0 default;
+    `payoutWallet` stays format-validated. Same HTTP shapes — the
+    contract rule text changed, endpoints didn't. Frontend parity fixed
+    too: `ApiSpot`/dashboard types carry the payout record, `/review`
+    has a payouts ops section, buyers see PAID (explorer link) on own
+    spots, dashboard shows Paid out. Tests: `payout-verify.test.ts`
+    (sig/mint/explorer, lenient-vs-strict, stubbed-RPC credit checks);
+    `payout.test.ts` helper fixed to approve via the reviewer
+    (50 pass, 0 fail).
+
+35. **Roles: creator | sponsor (2026-09-29/30).** Two account types,
+    chosen once right after the profile step so the dashboard can branch
+    later. New nullable `users.onboarding` jsonb, written by
+    `PUT /api/users/me/onboarding` (session + CSRF) and echoed as
+    `onboarding` on `/api/auth/me` + the session response; `null` until
+    chosen. Creators give at least one social (x/instagram/youtube/tiktok),
+    sponsors a brand name from a fixed category list + optional http(s)
+    site. Validation lives in `parseOnboarding` (`db.ts`) — server-side,
+    so the memory adapter and Postgres agree; tests in
+    `backend/test/onboarding.test.ts`. The form is a client-side modal in
+    `AuthSessionProvider` (no route, no skip).
+    `/dashboard` then splits on `useAuthSession().accountType`: creators
+    (and users with no role yet) keep the seller view, sponsors get
+    `SponsorDashboardView` backed by the new buyer-side
+    `GET /api/sponsor/dashboard` (`SponsorDashboard` in
+    `backend/src/types.ts`, implemented for Postgres and the memory
+    store alike). Buyer status is derived server-side:
+    `pending → sold → delivered → paid`, plus `disputed` and `refunded`
+    (outbid or refunded; the amount shown is the sponsor's own highest
+    bid, not the current price). Postgres reassigns `buyer_user_id` /
+    `buyer_handle` on an outbid takeover, so the buyer query matches
+    `buyer_user_id` **or** an existing row in `bids` — that is why the
+    same user can still see a `refunded` row. One pre-existing Postgres
+    bug fixed on the way: `submitProof` selected an unqualified `status`
+    from `spots JOIN listings` (`42702 ambiguous column`) — the proof
+    upload path never worked against Postgres, only against the memory
+    store the tests use.
+37. **Cross-site session cookie (2026-10-07).** Deployed frontend
+    (workers.dev) and API (onrender) are cross-site, and browsers never send
+    `SameSite=Lax` cookies on cross-site fetch — every mutation arrived
+    cookieless, `attachUser` minted a throwaway Bearer session per request,
+    and CSRF failed 100% ("invalid CSRF token" on onboarding). Production
+    now defaults to `SameSite=None; Secure` (`SESSION_COOKIE_SAMESITE`
+    override, `lax` still the local default); deploy needs `TRUST_PROXY=1`.
+    Frontend hardens the same symptom class: mutating calls retry once
+    after a session refresh on 403-CSRF, and concurrent `exchange()` calls
+    share one in-flight request so cookie/CSRF can't desync.
+36. **Devnet USDC claim/bid/settlement via chain executors (2026-09-30).**
+    Revises 34: purchases and payouts move devnet USDC through the
+    on-chain program when the backend is configured for chain
+    (`SOLANA_RPC_URL` + reviewer keypair — `PrivyFixedClaimExecutor`,
+    `PrivyAuctionBidExecutor`, `ProgramSettlementExecutor`, plus
+    refund/dispute/proof/close executors in `backend/src/server.ts`).
+    The executors run first inside the same unversioned routes, then the
+    Postgres write records the result — HTTP shapes unchanged. Without
+    that config the same routes fall back to marking spots (local dev,
+    tests). `CONTRACT.md` header is now "devnet USDC" and frontend mock
+    copy is gone; mainnet + escrow + Stripe are still out of scope.
 
 ---
 
@@ -340,9 +682,12 @@ docker run -p 8080:8080 spotboard-api
 
 Rough priority, not a commitment:
 
-1. Image upload + a real mockup editor (place spots on a photo).
-2. Real payments: Solana USDC (and/or Stripe), verify `txSignature`,
-   refunds on outbid for `doubleUp` auctions.
+1. Image upload + persisting a hand-placed sticker layout (the `/list`
+   preview already lets a seller drop, move, and resize stickers, but the
+   layout is preview-only — the API has no mockup column).
+2. Real payments, continued: escrow, Stripe rail, mainnet cutover, refunds
+   on outbid for `doubleUp` auctions. Devnet USDC claim/bid/settlement via
+   chain executors already shipped (decision 34 revised below).
 3. Artwork intake, proof uploads, and buyer notifications.
 4. Wallet login via Privy once money moves.
 5. Listing pause/close controls and richer seller reporting.

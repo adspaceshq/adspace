@@ -1,4 +1,4 @@
-import { PrivyClient } from "@privy-io/node";
+import { PrivyClient, type VerifyAccessTokenResponse } from "@privy-io/node";
 import type { AuthenticatedIdentity } from "./types.js";
 
 const appId = process.env.PRIVY_APP_ID ?? "";
@@ -8,14 +8,23 @@ export const privyConfigured = Boolean(appId && appSecret);
 
 export const privy = privyConfigured ? new PrivyClient({ appId, appSecret }) : null;
 
-const COOKIE = "adspaces_sid";
-export const sessionCookieName = COOKIE;
-
 export function cookieOptions() {
+  // Deployed the API (onrender) and the frontend (workers.dev) are cross-site,
+  // and browsers never attach SameSite=Lax cookies to cross-site fetch — every
+  // mutation then arrives cookieless and fails CSRF. SameSite=None (Secure) is
+  // sent cross-site and also works same-site, so it is the production default.
+  const raw = (process.env.SESSION_COOKIE_SAMESITE ?? "").trim().toLowerCase();
+  const sameSite: "none" | "lax" | "strict" =
+    raw === "none" || raw === "lax" || raw === "strict"
+      ? raw
+      : process.env.NODE_ENV === "production"
+        ? "none"
+        : "lax";
   return {
     httpOnly: true,
-    sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    sameSite,
+    // SameSite=None is rejected by browsers without Secure.
+    secure: sameSite === "none" ? true : process.env.NODE_ENV === "production",
     path: "/",
     maxAge: Number(process.env.SESSION_TTL_HOURS ?? 168) * 60 * 60 * 1000,
   };
@@ -40,6 +49,12 @@ type Linked = {
   profilePictureUrl?: string | null;
   pfp?: string | null;
   subject?: string | null;
+  address?: string | null;
+  email?: string | null;
+  chain_type?: string | null;
+  chainType?: string | null;
+  wallet_client_type?: string | null;
+  walletClientType?: string | null;
 };
 
 function isXAccount(type: string | undefined): boolean {
@@ -80,18 +95,40 @@ function xFromPrivyUser(u: {
   return xFromAccounts(u.linked_accounts ?? u.linkedAccounts);
 }
 
-/** Verify a Privy access token and load the X profile from a verified Privy user. */
+function accountDetails(accounts: Linked[] | undefined): { email?: string; walletAddress?: string } {
+  const emailAccount = (accounts ?? []).find((account) =>
+    (account.type ?? "").toLowerCase().includes("email"),
+  );
+  const solanaWallet = (accounts ?? []).find((account) => {
+    const type = (account.type ?? "").toLowerCase();
+    const chain = (account.chain_type ?? account.chainType ?? "").toLowerCase();
+    const client = (account.wallet_client_type ?? account.walletClientType ?? "").toLowerCase();
+    return type.includes("wallet") && chain === "solana" && client === "privy" && account.address;
+  });
+  return {
+    email: emailAccount?.address ?? emailAccount?.email ?? undefined,
+    walletAddress: solanaWallet?.address ?? undefined,
+  };
+}
+
+/** Verify a Privy access token and load its linked identity and Solana wallet. */
 export async function userFromAccessToken(
   token: string,
   identityToken?: string,
 ): Promise<AuthenticatedIdentity> {
   if (!privy) throw Object.assign(new Error("privy not configured on the API"), { status: 503 });
 
-  const claims = await privy.utils().auth().verifyAccessToken(token);
+  let claims: VerifyAccessTokenResponse;
+  try {
+    claims = await privy.utils().auth().verifyAccessToken(token);
+  } catch {
+    throw Object.assign(new Error("Privy session expired — log in again"), { status: 401 });
+  }
   const did = claims.user_id ?? "";
   if (!did) throw Object.assign(new Error("invalid token claims"), { status: 401 });
 
   let profile: { username?: string; name?: string; avatar?: string; subject?: string } = {};
+  let details: { email?: string; walletAddress?: string } = {};
 
   if (identityToken) {
     try {
@@ -102,6 +139,7 @@ export async function userFromAccessToken(
         });
       }
       profile = xFromPrivyUser(fromId);
+      details = accountDetails(fromId.linked_accounts);
     } catch (e) {
       if ((e as { status?: number }).status === 401) throw e;
       console.warn("privy identity token:", e instanceof Error ? e.message : e);
@@ -112,18 +150,10 @@ export async function userFromAccessToken(
     try {
       const user = await privy.users()._get(did);
       profile = xFromPrivyUser(user);
+      details = accountDetails(user.linked_accounts);
     } catch (e) {
       console.warn("privy users._get:", e instanceof Error ? e.message : e);
     }
-  }
-
-  if (!profile.username || !profile.subject) {
-    throw Object.assign(
-      new Error(
-        "Privy verified the session, but no stable X account identity was present. Log out, then log in with X again.",
-      ),
-      { status: 422 },
-    );
   }
 
   return {
@@ -132,5 +162,8 @@ export async function userFromAccessToken(
     handle: displayHandle(profile.username, did),
     name: profile.name,
     avatar: profile.avatar,
+    email: details.email,
+    walletAddress: details.walletAddress,
+    hasX: Boolean(profile.username && profile.subject),
   };
 }

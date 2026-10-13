@@ -1,3 +1,10 @@
 node_modules
 dist
+coverage
 .env
+.env.*
+npm-debug.log*
+Dockerfile
+.dockerignore
+test
+*.test.ts

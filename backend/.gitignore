@@ -3,3 +3,6 @@ dist
 .env
 *.crt
 *.pem
+
+# local database backups (contain personal data)
+backups/

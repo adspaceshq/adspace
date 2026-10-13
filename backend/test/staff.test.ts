@@ -1,0 +1,111 @@
+import assert from "node:assert/strict";
+import { after, before, test } from "node:test";
+import request from "supertest";
+import { createApp } from "../src/index.js";
+import { AppAuthRepository } from "../src/repositories/app-auth.js";
+import type { Db } from "../src/db/client.js";
+import { createV2Router } from "../src/v2/router.js";
+import { createTestDb } from "./helpers/db.js";
+import { eq } from "drizzle-orm";
+import { users } from "../src/db/schema.js";
+
+let db: Db;
+let close: () => Promise<void>;
+let app: ReturnType<typeof createApp>;
+let auth: AppAuthRepository;
+
+before(async () => {
+  ({ db, close } = await createTestDb());
+  auth = new AppAuthRepository(db);
+  app = createApp({
+    v2Router: createV2Router({ db, reviewers: [], admins: ["did:privy:owner_admin"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
+  });
+});
+after(async () => close());
+
+async function signIn(handle: string, options: { x?: boolean; email?: boolean } = {}) {
+  const { x = true, email = true } = options;
+  const { token, session } = await auth.createSession({
+    did: `did:privy:${handle}`,
+    ...(x ? { xUserId: `x-${handle}` } : {}),
+    handle: x ? `@${handle}` : handle,
+    hasX: x,
+    ...(email ? { email: `${handle}@example.com` } : {}),
+  });
+  return { cookie: `adspaces_v2_session=${token}`, csrf: session.csrfToken, id: session.user.id };
+}
+
+const me = async (user: { cookie: string }) => (await request(app).get("/api/v2/auth/me").set("Cookie", user.cookie)).body as { isReviewer: boolean; isAdmin: boolean };
+
+test("admins add and remove team members by handle; the grant is stored by id", async () => {
+  const owner = await signIn("owner_admin");
+  const helper = await signIn("helper_one");
+  const write = (path: string, user: typeof owner) => request(app).post(path).set("Cookie", user.cookie).set("X-CSRF-Token", user.csrf);
+
+  assert.deepEqual(await me(owner), { ...(await me(owner)), isReviewer: true, isAdmin: true });
+  assert.equal((await me(helper)).isReviewer, false);
+
+  // Non-admins can't manage the team.
+  assert.equal((await write("/api/v2/admin/team", helper).send({ handle: "@helper_one", role: "admin" })).status, 403);
+  // Unknown handles and bad roles are refused.
+  assert.equal((await write("/api/v2/admin/team", owner).send({ handle: "@nobody_here", role: "reviewer" })).status, 404);
+  assert.equal((await write("/api/v2/admin/team", owner).send({ handle: "@helper_one", role: "boss" })).status, 400);
+
+  const added = await write("/api/v2/admin/team", owner).send({ handle: "@Helper_One", role: "reviewer" });
+  assert.equal(added.status, 200);
+  const helperRow = added.body.find((row: { userId: string }) => row.userId === helper.id);
+  assert.equal(helperRow.role, "reviewer");
+  assert.equal(helperRow.grantedByHandle, "owner_admin");
+  assert.deepEqual([added.body[0].userId, added.body[0].role], [owner.id, "owner"]);
+  assert.deepEqual([(await me(helper)).isReviewer, (await me(helper)).isAdmin], [true, false]);
+  assert.equal((await request(app).get("/api/v2/review/queue").set("Cookie", helper.cookie)).status, 200);
+
+  // One role per person: a second role is refused until they're removed.
+  const duplicate = await write("/api/v2/admin/team", owner).send({ handle: "helper_one", role: "admin" });
+  assert.equal(duplicate.status, 409);
+  assert.match(duplicate.body.error, /already a reviewer/);
+  await request(app).delete(`/api/v2/admin/team/${helper.id}`).set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf);
+  await write("/api/v2/admin/team", owner).send({ handle: "helper_one", role: "admin" });
+  assert.equal((await me(helper)).isAdmin, true);
+  assert.equal((await request(app).delete(`/api/v2/admin/team/${helper.id}`).set("Cookie", helper.cookie).set("X-CSRF-Token", helper.csrf)).status, 400);
+
+  // Removal takes effect immediately.
+  const removed = await request(app).delete(`/api/v2/admin/team/${helper.id}`).set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf);
+  assert.equal(removed.status, 200);
+  assert.deepEqual(removed.body.map((row: { role: string }) => row.role), ["owner"]);
+  assert.equal((await me(helper)).isReviewer, false);
+
+  // The owner admin comes from env and is never in the team table, so it can't be removed in the app.
+  assert.equal((await me(owner)).isAdmin, true);
+});
+
+test("team roles need a linked X account and a verified email, and stop working if either is lost", async () => {
+  const owner = await signIn("owner_admin");
+  const noX = await signIn("no_x_user", { x: false });
+  const noEmail = await signIn("no_email_user", { email: false });
+  const member = await signIn("member_two");
+  const add = (handle: string) => request(app).post("/api/v2/admin/team").set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf).send({ handle, role: "reviewer" });
+
+  assert.match((await add("no_x_user")).body.error, /sign in with X/);
+  assert.match((await add("no_email_user")).body.error, /verify their email/);
+  assert.equal((await add("member_two")).status, 200);
+  assert.equal((await me(member)).isReviewer, true);
+
+  // Losing verification switches the role off without removing them.
+  await db.update(users).set({ emailVerifiedAt: null }).where(eq(users.id, member.id));
+  assert.equal((await me(member)).isReviewer, false);
+  assert.equal((await request(app).get("/api/v2/review/queue").set("Cookie", member.cookie)).status, 403);
+  assert.ok(noX && noEmail);
+});
+
+test("owners are listed, can't be added again, and can clear their own extra entry", async () => {
+  const owner = await signIn("owner_admin");
+  const added = await request(app).post("/api/v2/admin/team").set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf).send({ handle: "owner_admin", role: "reviewer" });
+  assert.match(added.body.error, /already an owner admin/);
+  // A stray row from before this check existed can be removed by the owner themselves.
+  const { staff } = await import("../src/db/schema.js");
+  await db.insert(staff).values({ userId: owner.id, role: "reviewer" }).onConflictDoNothing();
+  const cleared = await request(app).delete(`/api/v2/admin/team/${owner.id}`).set("Cookie", owner.cookie).set("X-CSRF-Token", owner.csrf);
+  assert.equal(cleared.status, 200);
+  assert.equal((await me(owner)).isAdmin, true);
+});

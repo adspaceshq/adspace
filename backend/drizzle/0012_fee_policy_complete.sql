@@ -1,0 +1,1 @@
+ALTER TABLE "app"."listings" ADD CONSTRAINT "listings_fee_policy_complete" CHECK ((fee_bps IS NULL) = (uplift_fee_bps IS NULL) AND (fee_bps IS NULL) = (max_fee_bps IS NULL));
