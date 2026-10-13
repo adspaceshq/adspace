@@ -143,7 +143,17 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
           return;
         }
       }
-      if (!(await save(current))) return;
+      if (!(await save(current))) {
+        // The save sends the whole draft, so a later step can be what the server refused (e.g. a saved
+        // draft from before a rule changed). Show that step with the error on its field.
+        const later = STEPS.slice(targetIndex).find((entry) => Object.keys(validateStep(entry.id, current)).length > 0);
+        if (later) {
+          setSaveError(undefined);
+          setErrors(validateStep(later.id, current));
+          setStep(later.id);
+        }
+        return;
+      }
     }
     setErrors({});
     setStep(target);
