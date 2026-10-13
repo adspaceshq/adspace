@@ -3,6 +3,9 @@ import type { MacPreset, MockupChoice } from "@/lib/mac-mockup";
 import { toBaseUnits, toInputValue } from "@/lib/money";
 import { normalizeView } from "@/lib/spot-views";
 
+// Smallest auction bid step, in USDC base units (6 decimals); mirrors the program's MIN_BID_INCREMENT.
+export const MIN_BID_INCREMENT = 10_000n;
+
 export interface WizardSpot {
   key: string;
   label: string;
@@ -128,7 +131,8 @@ export function validateStep(step: WizardStep, state: WizardState, now = Date.no
     if (!Number.isInteger(days) || days < 1 || days > 60) errors.deliveryDays = "1 to 60 days";
     if (state.mode === "auction" && !state.doubleUp) {
       try {
-        if (BigInt(toBaseUnits(state.minIncrement)) <= 0n) errors.minIncrement = "increment must be above zero";
+        // Same floor as the program (MIN_BID_INCREMENT): smaller steps let bidders creep up by dust.
+        if (BigInt(toBaseUnits(state.minIncrement)) < MIN_BID_INCREMENT) errors.minIncrement = "the minimum bid increment is 0.01 USDC";
       } catch {
         errors.minIncrement = "enter an amount like 1 or 0.50";
       }

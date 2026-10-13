@@ -9,6 +9,9 @@ import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import type { TxSigner } from "../chain/signers.js";
 import { notify } from "./notifications.js";
 
+// Smallest auction bid step, in USDC base units (6 decimals); mirrors the program's MIN_BID_INCREMENT.
+export const MIN_BID_INCREMENT = 10_000n;
+
 export class ListingError extends Error {
   constructor(message: string, readonly status = 400) {
     super(message);
@@ -135,6 +138,10 @@ function normalizeDraft(input: DraftInput, now: Date) {
   const minIncrement = input.mode === "auction" && !doubleUp ? (input.minIncrement ?? 0n) : 0n;
   if (input.mode === "auction" && !doubleUp && minIncrement <= 0n) {
     throw new ListingError("auctions need a minimum bid increment, or double-up bidding");
+  }
+  // The program rejects smaller steps at publish (MIN_BID_INCREMENT), so refuse them up front.
+  if (input.mode === "auction" && !doubleUp && minIncrement < MIN_BID_INCREMENT) {
+    throw new ListingError("the minimum bid increment is 0.01 USDC");
   }
   const photoIds = [...new Set(input.photoAssetIds ?? [])];
   if (photoIds.length > MAX_PHOTOS) throw new ListingError(`add at most ${MAX_PHOTOS} photos`);

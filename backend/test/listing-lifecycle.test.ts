@@ -102,6 +102,9 @@ test("drafts validate schedule, spots and auction rules", async () => {
   await assert.rejects(createDraft(db, seller.id, draftInput({ deadline: new Date(NOW.getTime() - DAY) }), NOW), /future/);
   await assert.rejects(createDraft(db, seller.id, draftInput({ spots: [] }), NOW), /spots/);
   await assert.rejects(createDraft(db, seller.id, draftInput({ mode: "auction" }), NOW), /increment/);
+  // Below the program's 0.01 USDC floor: refused before it can fail at publish.
+  await assert.rejects(createDraft(db, seller.id, draftInput({ mode: "auction", minIncrement: 9_999n }), NOW), /0\.01 USDC/);
+  await createDraft(db, seller.id, draftInput({ mode: "auction", minIncrement: 10_000n }), NOW);
   const { listing, spots: created } = await createDraft(db, seller.id, draftInput(), NOW);
   assert.equal(listing.state, "draft");
   assert.match(listing.slug, /^macbook-lid-at-token2049-[0-9a-f]{8}$/);

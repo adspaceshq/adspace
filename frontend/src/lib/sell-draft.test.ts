@@ -18,6 +18,8 @@ describe("sell draft", () => {
     expect(validateStep("basics", filled, NOW)).toEqual({});
     expect(validateStep("spots", { ...filled, spots: [{ ...filled.spots[0], price: "abc" }] }, NOW)).toHaveProperty("spot-0");
     expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0" }, NOW)).toHaveProperty("minIncrement");
+    expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0.001" }, NOW)).toHaveProperty("minIncrement");
+    expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0.01" }, NOW)).not.toHaveProperty("minIncrement");
     expect(validateStep("pricing", { ...filled, deadline: "2026-10-08T12:10" }, NOW)).toHaveProperty("deadline");
   });
 
