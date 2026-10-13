@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Plus, Store } from "lucide-react";
+import { AlertTriangle, Plus, Store, Trash2 } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { CreatorDashboard, ListingState } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
@@ -10,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
 import { SpotMockup } from "@/components/ui/SpotMockup";
@@ -28,13 +30,59 @@ const IN_PROGRESS: ListingState[] = ["draft", "in_review", "changes_requested", 
 const listingLink = (listing: CreatorListing) =>
   listing.state === "draft" || listing.state === "changes_requested" ? `/sell/drafts/${listing.id}` : `/sell/listings/${listing.id}`;
 
+// Listings that never went live can be deleted (the API refuses anything published).
+const DELETABLE: ListingState[] = ["draft", "changes_requested", "rejected"];
+
+function DeleteListingButton({ listing }: { listing: CreatorListing }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => api.listings.remove(listing.id),
+    onSuccess: () => {
+      setOpen(false);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.creatorDashboard });
+    },
+  });
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label={`delete ${listing.title}`}
+        className="absolute bottom-3 right-3 cursor-pointer rounded-full p-1.5 text-muted hover:bg-ink/5 hover:text-danger"
+      >
+        <Trash2 className="size-4" aria-hidden />
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="delete this listing?"
+        description={`"${listing.title}" and its photos and spots are removed for good. this can't be undone.`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setOpen(false)}>
+              cancel
+            </Button>
+            <Button variant="danger" loading={remove.isPending} onClick={() => remove.mutate()}>
+              delete
+            </Button>
+          </>
+        }
+      >
+        {remove.isError && <p className="text-small text-danger">{remove.error.message}</p>}
+      </Modal>
+    </>
+  );
+}
+
 function ListingTile({ listing }: { listing: CreatorListing }) {
   const cover = listing.photos?.[0]?.url;
   const escrow = listing.spots
     .filter((spot) => ["funded", "delivered", "disputed"].includes(spot.state))
     .reduce((sum, spot) => sum + BigInt(spot.amount ?? 0), 0n);
   return (
-    <Link href={listingLink(listing)} className="flex gap-4 rounded-card border border-line bg-surface p-3 shadow-card transition-colors hover:border-line-strong">
+    <div className="relative">
+    <Link href={listingLink(listing)} className="flex gap-4 rounded-card border border-line bg-surface p-3 pr-12 shadow-card transition-colors hover:border-line-strong">
       <div className="w-28 shrink-0 sm:w-36">
         {cover ? (
           <SpotMockup
@@ -67,6 +115,8 @@ function ListingTile({ listing }: { listing: CreatorListing }) {
         )}
       </div>
     </Link>
+    {DELETABLE.includes(listing.state) && <DeleteListingButton listing={listing} />}
+    </div>
   );
 }
 

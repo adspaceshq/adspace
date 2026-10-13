@@ -14,6 +14,7 @@ import {
   ListingError,
   reviewListing,
   submitForReview,
+  deleteDraft,
   updateDraft,
   validateFeePolicy,
   type DraftInput,
@@ -266,4 +267,17 @@ test("drafts can be edited until submitted, and again when changes are requested
   await reviewListing(db, reviewer.id, listing.id, { action: "request_changes", note: "show the whole lid" }, FLOOR, NOW);
   const fixed = await updateDraft(db, seller.id, listing.id, draftInput({ photoAssetIds: [photo] }), NOW);
   assert.equal(fixed.listing.state, "changes_requested");
+});
+
+test("only the owner can delete a listing, and only before it goes live", async () => {
+  const seller = await createUser();
+  const other = await createUser();
+  const { listing } = await createDraft(db, seller.id, draftInput(), NOW);
+  await assert.rejects(deleteDraft(db, other.id, listing.id));
+  await db.update(listings).set({ state: "in_review" }).where(eq(listings.id, listing.id));
+  await assert.rejects(deleteDraft(db, seller.id, listing.id), /never went live/);
+  await db.update(listings).set({ state: "draft" }).where(eq(listings.id, listing.id));
+  assert.deepEqual(await deleteDraft(db, seller.id, listing.id), { ok: true });
+  assert.equal((await db.select().from(listings).where(eq(listings.id, listing.id))).length, 0);
+  assert.equal((await db.select().from(spots).where(eq(spots.listingId, listing.id))).length, 0);
 });

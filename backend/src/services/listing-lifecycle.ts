@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import anchor from "@coral-xyz/anchor";
 import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
@@ -228,6 +228,23 @@ export async function updateDraft(db: Db, sellerId: string, listingId: string, i
     await replacePhotos(trx, listingId, sellerId, draft.photoIds);
     return { listing: updated, spots: created };
   });
+}
+
+// Listings that never went live can be deleted; their photos and spots go with them. Anything
+// published (it has an on-chain address) or in review stays, so no escrow or history is lost.
+const DELETABLE_STATES = ["draft", "changes_requested", "rejected"] as const;
+
+export async function deleteDraft(db: Db, sellerId: string, listingId: string) {
+  const listing = await loadOwned(db, listingId, sellerId);
+  if (!(DELETABLE_STATES as readonly string[]).includes(listing.state) || listing.chainAddress) {
+    throw new ListingError("only drafts and listings that never went live can be deleted", 409);
+  }
+  const [deleted] = await db
+    .delete(listings)
+    .where(and(eq(listings.id, listingId), eq(listings.sellerId, sellerId), inArray(listings.state, [...DELETABLE_STATES]), isNull(listings.chainAddress)))
+    .returning({ id: listings.id });
+  if (!deleted) throw new ListingError("listing changed; reload and try again", 409);
+  return { ok: true as const };
 }
 
 export async function submitForReview(db: Db, sellerId: string, listingId: string) {
