@@ -160,13 +160,8 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
     .where(eq(spots.buyerId, sponsorId))
     .orderBy(desc(spots.updatedAt));
   const ownedIds = owned.map((row) => row.spot.id);
-  const [spent, openDisputes, outbidRows] = await Promise.all([
-    ownedIds.length
-      ? db
-          .select({ total: sql<string>`sum(${settlements.sellerNet} + ${settlements.fee})` })
-          .from(settlements)
-          .where(inArray(settlements.spotId, ownedIds))
-      : Promise.resolve([]),
+  const listingIds = [...new Set(owned.map((row) => row.listing.id))];
+  const [openDisputes, outbidRows, photos, spotSettlements] = await Promise.all([
     ownedIds.length
       ? db.select().from(disputes).where(and(inArray(disputes.spotId, ownedIds), eq(disputes.state, "open")))
       : Promise.resolve([]),
@@ -177,7 +172,31 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
       .innerJoin(listings, eq(listings.id, spots.listingId))
       .innerJoin(users, eq(users.id, listings.sellerId))
       .where(and(eq(bids.bidderId, sponsorId), eq(spots.state, "funded"), gte(listings.deadline, now))),
+    // Each card draws the photo its spot sits on, so the listing's photos come along in order.
+    listingIds.length
+      ? db
+          .select({ listingId: listingPhotos.listingId, url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
+          .from(listingPhotos)
+          .innerJoin(mediaAssets, eq(mediaAssets.id, listingPhotos.assetId))
+          .where(inArray(listingPhotos.listingId, listingIds))
+          .orderBy(asc(listingPhotos.position))
+      : Promise.resolve([]),
+    ownedIds.length
+      ? db
+          .select({
+            spotId: settlements.spotId,
+            kind: settlements.kind,
+            gross: settlements.gross,
+            fee: settlements.fee,
+            sellerNet: settlements.sellerNet,
+            buyerRefund: settlements.buyerRefund,
+            settledAt: settlements.settledAt,
+          })
+          .from(settlements)
+          .where(inArray(settlements.spotId, ownedIds))
+      : Promise.resolve([]),
   ]);
+  const settlementBySpot = new Map(spotSettlements.map(({ spotId, ...settlement }) => [spotId, settlement]));
 
   const needsYou: NeedsYouItem[] = [];
   for (const { spot, listing, sellerHandle } of owned) {
@@ -208,7 +227,8 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
   const active = owned.filter((row) => (ACTIVE_SPOT as readonly string[]).includes(row.spot.state));
   return {
     stats: {
-      spent: sumUsdc(spent),
+      // What actually left the sponsor's wallet: the creator's share plus the fee, never the refunded part.
+      spent: spotSettlements.reduce((total, row) => total + row.sellerNet + row.fee, 0n),
       inEscrow: active.reduce((total, row) => total + (row.spot.amount ?? 0n), 0n),
       active: active.length,
       delivered: owned.filter((row) => row.spot.state === "settled").length,
@@ -224,8 +244,11 @@ export async function sponsorDashboard(db: Db, sponsorId: string, disputeTimeout
         deadline: listing.deadline,
         deliveryDueAt: listing.deliveryDueAt,
         sellerHandle,
+        photos: photos.filter((photo) => photo.listingId === listing.id).map(({ listingId: _listingId, ...photo }) => photo),
       },
       reviewUntil: spot.state === "delivered" ? payoutAvailableAt(listing) : null,
+      // Where the money went once the spot finished; null while it is still in escrow.
+      settlement: settlementBySpot.get(spot.id) ?? null,
     })),
   };
 }

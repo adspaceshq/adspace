@@ -252,8 +252,20 @@ export interface SponsorDashboard {
   needsYou: NeedsYouItem[];
   spots: Array<
     Spot & {
-      listing: { id: string; slug: string; title: string; mode: PricingMode; deadline: IsoDate; deliveryDueAt: IsoDate; sellerHandle: string };
+      listing: {
+        id: string;
+        slug: string;
+        title: string;
+        mode: PricingMode;
+        deadline: IsoDate;
+        deliveryDueAt: IsoDate;
+        sellerHandle: string;
+        // Ordered by position; the spot sits on photos[spotView(layout)].
+        photos: Array<{ url: string; width: number | null; height: number | null }>;
+      };
       reviewUntil: IsoDate | null;
+      // Set once the spot finished (paid out, refunded, or split in a dispute).
+      settlement: Pick<Settlement, "kind" | "gross" | "fee" | "sellerNet" | "buyerRefund" | "settledAt"> | null;
     }
   >;
 }

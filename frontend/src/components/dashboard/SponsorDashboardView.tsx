@@ -1,56 +1,159 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Image from "next/image";
 import Link from "next/link";
-import { AlertTriangle, Compass } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleSlash, Compass, ImageOff, RotateCcw, Scale, type LucideIcon } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import type { SponsorDashboard } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
+import { cx } from "@/lib/cx";
+import { spotView } from "@/lib/spot-views";
+import { isFinished, nextStepOf, outcomeOf, progressOf, PROGRESS_STEPS, spentOn, type SponsorSpot } from "@/lib/sponsor-spot";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
+import { SpotMockup } from "@/components/ui/SpotMockup";
 import { Stat } from "@/components/ui/Stat";
 import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { DashboardHeader } from "./DashboardHeader";
 import { NeedsYouList } from "./NeedsYouList";
 import { UserLink } from "@/components/ui/UserLink";
 
-type SponsorSpot = SponsorDashboard["spots"][number];
-
-function nextMoment(spot: SponsorSpot): { prefix: string; to: string } | null {
-  if (spot.state === "funded") return { prefix: "delivery due in", to: spot.listing.deliveryDueAt };
-  if (spot.state === "delivered" && spot.reviewUntil) return { prefix: "review closes in", to: spot.reviewUntil };
-  return null;
+// The photo this spot sits on, with only this sponsor's sticker drawn (their logo when they have one).
+function SpotThumb({ spot }: { spot: SponsorSpot }) {
+  const photos = spot.listing.photos ?? [];
+  const photo = photos[spotView(spot.layout, photos.length)];
+  if (!photo) {
+    return (
+      <div className="flex aspect-[4/3] items-center justify-center rounded-card bg-ink/5 text-subtle">
+        <ImageOff className="size-5" aria-hidden />
+      </div>
+    );
+  }
+  const logoUrl = spot.brand?.logoUrl;
+  return (
+    <SpotMockup
+      photoUrl={photo.url}
+      alt=""
+      size="thumb"
+      selectedId={spot.id}
+      // Without a logo the sticker is drawn in the highlight colour ("open" + selected) rather than the muted taken style.
+      spots={[{ id: spot.id, index: spot.index, label: spot.label, layout: spot.layout, state: logoUrl ? spot.state : "open", logoUrl }]}
+    />
+  );
 }
 
+function BrandRow({ brand }: { brand: SponsorSpot["brand"] }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2 text-small">
+      {brand?.logoUrl ? (
+        <span className="relative size-5 shrink-0 overflow-hidden rounded-md border border-line bg-surface">
+          <Image src={brand.logoUrl} alt="" fill sizes="20px" className="object-contain" />
+        </span>
+      ) : (
+        <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-ink/5 text-caption font-semibold text-muted" aria-hidden>
+          {(brand?.name ?? "?").slice(0, 1).toLowerCase()}
+        </span>
+      )}
+      <span className="truncate font-medium">{brand?.name ?? "your brand"}</span>
+    </div>
+  );
+}
+
+function Progress({ spot }: { spot: SponsorSpot }) {
+  const done = progressOf(spot);
+  const disputed = spot.state === "disputed";
+  return (
+    <ol className="grid grid-cols-3 gap-1.5" aria-label={`${done} of ${PROGRESS_STEPS.length} steps done`}>
+      {PROGRESS_STEPS.map((step, index) => {
+        const complete = index < done;
+        return (
+          <li key={step} className="flex flex-col gap-1">
+            <span
+              className={cx("h-1 rounded-full", complete ? (disputed ? "bg-warning" : "bg-accent") : "bg-ink/10")}
+              aria-hidden
+            />
+            <span className={cx("text-caption", complete ? "text-ink" : "text-subtle")}>{step}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+const OUTCOME_ICON: Record<string, LucideIcon> = {
+  payout: CheckCircle2,
+  refund: RotateCcw,
+  timeout_refund: RotateCcw,
+  dispute_split: Scale,
+};
+
+const toneText = { neutral: "text-ink", action: "text-accent", warning: "text-warning" } as const;
+const outcomeText = { neutral: "text-muted", accent: "text-accent", success: "text-success", warning: "text-warning", danger: "text-danger" } as const;
+
 function SpotCard({ spot }: { spot: SponsorSpot }) {
-  const moment = nextMoment(spot);
+  const finished = isFinished(spot);
+  const step = finished ? null : nextStepOf(spot);
+  const outcome = finished ? outcomeOf(spot) : null;
+  const spent = spentOn(spot);
+  const amount = BigInt(spot.amount ?? 0);
+  const OutcomeIcon = spot.settlement ? OUTCOME_ICON[spot.settlement.kind] : spot.state === "settled" ? CheckCircle2 : CircleSlash;
   return (
     <Link
       href={`/dashboard/spots/${spot.id}`}
-      className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4 shadow-card transition-colors hover:border-line-strong"
+      className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3 shadow-card transition-colors hover:border-line-strong"
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-body font-semibold">{spot.listing.title}</p>
+      <div className="flex gap-4">
+        <div className="w-28 shrink-0 sm:w-36">
+          <SpotThumb spot={spot} />
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-1">
+          <div className="flex items-start justify-between gap-2">
+            <p className="line-clamp-2 text-body font-semibold">{spot.listing.title}</p>
+            <SpotStateBadge state={spot.state} perspective="sponsor" />
+          </div>
           <p className="truncate text-small text-muted">
-            spot {spot.index + 1} · <UserLink handle={spot.listing.sellerHandle} nested />
+            spot {spot.index + 1}
+            {spot.label && <> · {spot.label}</>} · <UserLink handle={spot.listing.sellerHandle} nested />
+          </p>
+          <BrandRow brand={spot.brand} />
+          <p className="mt-auto text-small text-muted">
+            {finished ? (
+              <>
+                <Money value={spent} className="text-lead font-semibold text-ink" /> spent
+                {spent !== amount && amount > 0n && (
+                  <>
+                    {" "}
+                    of <Money value={amount} />
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <Money value={amount} className="text-lead font-semibold text-ink" /> in escrow
+              </>
+            )}
           </p>
         </div>
-        <SpotStateBadge state={spot.state} perspective="sponsor" />
       </div>
-      <div className="flex items-end justify-between gap-3 text-small">
-        <div>
-          <p className="text-muted">{spot.brand?.name ?? "your brand"}</p>
-          <p className="text-lead font-semibold">
-            <Money value={spot.amount} />
-          </p>
+      {step && (
+        <div className="flex flex-col gap-2.5 border-t border-line pt-3">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-small">
+            <p className={cx("font-medium", toneText[step.tone])}>{step.text}</p>
+            {step.countdown && <Countdown to={step.countdown.to} prefix={step.countdown.prefix} className="text-muted" />}
+          </div>
+          <Progress spot={spot} />
         </div>
-        {moment && <Countdown to={moment.to} prefix={moment.prefix} className="text-right font-medium" />}
-      </div>
+      )}
+      {outcome && (
+        <p className={cx("flex items-center gap-2 border-t border-line pt-3 text-small font-medium", outcomeText[outcome.tone])}>
+          <OutcomeIcon className="size-4 shrink-0" aria-hidden />
+          {outcome.text}
+        </p>
+      )}
     </Link>
   );
 }
@@ -89,7 +192,7 @@ export function SponsorDashboardView() {
           <NeedsYouList items={query.data.needsYou} emptyText="you're all caught up." />
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Card className="p-4">
-              <Stat label="spent" value={<Money value={query.data.stats.spent} />} hint="delivered campaigns" />
+              <Stat label="spent" value={<Money value={query.data.stats.spent} />} hint="net of refunds" />
             </Card>
             <Card className="p-4">
               <Stat label="in escrow" value={<Money value={query.data.stats.inEscrow} />} hint="held until delivery" />
@@ -126,16 +229,14 @@ export function SponsorDashboardView() {
   );
 }
 
-const FINISHED = new Set(["settled", "refunded", "cancelled"]);
-
 // Active spots first; finished ones (paid out, refunded, split in a dispute) stay as history, never removed.
 function SpotGroups({ spots }: { spots: SponsorSpot[] }) {
-  const active = spots.filter((spot) => !FINISHED.has(spot.state));
-  const history = spots.filter((spot) => FINISHED.has(spot.state));
+  const active = spots.filter((spot) => !isFinished(spot));
+  const history = spots.filter(isFinished);
   return (
     <div className="flex flex-col gap-6">
       {active.length > 0 ? (
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 lg:grid-cols-2">
           {active.map((spot) => (
             <SpotCard key={spot.id} spot={spot} />
           ))}
@@ -153,7 +254,7 @@ function SpotGroups({ spots }: { spots: SponsorSpot[] }) {
           <h3 className="text-body font-semibold text-muted">
             history <span className="font-normal">({history.length})</span>
           </h3>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 lg:grid-cols-2">
             {history.map((spot) => (
               <SpotCard key={spot.id} spot={spot} />
             ))}
