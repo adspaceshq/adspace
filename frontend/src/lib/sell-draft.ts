@@ -1,4 +1,5 @@
 import type { DraftInput, OwnedListing, PricingMode, SpotLayout, Surface } from "@/lib/api/types";
+import type { MacPreset, MockupChoice } from "@/lib/mac-mockup";
 import { toBaseUnits, toInputValue } from "@/lib/money";
 
 export interface WizardSpot {
@@ -11,6 +12,8 @@ export interface WizardSpot {
 export interface WizardPhoto {
   assetId: string;
   url: string;
+  // Set when the photo is an upload of a built-in mockup; kept only in the local draft.
+  preset?: MacPreset;
 }
 
 export interface WizardState {
@@ -27,6 +30,9 @@ export interface WizardState {
   doubleUp: boolean;
   deadline: string; // datetime-local value
   deliveryDays: string;
+  // Laptop only: photos from the built-in MacBook mockup or the seller's own uploads.
+  photoSource?: "mockup" | "upload";
+  mockup?: MockupChoice;
 }
 
 export type WizardStep = "basics" | "spots" | "pricing" | "preview" | "submit";
