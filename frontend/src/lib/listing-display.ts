@@ -31,8 +31,27 @@ export function priceSummary(listing: Pick<PublicListing, "mode" | "spots">): { 
   return { label: "bids from", amount: start };
 }
 
+// Spots nobody has claimed or bid on yet.
 export function spotsLeft(listing: Pick<PublicListing, "mode" | "spots">): number {
-  return listing.spots.filter((spot) => spot.state === "open" || (listing.mode === "auction" && spot.state === "funded")).length;
+  return listing.spots.filter((spot) => spot.state === "open").length;
+}
+
+// Auction spots that already have a top bid (still open to higher bids until bidding closes).
+export function spotsWithBids(listing: Pick<PublicListing, "mode" | "spots">): number {
+  return listing.mode === "auction" ? listing.spots.filter((spot) => spot.state === "funded" && spot.amount !== null).length : 0;
+}
+
+// How far the listing's current total is above its starting total, in whole percent; 0 when not above.
+// Current total = top bid (or paid amount) for spots that have one, starting price for the rest.
+export function oversubscription(listing: Pick<PublicListing, "spots">): number {
+  const live = listing.spots.filter((spot) => spot.state !== "cancelled" && spot.state !== "refunded");
+  const start = live.reduce((sum, spot) => sum + BigInt(spot.price), 0n);
+  if (start === 0n) return 0;
+  const current = live.reduce((sum, spot) => {
+    const amount = spot.amount !== null ? BigInt(spot.amount) : 0n;
+    return sum + (amount > BigInt(spot.price) ? amount : BigInt(spot.price));
+  }, 0n);
+  return Number(((current - start) * 100n) / start);
 }
 
 export function formatFollowers(count: number | undefined): string | null {
