@@ -95,6 +95,22 @@ h1, h2, h3, h4 {
   }
 }
 
+/* Scrolling panels (modal bodies): a slim, rounded scrollbar that sits inside the card. */
+@utility thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-ink) 20%, transparent) transparent;
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-ink) 20%, transparent);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
 /* Horizontal scrollers (tabs, chips, steps) stay swipeable without a visible scrollbar. */
 @utility no-scrollbar {
   scrollbar-width: none;
