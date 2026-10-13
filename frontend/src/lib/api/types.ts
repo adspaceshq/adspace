@@ -434,7 +434,7 @@ export interface ProfilePage {
 export interface BidHistory {
   spotId: string;
   bidders: number;
-  items: Array<{ id: string; amount: BaseUnits; createdAt: IsoDate; signature: string | null; bidder: string; isYou: boolean; isTop: boolean }>;
+  items: Array<{ id: string; amount: BaseUnits; createdAt: IsoDate; signature: string | null; bidder: string; profile: { handle: string; displayName: string; avatarUrl: string | null } | null; isYou: boolean; isTop: boolean }>;
 }
 
 export interface WatchItem {
