@@ -169,7 +169,7 @@ export interface MockupSpot {
   layout: { x: number; y: number; w: number; h?: number };
   taken: boolean;
   highlight?: boolean;
-  // Inlined sponsor logo, drawn on a white sticker instead of the number.
+  // Inlined sponsor logo, drawn as the sticker itself (no white backing) instead of the number.
   logo?: string | null;
 }
 
@@ -182,7 +182,7 @@ export function MockupTile({ src, width, height, spots, rotate = 0 }: { src: str
       {spots.map((spot) => {
         const w = (spot.layout.w / 100) * width;
         const h = spot.layout.h ? (spot.layout.h / 100) * height : w;
-        const fill = spot.logo ? og.surface : spot.highlight ? og.accent : spot.taken ? "rgba(2, 8, 23, 0.55)" : "rgba(255, 255, 255, 0.9)";
+        const fill = spot.logo ? "transparent" : spot.highlight ? og.accent : spot.taken ? "rgba(2, 8, 23, 0.55)" : "rgba(255, 255, 255, 0.9)";
         return (
           <div
             key={spot.index}
@@ -196,7 +196,8 @@ export function MockupTile({ src, width, height, spots, rotate = 0 }: { src: str
               alignItems: "center",
               justifyContent: "center",
               borderRadius: Math.min(14, w / 5),
-              border: `3px solid ${spot.highlight ? og.surface : spot.taken ? "rgba(2, 8, 23, 0.25)" : og.surface}`,
+              border: spot.logo ? "none" : `3px solid ${spot.highlight ? og.surface : spot.taken ? "rgba(2, 8, 23, 0.25)" : og.surface}`,
+              overflow: "hidden",
               background: fill,
               color: spot.taken || spot.highlight ? og.surface : og.ink,
               fontSize: Math.max(14, Math.min(28, w / 3)),
@@ -205,7 +206,7 @@ export function MockupTile({ src, width, height, spots, rotate = 0 }: { src: str
           >
             {spot.logo ? (
               // eslint-disable-next-line @next/next/no-img-element -- Satori renders plain img elements
-              <img src={spot.logo} width={w * 0.8} height={h * 0.8} alt="" style={{ objectFit: "contain", width: "80%", height: "80%" }} />
+              <img src={spot.logo} width={w} height={h} alt="" style={{ objectFit: "contain", width: "100%", height: "100%" }} />
             ) : (
               spot.index + 1
             )}

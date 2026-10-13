@@ -64,16 +64,16 @@ export function SpotMockup({
         };
         const content =
           spot.logoUrl ? (
-            <Image src={spot.logoUrl} alt="" fill sizes="10vw" className="object-contain p-[8%]" />
+            <Image src={spot.logoUrl} alt="" fill sizes="10vw" className="object-contain" />
           ) : size === "full" ? (
             <span className="flex flex-col items-center leading-tight">
               <span className="text-caption font-semibold">{spot.index + 1}</span>
               {!taken && spot.price && <span className="hidden text-caption sm:block">{formatUsd(spot.price)}</span>}
             </span>
           ) : null;
-        // Logos sit on a plain white sticker; selection is a thin outline outside it, never a fill.
+        // Logos are the sticker itself: no backing or border, just rounded corners; selection is a thin outline outside it.
         const tone = spot.logoUrl
-          ? cx("border-white bg-white text-ink shadow-card", selected && "outline-2 outline-offset-2 outline-accent")
+          ? cx("border-0 bg-transparent text-ink", selected && "outline-2 outline-offset-2 outline-accent")
           : taken
           ? "border-ink/20 bg-ink/45 text-white"
           : selected
