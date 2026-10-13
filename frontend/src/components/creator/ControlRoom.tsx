@@ -19,7 +19,7 @@ import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
-import { SpotMockup } from "@/components/ui/SpotMockup";
+import { SpotPhotos } from "@/components/ui/SpotPhotos";
 import { ListingStateBadge, SpotStateBadge } from "@/components/ui/StateBadge";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { PostFeed } from "@/components/market/PostFeed";
@@ -95,8 +95,8 @@ export function ControlRoom({ listingId }: { listingId: string }) {
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
           <div className="flex min-w-0 flex-col gap-6">
             {cover && (
-              <SpotMockup
-                photoUrl={cover}
+              <SpotPhotos
+                photos={(listing.photos ?? []).map((photo) => ({ url: photo.url }))}
                 alt={listing.title}
                 selectedId={selected?.id}
                 onSelect={selectSpot}

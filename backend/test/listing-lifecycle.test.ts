@@ -14,6 +14,7 @@ import {
   ListingError,
   reviewListing,
   submitForReview,
+  deleteDraft,
   updateDraft,
   validateFeePolicy,
   type DraftInput,
@@ -102,6 +103,9 @@ test("drafts validate schedule, spots and auction rules", async () => {
   await assert.rejects(createDraft(db, seller.id, draftInput({ deadline: new Date(NOW.getTime() - DAY) }), NOW), /future/);
   await assert.rejects(createDraft(db, seller.id, draftInput({ spots: [] }), NOW), /spots/);
   await assert.rejects(createDraft(db, seller.id, draftInput({ mode: "auction" }), NOW), /increment/);
+  // Below the program's 0.01 USDC floor: refused before it can fail at publish.
+  await assert.rejects(createDraft(db, seller.id, draftInput({ mode: "auction", minIncrement: 9_999n }), NOW), /0\.01 USDC/);
+  await createDraft(db, seller.id, draftInput({ mode: "auction", minIncrement: 10_000n }), NOW);
   const { listing, spots: created } = await createDraft(db, seller.id, draftInput(), NOW);
   assert.equal(listing.state, "draft");
   assert.match(listing.slug, /^macbook-lid-at-token2049-[0-9a-f]{8}$/);
@@ -195,6 +199,45 @@ test("unapproved listings cannot be published", async () => {
   assert.equal(sent.length, 0);
 });
 
+test("spots can sit on any of the listing's photos; view must name one", async () => {
+  const seller = await createUser();
+  const photos = [await photoFor(seller.id), await photoFor(seller.id)];
+  const layout = { x: 20, y: 20, w: 10 };
+  const { spots: created } = await createDraft(
+    db,
+    seller.id,
+    draftInput({
+      photoAssetIds: photos,
+      spots: [
+        { price: USDC, layout },
+        { price: USDC, layout: { ...layout, view: "0" } },
+        { price: USDC, layout: { ...layout, view: "1" } },
+      ],
+    }),
+    NOW,
+  );
+  assert.deepEqual(
+    created.map((spot) => spot.layout.view),
+    [undefined, undefined, "1"],
+  );
+  assert.equal("view" in created[1].layout, false);
+  for (const view of ["2", "-1", "1.0", "01x", "", " 1", "lid"]) {
+    await assert.rejects(
+      createDraft(db, seller.id, draftInput({ photoAssetIds: photos, spots: [{ price: USDC, layout: { ...layout, view } }] }), NOW),
+      (error: unknown) => error instanceof ListingError && error.status === 400 && /one of the listing's 2 photos/.test(error.message),
+      `view ${JSON.stringify(view)} should be rejected`,
+    );
+  }
+  await assert.rejects(
+    createDraft(db, seller.id, draftInput({ photoAssetIds: [photos[0]], spots: [{ price: USDC, layout: { ...layout, view: "1" } }] }), NOW),
+    /only sit on the cover/,
+  );
+  await assert.rejects(
+    createDraft(db, seller.id, draftInput({ photoAssetIds: photos, spots: [{ price: USDC, layout: { ...layout, view: 1 as unknown as string } }] }), NOW),
+    /one of the listing's 2 photos/,
+  );
+});
+
 test("submitting needs a photo; photos must be the seller's own", async () => {
   const seller = await createUser();
   const other = await createUser();
@@ -224,4 +267,17 @@ test("drafts can be edited until submitted, and again when changes are requested
   await reviewListing(db, reviewer.id, listing.id, { action: "request_changes", note: "show the whole lid" }, FLOOR, NOW);
   const fixed = await updateDraft(db, seller.id, listing.id, draftInput({ photoAssetIds: [photo] }), NOW);
   assert.equal(fixed.listing.state, "changes_requested");
+});
+
+test("only the owner can delete a listing, and only before it goes live", async () => {
+  const seller = await createUser();
+  const other = await createUser();
+  const { listing } = await createDraft(db, seller.id, draftInput(), NOW);
+  await assert.rejects(deleteDraft(db, other.id, listing.id));
+  await db.update(listings).set({ state: "in_review" }).where(eq(listings.id, listing.id));
+  await assert.rejects(deleteDraft(db, seller.id, listing.id), /never went live/);
+  await db.update(listings).set({ state: "draft" }).where(eq(listings.id, listing.id));
+  assert.deepEqual(await deleteDraft(db, seller.id, listing.id), { ok: true });
+  assert.equal((await db.select().from(listings).where(eq(listings.id, listing.id))).length, 0);
+  assert.equal((await db.select().from(spots).where(eq(spots.listingId, listing.id))).length, 0);
 });

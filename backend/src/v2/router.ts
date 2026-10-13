@@ -14,6 +14,7 @@ import {
   reviewListing,
   submitForReview,
   updateDraft,
+  deleteDraft,
   type DraftInput,
   type ReviewDecision,
 } from "../services/listing-lifecycle.js";
@@ -296,6 +297,7 @@ export function createV2Router(options: {
   router.get("/me/listings", requireUser, handle(async (req, res) => send(res, await listForSeller(db, me(req).id))));
   router.post("/listings", ...mutate, handle(async (req, res) => send(res, await createDraft(db, me(req).id, parseDraft(req.body ?? {})), 201)));
   router.patch("/listings/:id", ...mutate, handle(async (req, res) => send(res, await updateDraft(db, me(req).id, req.params.id, parseDraft(req.body ?? {})))));
+  router.delete("/listings/:id", ...mutate, handle(async (req, res) => send(res, await deleteDraft(db, me(req).id, req.params.id))));
   router.get(
     "/me/listings/:id",
     requireUser,

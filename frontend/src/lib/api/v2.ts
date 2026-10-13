@@ -145,6 +145,8 @@ export const api = {
     submit: (id: string) => post<Listing>(`/listings/${enc(id)}/submit`),
     publish: (id: string) => post<Listing>(`/listings/${enc(id)}/publish`),
     close: (id: string) => post<{ listing: Listing; signature: string }>(`/listings/${enc(id)}/close`),
+    // Only drafts and listings that never went live.
+    remove: (id: string) => request<{ ok: true }>("DELETE", `/listings/${enc(id)}`),
     posts: (id: string) => get<Post[]>(`/listings/${enc(id)}/posts`),
     createPost: (id: string, input: { url?: string; body?: string; mediaAssetIds?: string[] }) =>
       post<Post>(`/listings/${enc(id)}/posts`, input),

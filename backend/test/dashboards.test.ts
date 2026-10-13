@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Db } from "../src/db/client.js";
-import { bids, chainTxs, disputes, settlements, spotEvents, spots } from "../src/db/schema.js";
+import { bids, chainTxs, disputes, listingPhotos, mediaAssets, settlements, spotEvents, spots } from "../src/db/schema.js";
 import { activityFeed, creatorDashboard, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../src/services/dashboards.js";
 import { createTestDb } from "./helpers/db.js";
 import { seedListing, seedUser, USDC } from "./helpers/seed.js";
@@ -83,6 +83,58 @@ test("sponsor: proof review window, missed delivery, outbid, and dispute timeout
   assert.equal(types[disputed.spot.id], "dispute_timeout_ready");
   assert.equal(dashboard.stats.active, 3);
   assert.equal(dashboard.stats.inEscrow, 300n * USDC);
+});
+
+test("sponsor: cards carry listing photos and each spot's settlement; spent is net of refunds", async () => {
+  const sponsor = await seedUser(db, "sponsor");
+  const past = { deadline: new Date(Date.now() - 200 * HOUR), deliveryDueAt: new Date(Date.now() - 100 * HOUR), funded: true };
+  const split = await seedListing(db, past);
+  const refunded = await seedListing(db, past);
+  const paid = await seedListing(db, past);
+  const active = await seedListing(db, { deadline: new Date(Date.now() - HOUR), deliveryDueAt: new Date(Date.now() + 24 * HOUR), funded: true });
+  await db.update(spots).set({ buyerId: sponsor.user.id, state: "settled", layout: { x: 50, y: 50, w: 20, view: "1" } }).where(eq(spots.id, split.spot.id));
+  await db.update(spots).set({ buyerId: sponsor.user.id, state: "refunded" }).where(eq(spots.id, refunded.spot.id));
+  await db.update(spots).set({ buyerId: sponsor.user.id, state: "settled" }).where(eq(spots.id, paid.spot.id));
+  await db.update(spots).set({ buyerId: sponsor.user.id }).where(eq(spots.id, active.spot.id));
+
+  // Photos inserted out of order: the dashboard returns them by position.
+  const [second, cover] = await db
+    .insert(mediaAssets)
+    .values([
+      { ownerId: split.seller.user.id, kind: "listing_photo", url: "https://res.cloudinary.com/x/image/upload/second.jpg", bytes: 1, width: 800, height: 600 },
+      { ownerId: split.seller.user.id, kind: "listing_photo", url: "https://res.cloudinary.com/x/image/upload/cover.jpg", bytes: 1, width: 800, height: 600 },
+    ])
+    .returning();
+  await db.insert(listingPhotos).values([
+    { listingId: split.listing.id, assetId: second.id, position: 1 },
+    { listingId: split.listing.id, assetId: cover.id, position: 0 },
+  ]);
+
+  await db.insert(settlements).values([
+    { spotId: split.spot.id, kind: "dispute_split", gross: 100n * USDC, fee: 2n * USDC, sellerNet: 48n * USDC, buyerRefund: 50n * USDC, chainTxId: (await confirmedTx()).id },
+    { spotId: refunded.spot.id, kind: "timeout_refund", gross: 100n * USDC, fee: 0n, sellerNet: 0n, buyerRefund: 100n * USDC, chainTxId: (await confirmedTx()).id },
+    { spotId: paid.spot.id, kind: "payout", gross: 100n * USDC, fee: 5n * USDC, sellerNet: 95n * USDC, buyerRefund: 0n, chainTxId: (await confirmedTx()).id },
+  ]);
+
+  const dashboard = await sponsorDashboard(db, sponsor.user.id, TIMEOUT);
+  const card = (id: string) => dashboard.spots.find((spot) => spot.id === id)!;
+  assert.deepEqual(
+    card(split.spot.id).listing.photos.map((photo) => photo.url),
+    ["https://res.cloudinary.com/x/image/upload/cover.jpg", "https://res.cloudinary.com/x/image/upload/second.jpg"],
+  );
+  assert.equal(card(split.spot.id).layout.view, "1");
+  assert.deepEqual(card(paid.spot.id).listing.photos, []);
+  assert.deepEqual(
+    { kind: card(split.spot.id).settlement?.kind, refund: card(split.spot.id).settlement?.buyerRefund, net: card(split.spot.id).settlement?.sellerNet, fee: card(split.spot.id).settlement?.fee },
+    { kind: "dispute_split", refund: 50n * USDC, net: 48n * USDC, fee: 2n * USDC },
+  );
+  assert.equal(card(refunded.spot.id).settlement?.kind, "timeout_refund");
+  assert.equal(card(paid.spot.id).settlement?.kind, "payout");
+  assert.equal(card(active.spot.id).settlement, null);
+  // 50 kept by the split (48 + 2 fee) + 0 from the refund + 100 from the payout.
+  assert.equal(dashboard.stats.spent, 150n * USDC);
+  assert.equal(dashboard.stats.inEscrow, 100n * USDC);
+  assert.equal(dashboard.stats.delivered, 2);
 });
 
 test("timeline is private and the activity feed is scoped to the user", async () => {

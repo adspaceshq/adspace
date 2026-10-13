@@ -7,6 +7,7 @@ import { SpotMockup } from "@/components/ui/SpotMockup";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { fetchSponsoredSpot } from "@/lib/api/server";
 import { listingHref, SURFACE_LABELS } from "@/lib/listing-display";
+import { spotsOnView, spotView } from "@/lib/spot-views";
 
 type Params = Promise<{ handle: string; listing: string; index: string }>;
 
@@ -29,7 +30,10 @@ export default async function SponsoredSpotPage({ params }: { params: Params }) 
   if (!data) notFound();
   const { listing, brand, spot } = data;
   if (clean(handle) !== listing.seller.handle.toLowerCase()) permanentRedirect(`${listingHref(listing.seller.handle, listing.slug)}/sponsored/${spot.index + 1}`);
-  const cover = listing.photos[0]?.url;
+  // Show the photo the sponsored spot sits on, with the other spots on that photo.
+  const placed = listing.spots.find((item) => item.id === spot.id);
+  const view = placed ? spotView(placed.layout, listing.photos.length) : 0;
+  const cover = listing.photos[view]?.url;
 
   return (
     <AppShell variant="public">
@@ -42,7 +46,7 @@ export default async function SponsoredSpotPage({ params }: { params: Params }) 
           <SpotMockup
             photoUrl={cover}
             alt={listing.title}
-            spots={listing.spots.map((item) => ({
+            spots={spotsOnView(listing.spots, view, listing.photos.length).map((item) => ({
               id: item.id,
               index: item.index,
               layout: item.layout,

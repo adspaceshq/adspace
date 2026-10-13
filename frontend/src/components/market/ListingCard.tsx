@@ -2,16 +2,22 @@ import { WatchButton } from "@/components/watchlist/WatchButton";
 import Link from "next/link";
 import { BadgeCheck, MapPin, Users } from "lucide-react";
 import type { PublicListing } from "@/lib/api/types";
-import { formatFollowers, listingHref, priceSummary, spotsLeft, SURFACE_LABELS } from "@/lib/listing-display";
+import { formatFollowers, listingHref, oversubscription, priceSummary, spotsLeft, spotsWithBids, SURFACE_LABELS } from "@/lib/listing-display";
 import { Countdown } from "@/components/ui/Countdown";
 import { Money } from "@/components/ui/Money";
 import { SpotMockup } from "@/components/ui/SpotMockup";
+import { spotsOnView } from "@/lib/spot-views";
 import { SellerAvatar } from "./SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
 
 export function ListingCard({ listing }: { listing: PublicListing }) {
   const price = priceSummary(listing);
   const left = spotsLeft(listing);
+  const withBids = spotsWithBids(listing);
+  const over = oversubscription(listing);
+  const second = listing.photos[1]?.url;
+  const mockupSpots = (view: number) =>
+    spotsOnView(listing.spots, view, listing.photos.length).map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state, logoUrl: spot.brand?.logoUrl }));
   const followers = formatFollowers(listing.audience.followers);
   const place = listing.audience.event ?? listing.audience.location;
   const cover = listing.photos[0]?.url;
@@ -22,13 +28,26 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
       className="group flex flex-col gap-3 rounded-panel p-2 transition-colors hover:bg-surface focus-visible:bg-surface"
     >
       {cover ? (
-        <SpotMockup
-          photoUrl={cover}
-          alt={listing.title}
-          size="thumb"
-          spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: spot.state, logoUrl: spot.brand?.logoUrl }))}
-          className="transition-transform group-hover:scale-[1.01]"
-        />
+        // With a second surface, the two sit side by side and hovering slides the strip to the second one.
+        <div className="relative overflow-hidden rounded-card">
+          {second ? (
+            <div className="flex transition-transform duration-500 ease-out group-hover:-translate-x-full group-focus-visible:-translate-x-full motion-reduce:transition-none">
+              <div className="w-full shrink-0">
+                <SpotMockup photoUrl={cover} alt={listing.title} size="thumb" spots={mockupSpots(0)} />
+              </div>
+              <div className="w-full shrink-0" aria-hidden>
+                <SpotMockup photoUrl={second} alt="" size="thumb" spots={mockupSpots(1)} />
+              </div>
+            </div>
+          ) : (
+            <SpotMockup photoUrl={cover} alt={listing.title} size="thumb" spots={mockupSpots(0)} className="transition-transform group-hover:scale-[1.01]" />
+          )}
+          {over > 0 && (
+            <span className="absolute bottom-2 left-2 rounded-full bg-success px-2 py-0.5 text-caption font-semibold text-white shadow-card">
+              +{over}% oversubscribed
+            </span>
+          )}
+        </div>
       ) : (
         <div className="aspect-[4/3] rounded-card bg-ink/5" />
       )}
@@ -65,7 +84,11 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           )}
           <div className="text-right text-small">
             <p className="text-muted">
-              {left} spot{left === 1 ? "" : "s"} left
+              {withBids > 0
+                ? left > 0
+                  ? `${withBids} with bids · ${left} open`
+                  : `all ${withBids} spot${withBids === 1 ? " has" : "s have"} bids`
+                : `${left} spot${left === 1 ? "" : "s"} left`}
             </p>
             <Countdown to={listing.deadline} prefix="closes in" className="font-medium" />
           </div>

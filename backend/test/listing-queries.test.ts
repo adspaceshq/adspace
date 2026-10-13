@@ -55,9 +55,19 @@ test("browse returns open listings with seller, photos, and paging", async () =>
 });
 
 test("listing detail hides buyer identities", async () => {
-  const { listing } = await seedListing(db, { deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR), funded: true });
+  const { listing, buyer } = await seedListing(db, { deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR), funded: true });
   const detail = await getPublishedListing(db, listing.slug);
   assert.equal(detail?.spots[0].taken, true);
   const serialized = JSON.stringify(detail, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
   assert.equal(serialized.includes("buyerWallet"), false);
+  assert.equal(serialized.includes(buyer!.user.walletAddress!), false);
+  // A sold spot links to the sponsor's public adspaces profile (handle, name, avatar only).
+  assert.deepEqual(Object.keys(detail!.spots[0].sponsor ?? {}).sort(), ["avatarUrl", "displayName", "handle"]);
+  assert.equal(detail!.spots[0].sponsor?.handle, buyer!.user.handle);
+});
+
+test("open spots name no sponsor", async () => {
+  const { listing } = await seedListing(db, { deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR) });
+  const detail = await getPublishedListing(db, listing.slug);
+  assert.equal(detail?.spots[0].sponsor, null);
 });

@@ -15,7 +15,7 @@ before(async () => {
 });
 after(async () => close());
 
-test("bid history is newest first, numbers bidders, marks the viewer and the leader, and hides identities", async () => {
+test("bid history is newest first, numbers bidders, marks the viewer and the leader, shows public profiles, and hides ids and wallets", async () => {
   const { spot, buyer } = await seedListing(db, { mode: "auction", deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR), funded: true });
   const rival = await seedUser(db, "rival");
   const base = Date.now() - 3 * HOUR;
@@ -37,5 +37,8 @@ test("bid history is newest first, numbers bidders, marks the viewer and the lea
   );
   const body = JSON.stringify(history, (_key, value) => (typeof value === "bigint" ? value.toString() : value));
   assert.equal(body.includes(rival.user.id) || body.includes(rival.user.walletAddress!), false);
+  // Each bid links to the bidder's public adspaces profile, and nothing more.
+  assert.equal(history?.items[0].profile?.handle, rival.user.handle);
+  assert.deepEqual(Object.keys(history?.items[0].profile ?? {}).sort(), ["avatarUrl", "displayName", "handle"]);
   assert.equal(await spotBidHistory(db, "not-a-uuid"), undefined);
 });

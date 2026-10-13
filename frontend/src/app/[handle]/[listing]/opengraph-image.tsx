@@ -1,8 +1,9 @@
 import { ImageResponse } from "next/og";
 import { fetchPublicListing } from "@/lib/api/server";
-import { priceSummary, spotsLeft } from "@/lib/listing-display";
+import { priceSummary, spotsLeft, spotsWithBids } from "@/lib/listing-display";
 import { formatUsd } from "@/lib/money";
 import { Brand, cardLogo, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
+import { spotsOnView } from "@/lib/spot-views";
 
 export const alt = "adspaces listing";
 export const size = OG_SIZE;
@@ -13,7 +14,8 @@ const PHOTO = { width: 560, height: 420 };
 
 export default async function Image({ params }: { params: Promise<{ listing: string }> }) {
   const listing = await fetchPublicListing((await params).listing).catch(() => null);
-  const spots = listing?.spots ?? [];
+  // The card shows the cover, so only the spots placed on the cover are drawn.
+  const spots = spotsOnView(listing?.spots ?? [], 0, listing?.photos.length ?? 0);
   const [fonts, photo, avatar, ...logos] = await Promise.all([
     loadFonts(),
     loadImage(cardPhoto(listing?.photos[0]?.url, PHOTO.width, PHOTO.height)),
@@ -23,6 +25,7 @@ export default async function Image({ params }: { params: Promise<{ listing: str
   ]);
   const price = listing ? priceSummary(listing) : null;
   const left = listing ? spotsLeft(listing) : 0;
+  const withBids = listing ? spotsWithBids(listing) : 0;
   const total = listing?.spots.length ?? 0;
   const place = listing?.audience.event ?? listing?.audience.location;
 
@@ -65,7 +68,7 @@ export default async function Image({ params }: { params: Promise<{ listing: str
             {total > 0 && (
               <div style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ fontSize: 22, color: og.muted }}>spots</div>
-                <div style={{ fontSize: 48, fontWeight: 700, color: og.ink }}>{left ? `${left} of ${total} left` : `${total} sold`}</div>
+                <div style={{ fontSize: 48, fontWeight: 700, color: og.ink }}>{left ? `${left} of ${total} left` : withBids ? `${withBids} with bids` : `${total} sold`}</div>
               </div>
             )}
           </div>

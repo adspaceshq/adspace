@@ -4,7 +4,7 @@ import { safeHref } from "@/lib/safe-href";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { BadgeCheck, ChevronLeft, ChevronRight, MapPin, Share2, Users } from "lucide-react";
+import { BadgeCheck, MapPin, Share2, Users } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { PublicListing, PublicSpot } from "@/lib/api/types";
 import { canPurchase, minimumNextBid } from "@/lib/bids";
@@ -16,7 +16,8 @@ import { cx } from "@/lib/cx";
 import { Button } from "@/components/ui/Button";
 import { Countdown } from "@/components/ui/Countdown";
 import { Money } from "@/components/ui/Money";
-import { SpotMockup } from "@/components/ui/SpotMockup";
+import { SpotPhotos } from "@/components/ui/SpotPhotos";
+import { spotView, viewLabel } from "@/lib/spot-views";
 import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { CheckoutModal } from "./CheckoutModal";
 import { BidHistory } from "./BidHistory";
@@ -41,10 +42,8 @@ export function ListingView({ initial }: { initial: PublicListing }) {
 
   const firstAvailable = listing.spots.find((spot) => canPurchase(listing, spot, now)) ?? listing.spots[0];
   const [selectedId, setSelectedId] = useState(firstAvailable?.id);
-  const [photoIndex, setPhotoIndex] = useState(0);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const selected = listing.spots.find((spot) => spot.id === selectedId) ?? firstAvailable;
-  const photo = listing.photos[photoIndex]?.url ?? listing.photos[0]?.url;
   const isOwner = session?.id === listing.sellerId;
 
   const startCheckout = () => {
@@ -61,48 +60,21 @@ export function ListingView({ initial }: { initial: PublicListing }) {
   return (
     <div className="grid gap-8 pb-24 lg:grid-cols-[minmax(0,1fr)_360px] lg:pb-0">
       <div className="flex min-w-0 flex-col gap-8">
-        <div className="flex flex-col gap-3">
-          {photo ? (
-            <SpotMockup
-              photoUrl={photo}
-              alt={listing.title}
-              selectedId={selected?.id}
-              onSelect={setSelectedId}
-              spots={listing.spots.map((spot) => ({
-                id: spot.id,
-                index: spot.index,
-                layout: spot.layout,
-                state: spot.state,
-                price: spot.price,
-                label: spot.label,
-                logoUrl: spot.brand?.logoUrl,
-              }))}
-            />
-          ) : (
-            <div className="aspect-[4/3] rounded-panel bg-ink/5" />
-          )}
-          {listing.photos.length > 1 && (
-            <div className="flex items-center justify-center gap-3 text-small text-muted">
-              <button
-                type="button"
-                aria-label="previous photo"
-                className="cursor-pointer rounded-full p-1.5 hover:bg-ink/5"
-                onClick={() => setPhotoIndex((index) => (index - 1 + listing.photos.length) % listing.photos.length)}
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              photo {photoIndex + 1} of {listing.photos.length}
-              <button
-                type="button"
-                aria-label="next photo"
-                className="cursor-pointer rounded-full p-1.5 hover:bg-ink/5"
-                onClick={() => setPhotoIndex((index) => (index + 1) % listing.photos.length)}
-              >
-                <ChevronRight className="size-4" />
-              </button>
-            </div>
-          )}
-        </div>
+        <SpotPhotos
+          photos={listing.photos.map((photo) => ({ url: photo.url }))}
+          alt={listing.title}
+          selectedId={selected?.id}
+          onSelect={setSelectedId}
+          spots={listing.spots.map((spot) => ({
+            id: spot.id,
+            index: spot.index,
+            layout: spot.layout,
+            state: spot.state,
+            price: spot.price,
+            label: spot.label,
+            logoUrl: spot.brand?.logoUrl,
+          }))}
+        />
 
         <SpotList listing={listing} selectedId={selected?.id} onSelect={setSelectedId} now={now} />
 
@@ -231,7 +203,7 @@ function PurchasePanel({
         </p>
         <SpotStateBadge state={spot.state} bidding={listing.mode === "auction" && canPurchase(listing, spot, now)} />
       </div>
-      {spot.brand && <SponsorLine brand={spot.brand} leading={listing.mode === "auction" && spot.state === "funded"} />}
+      {spot.brand && <SponsorLine brand={spot.brand} sponsor={spot.sponsor ?? undefined} leading={listing.mode === "auction" && spot.state === "funded"} />}
       <div>
         <p className="text-small text-muted">{headline.label}</p>
         <p className="text-display font-semibold leading-none">
@@ -293,6 +265,9 @@ function MobilePurchaseBar({
 }
 
 function SpotList({ listing, selectedId, onSelect, now }: { listing: PublicListing; selectedId?: string; onSelect: (id: string) => void; now: number }) {
+  // When spots sit on more than one photo, say which photo each is on.
+  const photoCount = listing.photos.length;
+  const spread = listing.spots.some((spot) => spotView(spot.layout, photoCount) > 0);
   return (
     <section aria-labelledby="spots" className="flex flex-col gap-3">
       <h2 id="spots" className="text-lead font-semibold">
@@ -323,9 +298,20 @@ function SpotList({ listing, selectedId, onSelect, now }: { listing: PublicListi
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-body font-medium">{spot.label || `spot ${spot.index + 1}`}</span>
-                  {spot.brand && <span className="block truncate text-small text-muted">sponsored by {spot.brand.name}</span>}
+                  {spot.brand && (
+                    <span className="block truncate text-small text-muted">
+                      sponsored by {spot.brand.name}
+                      {spot.sponsor && (
+                        <>
+                          {" · "}
+                          <UserLink handle={spot.sponsor.handle} nested />
+                        </>
+                      )}
+                    </span>
+                  )}
                   <span className="text-small text-muted">
                     {headline.label} <Money value={headline.amount} />
+                    {spread && ` · ${viewLabel(spotView(spot.layout, photoCount))}`}
                   </span>
                 </span>
                 <SpotStateBadge state={spot.state} bidding={listing.mode === "auction" && canPurchase(listing, spot, now)} />
@@ -339,7 +325,15 @@ function SpotList({ listing, selectedId, onSelect, now }: { listing: PublicListi
 }
 
 // Who holds a sold spot (or leads an auction), linked to their site when they gave one.
-function SponsorLine({ brand, leading }: { brand: NonNullable<PublicListing["spots"][number]["brand"]>; leading: boolean }) {
+function SponsorLine({
+  brand,
+  sponsor,
+  leading,
+}: {
+  brand: NonNullable<PublicListing["spots"][number]["brand"]>;
+  sponsor?: { handle: string };
+  leading: boolean;
+}) {
   const name = brand.link ? (
     <a href={safeHref(brand.link)} target="_blank" rel="noreferrer nofollow sponsored" className="font-medium text-ink hover:underline">
       {brand.name}
@@ -356,6 +350,12 @@ function SponsorLine({ brand, leading }: { brand: NonNullable<PublicListing["spo
       <p className="text-small text-muted">
         {leading ? "top bid by " : "sponsored by "}
         {name}
+        {sponsor && (
+          <span>
+            {" · on adspaces "}
+            <UserLink handle={sponsor.handle} />
+          </span>
+        )}
         {brand.handle && (
           <span>
             {" · "}

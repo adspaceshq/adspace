@@ -8,6 +8,7 @@ import { ago } from "@/lib/activity";
 import { explorerTxUrl } from "@/lib/chain-config";
 import { useNow } from "@/lib/use-now";
 import { Money } from "@/components/ui/Money";
+import { UserLink } from "@/components/ui/UserLink";
 
 const PREVIEW = 5;
 
@@ -37,7 +38,7 @@ export function BidHistory({ spotId, live }: { spotId: string; live: boolean }) 
         {shown.map((bid) => (
           <li key={bid.id} className="flex items-center gap-2 py-1.5 text-small">
             <span className={`min-w-0 flex-1 truncate ${bid.isYou ? "font-medium text-ink" : "text-muted"}`}>
-              {bid.isYou ? "you" : bid.bidder}
+              {bid.isYou ? "you" : bid.profile ? <UserLink handle={bid.profile.handle} /> : bid.bidder}
               {bid.isTop && <span className="ml-1.5 rounded-full bg-success-soft px-1.5 py-0.5 text-caption font-medium text-success">leading</span>}
             </span>
             <Money value={bid.amount} className={bid.isTop ? "font-semibold" : ""} />

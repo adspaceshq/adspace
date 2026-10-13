@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 import anchor from "@coral-xyz/anchor";
 import { PublicKey, SYSVAR_RENT_PUBKEY, SystemProgram } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
@@ -8,6 +8,9 @@ import { pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.j
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import type { TxSigner } from "../chain/signers.js";
 import { notify } from "./notifications.js";
+
+// Smallest auction bid step, in USDC base units (6 decimals); mirrors the program's MIN_BID_INCREMENT.
+export const MIN_BID_INCREMENT = 10_000n;
 
 export class ListingError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -102,6 +105,21 @@ async function loadOwned(db: Db, listingId: string, sellerId: string): Promise<L
 
 const MAX_PHOTOS = 6;
 
+// A spot's `view` is the index (as a string) of the photo it sits on; absent means the cover.
+// "0" is stored as absent so every cover spot looks the same.
+function normalizeView(view: unknown, photoCount: number): string | undefined {
+  if (view === undefined || view === null) return undefined;
+  const index = typeof view === "string" && /^\d{1,2}$/.test(view) ? Number(view) : Number.NaN;
+  if (!Number.isInteger(index) || index >= Math.max(photoCount, 1)) {
+    throw new ListingError(
+      photoCount > 1
+        ? `each spot must sit on one of the listing's ${photoCount} photos (view "0" to "${photoCount - 1}")`
+        : "spots can only sit on the cover photo until you add more photos",
+    );
+  }
+  return index === 0 ? undefined : String(index);
+}
+
 function normalizeDraft(input: DraftInput, now: Date) {
   const title = input.title.trim();
   if (!title || title.length > 80) throw new ListingError("title is required (max 80 characters)");
@@ -121,8 +139,22 @@ function normalizeDraft(input: DraftInput, now: Date) {
   if (input.mode === "auction" && !doubleUp && minIncrement <= 0n) {
     throw new ListingError("auctions need a minimum bid increment, or double-up bidding");
   }
+  // The program rejects smaller steps at publish (MIN_BID_INCREMENT), so refuse them up front.
+  if (input.mode === "auction" && !doubleUp && minIncrement < MIN_BID_INCREMENT) {
+    throw new ListingError("the minimum bid increment is 0.01 USDC");
+  }
   const photoIds = [...new Set(input.photoAssetIds ?? [])];
   if (photoIds.length > MAX_PHOTOS) throw new ListingError(`add at most ${MAX_PHOTOS} photos`);
+  const spotRows = input.spots.map((spot, index) => {
+    const { view, ...layout } = spot.layout;
+    const normalizedView = normalizeView(view, photoIds.length);
+    return {
+      index,
+      label: spot.label?.trim() ?? "",
+      price: spot.price,
+      layout: normalizedView === undefined ? layout : { ...layout, view: normalizedView },
+    };
+  });
   return {
     fields: {
       surface: input.surface,
@@ -136,7 +168,7 @@ function normalizeDraft(input: DraftInput, now: Date) {
       minIncrement,
       doubleUp,
     },
-    spots: input.spots.map((spot, index) => ({ index, label: spot.label?.trim() ?? "", price: spot.price, layout: spot.layout })),
+    spots: spotRows,
     photoIds,
   };
 }
@@ -196,6 +228,23 @@ export async function updateDraft(db: Db, sellerId: string, listingId: string, i
     await replacePhotos(trx, listingId, sellerId, draft.photoIds);
     return { listing: updated, spots: created };
   });
+}
+
+// Listings that never went live can be deleted; their photos and spots go with them. Anything
+// published (it has an on-chain address) or in review stays, so no escrow or history is lost.
+const DELETABLE_STATES = ["draft", "changes_requested", "rejected"] as const;
+
+export async function deleteDraft(db: Db, sellerId: string, listingId: string) {
+  const listing = await loadOwned(db, listingId, sellerId);
+  if (!(DELETABLE_STATES as readonly string[]).includes(listing.state) || listing.chainAddress) {
+    throw new ListingError("only drafts and listings that never went live can be deleted", 409);
+  }
+  const [deleted] = await db
+    .delete(listings)
+    .where(and(eq(listings.id, listingId), eq(listings.sellerId, sellerId), inArray(listings.state, [...DELETABLE_STATES]), isNull(listings.chainAddress)))
+    .returning({ id: listings.id });
+  if (!deleted) throw new ListingError("listing changed; reload and try again", 409);
+  return { ok: true as const };
 }
 
 export async function submitForReview(db: Db, sellerId: string, listingId: string) {

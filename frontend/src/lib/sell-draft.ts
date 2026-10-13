@@ -1,5 +1,10 @@
 import type { DraftInput, OwnedListing, PricingMode, SpotLayout, Surface } from "@/lib/api/types";
+import type { MacPreset, MockupChoice } from "@/lib/mac-mockup";
 import { toBaseUnits, toInputValue } from "@/lib/money";
+import { normalizeView } from "@/lib/spot-views";
+
+// Smallest auction bid step, in USDC base units (6 decimals); mirrors the program's MIN_BID_INCREMENT.
+export const MIN_BID_INCREMENT = 10_000n;
 
 export interface WizardSpot {
   key: string;
@@ -11,6 +16,8 @@ export interface WizardSpot {
 export interface WizardPhoto {
   assetId: string;
   url: string;
+  // Set when the photo is an upload of a built-in mockup; kept only in the local draft.
+  preset?: MacPreset;
 }
 
 export interface WizardState {
@@ -27,6 +34,9 @@ export interface WizardState {
   doubleUp: boolean;
   deadline: string; // datetime-local value
   deliveryDays: string;
+  // Laptop only: photos from the built-in MacBook mockup or the seller's own uploads.
+  photoSource?: "mockup" | "upload";
+  mockup?: MockupChoice;
 }
 
 export type WizardStep = "basics" | "spots" | "pricing" | "preview" | "submit";
@@ -121,7 +131,8 @@ export function validateStep(step: WizardStep, state: WizardState, now = Date.no
     if (!Number.isInteger(days) || days < 1 || days > 60) errors.deliveryDays = "1 to 60 days";
     if (state.mode === "auction" && !state.doubleUp) {
       try {
-        if (BigInt(toBaseUnits(state.minIncrement)) <= 0n) errors.minIncrement = "increment must be above zero";
+        // Same floor as the program (MIN_BID_INCREMENT): smaller steps let bidders creep up by dust.
+        if (BigInt(toBaseUnits(state.minIncrement)) < MIN_BID_INCREMENT) errors.minIncrement = "the minimum bid increment is 0.01 USDC";
       } catch {
         errors.minIncrement = "enter an amount like 1 or 0.50";
       }
@@ -145,7 +156,8 @@ export function toDraftInput(state: WizardState): DraftInput {
     deadline: deadline.toISOString(),
     deliveryDueAt: new Date(deadline.getTime() + Number(state.deliveryDays) * DAY).toISOString(),
     ...(state.mode === "auction" ? { doubleUp: state.doubleUp, ...(state.doubleUp ? {} : { minIncrement: state.minIncrement }) } : {}),
-    spots: state.spots.map((spot) => ({ label: spot.label.trim() || undefined, price: spot.price.trim(), layout: spot.layout })),
+    // A spot whose photo was removed goes back to the cover rather than failing the save.
+    spots: state.spots.map((spot) => ({ label: spot.label.trim() || undefined, price: spot.price.trim(), layout: normalizeView(spot.layout, state.photos.length) })),
     photoAssetIds: state.photos.map((photo) => photo.assetId),
   };
 }

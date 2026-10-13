@@ -18,6 +18,8 @@ describe("sell draft", () => {
     expect(validateStep("basics", filled, NOW)).toEqual({});
     expect(validateStep("spots", { ...filled, spots: [{ ...filled.spots[0], price: "abc" }] }, NOW)).toHaveProperty("spot-0");
     expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0" }, NOW)).toHaveProperty("minIncrement");
+    expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0.001" }, NOW)).toHaveProperty("minIncrement");
+    expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0.01" }, NOW)).not.toHaveProperty("minIncrement");
     expect(validateStep("pricing", { ...filled, deadline: "2026-10-08T12:10" }, NOW)).toHaveProperty("deadline");
   });
 
@@ -37,6 +39,23 @@ describe("sell draft", () => {
     expect(draft.photoAssetIds).toEqual(["a1"]);
     expect(new Date(draft.deliveryDueAt!).getTime() - new Date(draft.deadline).getTime()).toBe(5 * 24 * 60 * 60 * 1000);
     expect(draft.minIncrement).toBeUndefined();
+  });
+
+  it("keeps each spot on its photo, moving spots of a removed photo to the cover", () => {
+    const state = {
+      ...emptyWizard("laptop", NOW),
+      photos: [
+        { assetId: "a1", url: "https://x/1.png" },
+        { assetId: "a2", url: "https://x/2.png" },
+      ],
+      spots: [
+        { key: "s1", label: "", price: "5", layout: { x: 10, y: 10, w: 10 } },
+        { key: "s2", label: "", price: "5", layout: { x: 10, y: 10, w: 10, view: "1" } },
+        { key: "s3", label: "", price: "5", layout: { x: 10, y: 10, w: 10, view: "2" } },
+        { key: "s4", label: "", price: "5", layout: { x: 10, y: 10, w: 10, view: "0" } },
+      ],
+    };
+    expect(toDraftInput(state).spots.map((spot) => spot.layout.view)).toEqual([undefined, "1", undefined, undefined]);
   });
 
   it("round-trips a saved draft back into the wizard", () => {

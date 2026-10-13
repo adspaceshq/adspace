@@ -2,6 +2,7 @@ import { ImageResponse } from "next/og";
 import { fetchSponsoredSpot } from "@/lib/api/server";
 import { SURFACE_LABELS } from "@/lib/listing-display";
 import { Brand, cardLogo, cardPhoto, loadFonts, loadImage, MockupTile, og, OG_SIZE, truncate, OG_CACHE_HEADERS } from "@/lib/og/kit";
+import { spotsOnView } from "@/lib/spot-views";
 
 export const alt = "sponsored spot on adspaces";
 export const size = OG_SIZE;
@@ -46,7 +47,7 @@ export default async function Image({ params }: { params: Promise<{ listing: str
             width={PHOTO.width}
             height={PHOTO.height}
             rotate={-2}
-            spots={(data?.listing.spots ?? []).map((spot) => ({ index: spot.index, layout: spot.layout, taken: spot.taken, highlight: spot.id === data?.spot.id, logo: spot.id === data?.spot.id ? logo : null }))}
+            spots={spotsOnView(data?.listing.spots ?? [], 0, data?.listing.photos.length ?? 0).map((spot) => ({ index: spot.index, layout: spot.layout, taken: spot.taken, highlight: spot.id === data?.spot.id, logo: spot.id === data?.spot.id ? logo : null }))}
           />
         </div>
       </div>
