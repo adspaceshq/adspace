@@ -28,23 +28,19 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
       className="group flex flex-col gap-3 rounded-panel p-2 transition-colors hover:bg-surface focus-visible:bg-surface"
     >
       {cover ? (
-        // With a second surface, hovering crossfades to it (and its spots).
-        <div className="relative">
-          <SpotMockup
-            photoUrl={cover}
-            alt={listing.title}
-            size="thumb"
-            spots={mockupSpots(0)}
-            className={second ? "transition-opacity duration-300 group-hover:opacity-0" : "transition-transform group-hover:scale-[1.01]"}
-          />
-          {second && (
-            <SpotMockup
-              photoUrl={second}
-              alt=""
-              size="thumb"
-              spots={mockupSpots(1)}
-              className="absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-            />
+        // With a second surface, the two sit side by side and hovering slides the strip to the second one.
+        <div className="relative overflow-hidden rounded-card">
+          {second ? (
+            <div className="flex transition-transform duration-500 ease-out group-hover:-translate-x-full group-focus-visible:-translate-x-full motion-reduce:transition-none">
+              <div className="w-full shrink-0">
+                <SpotMockup photoUrl={cover} alt={listing.title} size="thumb" spots={mockupSpots(0)} />
+              </div>
+              <div className="w-full shrink-0" aria-hidden>
+                <SpotMockup photoUrl={second} alt="" size="thumb" spots={mockupSpots(1)} />
+              </div>
+            </div>
+          ) : (
+            <SpotMockup photoUrl={cover} alt={listing.title} size="thumb" spots={mockupSpots(0)} className="transition-transform group-hover:scale-[1.01]" />
           )}
           {over > 0 && (
             <span className="absolute bottom-2 left-2 rounded-full bg-success px-2 py-0.5 text-caption font-semibold text-white shadow-card">

@@ -42,7 +42,7 @@ export function SpotMockup({
   const interactive = Boolean(onSelect) && size === "full";
   return (
     <div
-      className={cx("relative w-full overflow-hidden bg-ink/5", size === "full" ? "rounded-panel" : "rounded-card", className)}
+      className={cx("relative w-full overflow-hidden", size === "full" ? "rounded-panel" : "rounded-card", className)}
       style={{ aspectRatio: aspect }}
     >
       <Image
