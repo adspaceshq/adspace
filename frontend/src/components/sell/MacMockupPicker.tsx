@@ -55,16 +55,17 @@ export function MacMockupPicker({
         </div>
       </div>
 
-      <div className={cx("grid gap-3", choice.inside && "sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]")}>
-        <figure className="relative flex aspect-[1484/1060] items-center justify-center overflow-hidden rounded-card border border-line bg-canvas p-4">
+      {/* Both views share one frame size so the lid and keyboard deck read as equals. */}
+      <div className={cx("grid gap-3", choice.inside && "sm:grid-cols-2")}>
+        <figure className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-card border border-line bg-canvas p-4">
           {/* eslint-disable-next-line @next/next/no-img-element -- static Cloudinary preset, already transformed */}
           <img src={presetUrl(`lid-${choice.color}`, 1200)} alt={`MacBook lid in ${selected.label}`} className="size-full object-contain" />
           <figcaption className="absolute left-2 top-2 rounded-full bg-ink px-2 py-0.5 text-caption font-medium text-white">cover</figcaption>
         </figure>
         {choice.inside && (
-          <figure className="relative flex aspect-[1402/1122] items-center justify-center overflow-hidden rounded-card border border-line bg-canvas p-3 sm:self-start">
+          <figure className="relative flex aspect-[4/3] items-center justify-center overflow-hidden rounded-card border border-line bg-canvas p-4">
             {/* eslint-disable-next-line @next/next/no-img-element -- static Cloudinary preset, already transformed */}
-            <img src={presetUrl("inside", 600)} alt="open MacBook keyboard deck" className="size-full object-contain" />
+            <img src={presetUrl(`inside-${choice.color}`, 1200)} alt={`MacBook keyboard deck in ${selected.label}`} className="size-full object-contain" />
             <figcaption className="absolute left-2 top-2 rounded-full bg-surface/90 px-2 py-0.5 text-caption font-medium shadow-card">keyboard deck</figcaption>
           </figure>
         )}

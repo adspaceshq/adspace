@@ -8,12 +8,12 @@ export const MAC_COLORS = [
   { id: "space-gray", label: "space grey", swatch: "#7d7e80" },
   { id: "space-black", label: "space black", swatch: "#2e2c2e" },
   { id: "midnight", label: "midnight", swatch: "#2e3642" },
-  { id: "starlight", label: "starlight", swatch: "#f0e4d3" },
-  { id: "sky-blue", label: "sky blue", swatch: "#a9c3d8" },
+  { id: "starlight", label: "starlight", swatch: "#e2d9ca" },
+  { id: "sky-blue", label: "sky blue", swatch: "#c6d6e3" },
 ] as const;
 
 export type MacColor = (typeof MAC_COLORS)[number]["id"];
-export type MacPreset = `lid-${MacColor}` | "inside";
+export type MacPreset = `lid-${MacColor}` | `inside-${MacColor}`;
 
 export interface MockupChoice {
   color: MacColor;
@@ -32,7 +32,7 @@ export function presetUrl(preset: MacPreset, width?: number): string {
 
 // Lid first (the cover), keyboard deck second when chosen.
 export function mockupPresets(choice: MockupChoice): MacPreset[] {
-  return choice.inside ? [`lid-${choice.color}`, "inside"] : [`lid-${choice.color}`];
+  return choice.inside ? [`lid-${choice.color}`, `inside-${choice.color}`] : [`lid-${choice.color}`];
 }
 
 // True when the photos are exactly the uploads of this choice, so continuing needs no new upload.
@@ -50,7 +50,7 @@ export function detectMockup(photos: WizardPhoto[]): MockupChoice | null {
   const color = lid.slice(4);
   if (!isColor(color)) return null;
   if (photos.length === 1) return { color, inside: false };
-  if (photos.length === 2 && photos[1].preset === "inside") return { color, inside: true };
+  if (photos.length === 2 && photos[1].preset === `inside-${color}`) return { color, inside: true };
   return null;
 }
 

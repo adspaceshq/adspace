@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 import { detectMockup, mockupChoiceFor, mockupPresets, mockupUploaded, photoSourceFor, presetUrl, restorePresets } from "./mac-mockup";
 
 const lid = { assetId: "a1", url: "https://x/1.png", preset: "lid-midnight" as const };
-const inside = { assetId: "a2", url: "https://x/2.png", preset: "inside" as const };
+const inside = { assetId: "a2", url: "https://x/2.png", preset: "inside-midnight" as const };
 const custom = { assetId: "a3", url: "https://x/3.jpg" };
 
 describe("mac mockup", () => {
   it("builds original and thumbnail preset URLs", () => {
     expect(presetUrl("lid-silver")).toMatch(/^https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/adspaces\/static\/mac\/lid-silver\.png$/);
-    expect(presetUrl("inside", 600)).toMatch(/\/image\/upload\/f_auto,q_auto,w_600\/adspaces\/static\/mac\/inside\.png$/);
+    expect(presetUrl("inside-midnight", 600)).toMatch(/\/image\/upload\/f_auto,q_auto,w_600\/adspaces\/static\/mac\/inside-midnight\.png$/);
   });
 
   it("lists the lid first and the keyboard deck second", () => {
     expect(mockupPresets({ color: "starlight", inside: false })).toEqual(["lid-starlight"]);
-    expect(mockupPresets({ color: "starlight", inside: true })).toEqual(["lid-starlight", "inside"]);
+    expect(mockupPresets({ color: "starlight", inside: true })).toEqual(["lid-starlight", "inside-starlight"]);
   });
 
   it("knows when the chosen mockup is already uploaded", () => {
