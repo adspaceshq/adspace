@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/adspaces.json`.
  */
 export type Adspaces = {
-  "address": "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW",
+  "address": "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5",
   "metadata": {
     "name": "adspaces",
     "version": "0.1.0",
@@ -741,7 +741,7 @@ export type Adspaces = {
         },
         {
           "name": "program",
-          "address": "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+          "address": "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5"
         },
         {
           "name": "programData"
@@ -2422,6 +2422,19 @@ export type Adspaces = {
       ]
     },
     {
+      "name": "protocolPauseSet",
+      "discriminator": [
+        88,
+        186,
+        42,
+        175,
+        234,
+        40,
+        83,
+        247
+      ]
+    },
+    {
       "name": "reviewAuthorityInitialized",
       "discriminator": [
         99,
@@ -3434,6 +3447,22 @@ export type Adspaces = {
           {
             "name": "submittedAt",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "protocolPauseSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
           }
         ]
       }

@@ -8,7 +8,7 @@
 export const ADSPACES_CLUSTER = process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? 'devnet'
 
 export const ADSPACES_PROGRAM_ID_STRING =
-  process.env.NEXT_PUBLIC_ADSPACES_PROGRAM_ID ?? '6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW'
+  process.env.NEXT_PUBLIC_ADSPACES_PROGRAM_ID ?? '8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5'
 
 export const SOLANA_RPC_URL =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'

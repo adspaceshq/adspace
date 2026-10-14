@@ -4,7 +4,7 @@ import { PublicKey } from "@solana/web3.js";
 import { createListingInstructions, deriveListingAddresses, slugHash } from "../src/adspaces-program.js";
 import type { Listing } from "../src/types.js";
 
-const programId = new PublicKey("6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
+const programId = new PublicKey("8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5");
 const seller = new PublicKey("414exgwxaeBSjajy42RKbmRqKn6o8YesDkGFwnxZNgvn");
 
 test("derives stable protocol addresses", () => {

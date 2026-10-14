@@ -2,7 +2,7 @@
 import type { Adspaces } from "./adspaces-types.js";
 
 export const ADSPACES_IDL = {
-  "address": "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW",
+  "address": "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5",
   "metadata": {
     "name": "adspaces",
     "version": "0.1.0",
@@ -738,7 +738,7 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "program",
-          "address": "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+          "address": "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5"
         },
         {
           "name": "program_data"
@@ -2419,6 +2419,19 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "ProtocolPauseSet",
+      "discriminator": [
+        88,
+        186,
+        42,
+        175,
+        234,
+        40,
+        83,
+        247
+      ]
+    },
+    {
       "name": "ReviewAuthorityInitialized",
       "discriminator": [
         99,
@@ -3431,6 +3444,22 @@ export const ADSPACES_IDL = {
           {
             "name": "submitted_at",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolPauseSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
           }
         ]
       }

@@ -193,6 +193,15 @@ function PurchasePanel({
   className?: string;
 }) {
   const available = canPurchase(listing, spot, now);
+  // Shares BidHistory's query (same key), so this costs no extra request. The API also refuses
+  // a bid from the current top bidder; this just says so instead of offering the button.
+  const bidQuery = useQuery({
+    queryKey: ["bids", spot.id],
+    queryFn: () => api.spots.bids(spot.id),
+    enabled: listing.mode === "auction" && spot.state === "funded",
+    refetchInterval: available ? 30_000 : false,
+  });
+  const youLead = Boolean(bidQuery.data?.items[0]?.isYou && bidQuery.data.items[0].isTop);
   const headline = spotHeadline(listing, spot);
   return (
     <div className={cx("flex flex-col gap-4 rounded-panel border border-line bg-surface p-5 shadow-card", className)}>
@@ -217,6 +226,10 @@ function PurchasePanel({
       </div>
       {isOwner ? (
         <p className="rounded-control bg-canvas px-3 py-2 text-small text-muted">this is your listing.</p>
+      ) : youLead && available ? (
+        <p className="rounded-control bg-success-soft px-3 py-2 text-small text-ink">
+          you&apos;re the top bidder. we&apos;ll let you know if someone outbids you.
+        </p>
       ) : (
         <Button size="lg" onClick={onPurchase} disabled={!available}>
           {!available ? "not available" : listing.mode === "auction" ? "place a bid" : "claim this spot"}
