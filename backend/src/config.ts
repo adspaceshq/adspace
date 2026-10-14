@@ -1,4 +1,4 @@
-const DEFAULT_ADSPACES_PROGRAM_ID = "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW";
+const DEFAULT_ADSPACES_PROGRAM_ID = "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5";
 
 export type SolanaCluster = "devnet" | "testnet" | "mainnet-beta";
 
