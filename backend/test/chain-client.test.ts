@@ -8,7 +8,7 @@ const program = createProgram(new Connection("http://127.0.0.1:8899"));
 const addresses = pdas(program.programId);
 
 test("program id matches the deployed adspaces program", () => {
-  assert.equal(program.programId.toBase58(), "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW");
+  assert.equal(program.programId.toBase58(), "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5");
 });
 
 test("claim_spot instruction includes config in program account order", async () => {

@@ -2,7 +2,7 @@
 import type { Adspaces } from "./adspaces-types.js";
 
 export const ADSPACES_IDL = {
-  "address": "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW",
+  "address": "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5",
   "metadata": {
     "name": "adspaces",
     "version": "0.1.0",
@@ -738,7 +738,7 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "program",
-          "address": "6ft49ExLRbHUcY6crReW7qibZLrS5rdCudKWQRp2LMSW"
+          "address": "8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5"
         },
         {
           "name": "program_data"
