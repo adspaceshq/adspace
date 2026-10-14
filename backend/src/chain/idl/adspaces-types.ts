@@ -2422,6 +2422,19 @@ export type Adspaces = {
       ]
     },
     {
+      "name": "protocolPauseSet",
+      "discriminator": [
+        88,
+        186,
+        42,
+        175,
+        234,
+        40,
+        83,
+        247
+      ]
+    },
+    {
       "name": "reviewAuthorityInitialized",
       "discriminator": [
         99,
@@ -3434,6 +3447,22 @@ export type Adspaces = {
           {
             "name": "submittedAt",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "protocolPauseSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
           }
         ]
       }

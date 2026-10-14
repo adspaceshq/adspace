@@ -2419,6 +2419,19 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "ProtocolPauseSet",
+      "discriminator": [
+        88,
+        186,
+        42,
+        175,
+        234,
+        40,
+        83,
+        247
+      ]
+    },
+    {
       "name": "ReviewAuthorityInitialized",
       "discriminator": [
         99,
@@ -3431,6 +3444,22 @@ export const ADSPACES_IDL = {
           {
             "name": "submitted_at",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolPauseSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
           }
         ]
       }
