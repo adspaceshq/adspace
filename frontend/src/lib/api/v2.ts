@@ -18,6 +18,7 @@ import type {
   OwnedListing,
   Post,
   ProtocolStatus,
+  RentReport,
   PublicListing,
   PublicProfile,
   ReviewQueueItem,
@@ -206,5 +207,9 @@ export const api = {
     team: () => get<TeamMember[]>("/admin/team"),
     addTeamMember: (handle: string, role: "reviewer" | "admin") => post<TeamMember[]>("/admin/team", { handle, role }),
     removeTeamMember: (userId: string) => request<TeamMember[]>("DELETE", `/admin/team/${enc(userId)}`),
+    rent: () => get<RentReport>("/admin/rent"),
+    // Without force the server only closes spots past their listing deadline.
+    closeSpot: (spotId: string, force = false) => post<{ spot: Spot; signature: string }>(`/admin/spots/${enc(spotId)}/close`, force ? { force: true } : {}),
+    closeListing: (listingId: string) => post<{ listing: Listing; signature: string }>(`/admin/listings/${enc(listingId)}/close`),
   },
 };
