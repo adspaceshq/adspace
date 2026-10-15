@@ -144,7 +144,6 @@ export const api = {
     update: (id: string, input: DraftInput) => request<{ listing: Listing; spots: Spot[] }>("PATCH", `/listings/${enc(id)}`, input),
     submit: (id: string) => post<Listing>(`/listings/${enc(id)}/submit`),
     publish: (id: string) => post<Listing>(`/listings/${enc(id)}/publish`),
-    close: (id: string) => post<{ listing: Listing; signature: string }>(`/listings/${enc(id)}/close`),
     // Only drafts and listings that never went live.
     remove: (id: string) => request<{ ok: true }>("DELETE", `/listings/${enc(id)}`),
     posts: (id: string) => get<Post[]>(`/listings/${enc(id)}/posts`),
@@ -174,7 +173,6 @@ export const api = {
     payout: (id: string) => post<{ spot: Spot; settlement: Settlement; signature: string }>(`/spots/${enc(id)}/payout`),
     refund: (id: string, asSeller: boolean) =>
       post<{ spot: Spot; settlement: Settlement; signature: string }>(`/spots/${enc(id)}/refund`, { asSeller }),
-    close: (id: string) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/close`),
     raiseDispute: (id: string, reason: string, evidenceAssetIds?: string[]) =>
       post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/disputes`, { reason, evidenceAssetIds }),
     withdrawDispute: (id: string) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/disputes/withdraw`),
