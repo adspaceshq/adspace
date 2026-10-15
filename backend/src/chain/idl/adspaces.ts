@@ -103,11 +103,15 @@ export const ADSPACES_IDL = {
       "accounts": [
         {
           "name": "seller",
-          "writable": true,
           "signer": true,
           "relations": [
             "listing"
           ]
+        },
+        {
+          "name": "rent_payer",
+          "writable": true,
+          "signer": true
         },
         {
           "name": "listing",
@@ -422,12 +426,9 @@ export const ADSPACES_IDL = {
       ],
       "accounts": [
         {
-          "name": "seller",
+          "name": "rent_payer",
           "writable": true,
-          "signer": true,
-          "relations": [
-            "listing"
-          ]
+          "signer": true
         },
         {
           "name": "listing",
@@ -448,7 +449,8 @@ export const ADSPACES_IDL = {
               },
               {
                 "kind": "account",
-                "path": "seller"
+                "path": "listing.seller",
+                "account": "Listing"
               },
               {
                 "kind": "account",
@@ -475,15 +477,13 @@ export const ADSPACES_IDL = {
       ],
       "accounts": [
         {
-          "name": "seller",
+          "name": "rent_payer",
           "writable": true,
-          "signer": true,
-          "relations": [
-            "listing"
-          ]
+          "signer": true
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -500,7 +500,8 @@ export const ADSPACES_IDL = {
               },
               {
                 "kind": "account",
-                "path": "seller"
+                "path": "listing.seller",
+                "account": "Listing"
               },
               {
                 "kind": "account",
@@ -550,11 +551,18 @@ export const ADSPACES_IDL = {
       "accounts": [
         {
           "name": "seller",
-          "writable": true,
           "signer": true
         },
         {
           "name": "reviewer",
+          "signer": true
+        },
+        {
+          "name": "rent_payer",
+          "docs": [
+            "Platform account that pays the rent for the listing and everything under it, and gets it back."
+          ],
+          "writable": true,
           "signer": true
         },
         {
@@ -1197,7 +1205,7 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Platform key that pays the dispute's rent, so buyers never need SOL. Co-signs the raise."
+            "The listing's rent payer funds the dispute's rent, so buyers never need SOL. Co-signs the raise."
           ],
           "writable": true,
           "signer": true
@@ -1266,6 +1274,7 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1294,7 +1303,7 @@ export const ADSPACES_IDL = {
           }
         },
         {
-          "name": "seller",
+          "name": "rent_payer",
           "writable": true
         },
         {
@@ -1319,7 +1328,7 @@ export const ADSPACES_IDL = {
         {
           "name": "proof",
           "docs": [
-            "Proof submitted before a seller-initiated refund; closed so its rent returns to the seller."
+            "Proof submitted before a seller-initiated refund; closed so its rent returns to the rent payer."
           ],
           "writable": true,
           "optional": true,
@@ -1382,6 +1391,7 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1440,7 +1450,7 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the dispute account's rent back: the platform account that paid it."
+            "Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it."
           ],
           "writable": true
         },
@@ -1453,8 +1463,7 @@ export const ADSPACES_IDL = {
           "writable": true
         },
         {
-          "name": "seller",
-          "writable": true
+          "name": "seller"
         },
         {
           "name": "buyer_ata",
@@ -1577,11 +1586,15 @@ export const ADSPACES_IDL = {
       "accounts": [
         {
           "name": "seller",
-          "writable": true,
           "signer": true,
           "relations": [
             "listing"
           ]
+        },
+        {
+          "name": "rent_payer",
+          "writable": true,
+          "signer": true
         },
         {
           "name": "listing",
@@ -1695,6 +1708,7 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1721,10 +1735,6 @@ export const ADSPACES_IDL = {
               }
             ]
           }
-        },
-        {
-          "name": "seller",
-          "writable": true
         },
         {
           "name": "spot",
@@ -1757,7 +1767,7 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the dispute account's rent back: the platform account that paid it."
+            "Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it."
           ],
           "writable": true
         },
@@ -2036,6 +2046,7 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -2064,7 +2075,10 @@ export const ADSPACES_IDL = {
           }
         },
         {
-          "name": "seller",
+          "name": "seller"
+        },
+        {
+          "name": "rent_payer",
           "writable": true
         },
         {
@@ -3291,6 +3305,13 @@ export const ADSPACES_IDL = {
             "type": "u8"
           },
           {
+            "name": "closed_spot_count",
+            "docs": [
+              "Spots already closed (paid out, refunded, settled by dispute or withdrawn unsold)."
+            ],
+            "type": "u8"
+          },
+          {
             "name": "status",
             "type": "u8"
           },
@@ -3309,6 +3330,14 @@ export const ADSPACES_IDL = {
           {
             "name": "max_fee_bps",
             "type": "u16"
+          },
+          {
+            "name": "rent_payer",
+            "docs": [
+              "Platform account that paid the rent for this listing and its spots, vaults and proofs.",
+              "Every one of those accounts returns its rent here when it closes."
+            ],
+            "type": "pubkey"
           },
           {
             "name": "bump",
