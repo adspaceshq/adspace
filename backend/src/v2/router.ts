@@ -26,7 +26,7 @@ import { listMessages, postMessage } from "../services/spot-messages.js";
 import { submitSpotProof } from "../services/spot-proof.js";
 import { payoutSeller } from "../services/settlement.js";
 import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../services/disputes.js";
-import { closeListing, closeSpot, refundSpot, type RefundDeps } from "../services/refunds.js";
+import { closeListing, closeSpot, refundSpot, rentReport, type RefundDeps } from "../services/refunds.js";
 import { listWithdrawals, prepareWithdrawal, submitWithdrawal } from "../services/wallet.js";
 import { publicProfilePage } from "../services/profiles.js";
 import { spotBidHistory } from "../services/bid-history.js";
@@ -332,8 +332,8 @@ export function createV2Router(options: {
           program: context.program,
           mint: context.mint,
           reviewer: context.reviewer,
+          rentPayer: context.rentPayer,
           runTx: context.runTx,
-          ensureSellerFunding: context.ensureSellerFunding,
           metadataBaseUrl: options.metadataBaseUrl,
           termsVersion: options.termsVersion,
         },
@@ -449,7 +449,7 @@ export function createV2Router(options: {
       const context = requireChain();
       const postIds = Array.isArray(req.body?.postIds) ? (req.body.postIds as unknown[]).filter((id): id is string => typeof id === "string") : [];
       const result = await submitSpotProof(
-        { db, program: context.program, feePayer: context.reviewer, runTx: context.runTx, listingBaseUrl: options.metadataBaseUrl },
+        { db, program: context.program, feePayer: context.reviewer, rentPayer: context.rentPayer, runTx: context.runTx, listingBaseUrl: options.metadataBaseUrl },
         me(req).id,
         await context.userSigner(me(req)),
         req.params.id,
@@ -472,6 +472,7 @@ export function createV2Router(options: {
             program: context.program,
             mint: context.mint,
             caller: context.reviewer,
+            rentPayer: context.rentPayer.publicKey,
             runTx: context.runTx,
             readListingSnapshot: context.readListingSnapshot,
             readVaultBalance: context.readVaultBalance,
@@ -491,9 +492,9 @@ export function createV2Router(options: {
       program: context.program,
       mint: context.mint,
       feePayer: context.reviewer,
+      rentPayer: context.rentPayer,
       resolver: context.reviewer,
       runTx: context.runTx,
-      ensureRent: context.ensureSellerFunding,
       readListingSnapshot: context.readListingSnapshot,
       readVaultBalance: context.readVaultBalance,
       readTxEvent: context.readTxEvent,
@@ -550,6 +551,7 @@ export function createV2Router(options: {
       program: context.program,
       mint: context.mint,
       feePayer: context.reviewer,
+      rentPayer: context.rentPayer,
       runTx: context.runTx,
       readVaultBalance: context.readVaultBalance,
       accountExists: context.accountExists,
@@ -567,22 +569,6 @@ export function createV2Router(options: {
         sellerSigner: asSeller ? await context.userSigner(me(req)) : undefined,
       });
       send(res, result);
-    }),
-  );
-  router.post(
-    "/spots/:id/close",
-    ...mutate,
-    handle(async (req, res) => {
-      const signer = await requireChain().userSigner(me(req));
-      send(res, await closeSpot(refundDeps(), me(req).id, signer, req.params.id));
-    }),
-  );
-  router.post(
-    "/listings/:id/close",
-    ...mutate,
-    handle(async (req, res) => {
-      const signer = await requireChain().userSigner(me(req));
-      send(res, await closeListing(refundDeps(), me(req).id, signer, req.params.id));
     }),
   );
   // Read with the server's RPC so the browser never needs (or exposes) a paid RPC key.
@@ -714,6 +700,16 @@ export function createV2Router(options: {
       send(res, { disputeTimeoutSeconds: result.status.disputeTimeoutSeconds, signature: result.signature });
     }),
   );
+  // Rent reclaim: the platform paid every account's rent, so only admins close unsold spots and
+  // finished listings, and the rent returns to the platform's rent payer. Creators never close anything.
+  router.get("/admin/rent", requireUser, requireAdmin, handle(async (_req, res) => send(res, await rentReport({ db, readLamports: requireChain().readLamports }))));
+  router.post(
+    "/admin/spots/:id/close",
+    ...mutate,
+    requireAdmin,
+    handle(async (req, res) => send(res, await closeSpot(refundDeps(), me(req).id, req.params.id, { force: req.body?.force === true }))),
+  );
+  router.post("/admin/listings/:id/close", ...mutate, requireAdmin, handle(async (req, res) => send(res, await closeListing(refundDeps(), me(req).id, req.params.id))));
   router.get("/me/dashboard/creator", requireUser, handle(async (req, res) => send(res, await creatorDashboard(db, me(req).id))));
   router.get(
     "/me/dashboard/sponsor",
