@@ -29,10 +29,12 @@ beforeEach(() => {
   sent = [];
 });
 
+const platformKey = keypairSigner(Keypair.generate());
 const proofDeps = (): ProofDeps => ({
   db,
   program: createProgram(new Connection("http://127.0.0.1:8899")),
-  feePayer: keypairSigner(Keypair.generate()),
+  feePayer: platformKey,
+  rentPayer: platformKey,
   runTx: fakeRunTx(db, sent),
   listingBaseUrl: "https://adspaces.fun",
 });
@@ -111,6 +113,10 @@ test("proof tags posts, moves the spot to delivered, and records the hash", asyn
   assert.equal(result.spot.proofHash, expected);
   assert.equal(sent.length, 1);
   assert.equal(sent[0].idempotencyKey, `proof:${spot.id}`);
+  // The platform pays the proof rent; it is the fee payer here, so only the creator co-signs.
+  assert.deepEqual(sent[0].signers?.map((signer) => signer.publicKey.toBase58()), [seller.signer.publicKey.toBase58()]);
+  assert.ok(sent[0].instructions[0].keys[1].pubkey.equals(platformKey.publicKey));
+  assert.ok(sent[0].instructions[0].keys[1].isSigner);
   const feed = await listPosts(db, listing.id);
   assert.ok(feed.every((post) => post.proofForSpotIds.includes(spot.id)));
   const events = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));

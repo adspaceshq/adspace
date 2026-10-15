@@ -527,3 +527,31 @@ export interface TeamMember {
   avatarUrl: string | null;
   grantedByHandle: string | null;
 }
+
+// Admin rent reclaim. Lamports are read from chain; a closed account counts as 0.
+export interface RentSpot {
+  id: string;
+  index: number;
+  chainAddress: string;
+  listingId: string;
+  listingTitle: string;
+  listingSlug: string;
+  deadline: IsoDate;
+  lamports: number;
+}
+
+export interface RentListing {
+  id: string;
+  title: string;
+  slug: string;
+  chainAddress: string;
+  lamports: number;
+}
+
+export interface RentReport {
+  // Unsold spots on published listings whose deadline has passed.
+  spots: RentSpot[];
+  // Published listings whose spots are all finished.
+  listings: RentListing[];
+  reclaimableLamports: number;
+}

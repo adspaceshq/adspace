@@ -29,7 +29,6 @@ import { ProofPicker } from "./ProofPicker";
 import { PublishPanel } from "./PublishPanel";
 import { XHandleLink } from "@/components/ui/UserLink";
 
-const TERMINAL = ["settled", "refunded", "cancelled"];
 const reviewEnds = (listing: OwnedListing) => new Date(listing.deliveryDueAt).getTime() + listing.reviewWindowSeconds * 1000;
 
 export function ControlRoom({ listingId }: { listingId: string }) {
@@ -104,7 +103,6 @@ export function ControlRoom({ listingId }: { listingId: string }) {
               />
             )}
             <SpotTable listing={listing} selectedId={selected?.id} onSelect={selectSpot} now={now} />
-            <CloseListing listing={listing} now={now} />
           </div>
           {/* Two tabs instead of one tall stack, so the page doesn't keep growing; pinned while the left side scrolls. */}
           <div className="flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-9.5rem)] lg:self-start lg:overflow-y-auto lg:pb-4 no-scrollbar">
@@ -202,7 +200,6 @@ function useRefresh(listingId: string) {
 function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; now: number }) {
   const refresh = useRefresh(listing.id);
   const [proofOpen, setProofOpen] = useState(false);
-  const close = useTx(() => api.spots.close(spot.id));
   const refund = useTx(() => api.spots.refund(spot.id, true));
   const payout = useTx(() => api.spots.payout(spot.id));
   const run = async (tx: { execute: () => Promise<unknown> }) => {
@@ -238,15 +235,7 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
         </div>
       )}
 
-      {spot.state === "open" && listing.state === "published" && (
-        <>
-          <p className="text-small text-muted">not sold yet. you can take it off sale; its rent comes back to you.</p>
-          <Button variant="secondary" onClick={() => void run(close)} loading={close.busy}>
-            close this spot
-          </Button>
-          <TxStatus state={close.state} action="close spot" onRetry={close.retry} />
-        </>
-      )}
+      {spot.state === "open" && listing.state === "published" && <p className="text-small text-muted">not sold yet.</p>}
       {spot.state === "funded" && (
         <>
           {proofWindow ? (
@@ -295,27 +284,5 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
       {spot.buyerId && <MessagesPanel spotId={spot.id} counterpart={spot.brand?.name ?? "the sponsor"} />}
       {proofOpen && <ProofPicker listingId={listing.id} spotId={spot.id} spotIndex={spot.index} open={proofOpen} onClose={() => setProofOpen(false)} />}
     </section>
-  );
-}
-
-function CloseListing({ listing, now }: { listing: OwnedListing; now: number }) {
-  const refresh = useRefresh(listing.id);
-  const tx = useTx(() => api.listings.close(listing.id));
-  const ready = listing.state === "published" && now >= new Date(listing.deadline).getTime() && listing.spots.every((spot) => TERMINAL.includes(spot.state));
-  if (!ready) return null;
-  return (
-    <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
-      <div className="flex flex-col gap-1">
-        <p className="text-body font-medium">every spot is finished</p>
-        <p className="text-small text-muted">
-          publishing put a small SOL deposit into this listing&apos;s on-chain accounts. closing returns that SOL to your wallet. it moves no USDC, and the
-          listing page and its history stay visible.
-        </p>
-      </div>
-      <Button variant="secondary" className="self-start" onClick={async () => (await tx.execute()) && (await refresh())} loading={tx.busy}>
-        close listing and reclaim SOL
-      </Button>
-      <TxStatus state={tx.state} action="close listing" onRetry={tx.retry} />
-    </div>
   );
 }

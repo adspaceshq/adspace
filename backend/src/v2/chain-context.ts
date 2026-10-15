@@ -1,6 +1,6 @@
 import { txEventReader, type TxEventReader } from "../chain/events.js";
 import type { PrivyClient } from "@privy-io/node";
-import { Connection, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { associatedTokenAddress, createProgram, pdas, type AdspacesProgram } from "../chain/program.js";
 import { prepareChainTx, runChainTx, submitPreparedChainTx, type ChainTxRequest, type ChainTxResult, type PreparedChainTx } from "../chain/runner.js";
@@ -16,18 +16,21 @@ export interface ChainContext {
   program: AdspacesProgram;
   mint: PublicKey;
   reviewer: TxSigner;
+  // Pays all account rent and receives it back; recorded on-chain per listing. Today the reviewer key.
+  rentPayer: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   prepareTx: (request: Omit<ChainTxRequest, "signers">) => Promise<PreparedChainTx>;
   submitTx: (chainTxId: string, signedBase64: string) => Promise<ChainTxResult>;
   // `requireMfa` refuses users without two-factor set up in Privy (withdrawals).
   userSigner: (user: SessionUser, options?: { requireMfa?: boolean }) => Promise<TxSigner>;
-  ensureSellerFunding: (seller: PublicKey) => Promise<void>;
   fetchListingDeadline: (listing: PublicKey) => Promise<Date>;
   configFeeFloorBps: () => Promise<number>;
   readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   readTxEvent: TxEventReader;
   accountExists: (address: PublicKey) => Promise<boolean>;
+  // Lamports per account in input order, null for accounts that don't exist.
+  readLamports: (addresses: PublicKey[]) => Promise<Array<number | null>>;
   readDisputeTimeoutSeconds: () => Promise<number>;
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
@@ -44,18 +47,17 @@ export function createChainContext(options: {
   mint: string;
   reviewerKeypairPath: string;
   privyAuthorizationKey?: string;
-  sellerRentFloorLamports: number;
 }): ChainContext {
   const connection = new Connection(options.rpcUrl, "confirmed");
   const program = createProgram(connection);
-  const reviewerKeypair = loadKeypair(options.reviewerKeypairPath);
-  const reviewer = keypairSigner(reviewerKeypair);
+  const reviewer = keypairSigner(loadKeypair(options.reviewerKeypairPath));
 
   return {
     connection,
     program,
     mint: new PublicKey(options.mint),
     reviewer,
+    rentPayer: reviewer,
     runTx: (request) => runChainTx(options.db, connection, request),
     prepareTx: (request) => prepareChainTx(options.db, connection, request),
     submitTx: (chainTxId, signed) => submitPreparedChainTx(options.db, connection, chainTxId, signed),
@@ -77,21 +79,6 @@ export function createChainContext(options: {
         throw httpError("set up two-factor authentication before withdrawing", 403);
       }
       return privyWalletSigner(options.privy, wallet.id, user.walletAddress, options.privyAuthorizationKey);
-    },
-
-    async ensureSellerFunding(seller) {
-      const balance = await connection.getBalance(seller, "confirmed");
-      if (balance >= options.sellerRentFloorLamports) return;
-      const transaction = new Transaction().add(
-        SystemProgram.transfer({
-          fromPubkey: reviewerKeypair.publicKey,
-          toPubkey: seller,
-          lamports: options.sellerRentFloorLamports - balance,
-        }),
-      );
-      const signature = await connection.sendTransaction(transaction, [reviewerKeypair]);
-      const result = await connection.confirmTransaction(signature, "confirmed");
-      if (result.value.err) throw httpError("could not fund rent for publishing", 502);
     },
 
     async fetchListingDeadline(listing) {
@@ -126,6 +113,16 @@ export function createChainContext(options: {
 
     async accountExists(address) {
       return (await connection.getAccountInfo(address, "confirmed")) !== null;
+    },
+
+    // getMultipleAccountsInfo takes at most 100 keys per call.
+    async readLamports(addresses) {
+      const out: Array<number | null> = [];
+      for (let start = 0; start < addresses.length; start += 100) {
+        const accounts = await connection.getMultipleAccountsInfo(addresses.slice(start, start + 100), "confirmed");
+        out.push(...accounts.map((account) => account?.lamports ?? null));
+      }
+      return out;
     },
 
     async readTokenBalance(owner) {
