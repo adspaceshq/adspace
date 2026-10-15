@@ -35,8 +35,8 @@ const deps = (now = new Date()): DisputeDeps => ({
   mint: Keypair.generate().publicKey,
   feePayer: reviewerKey,
   resolver: reviewerKey,
+  rentPayer: reviewerKey,
   runTx: fakeRunTx(db, sent),
-  ensureRent: async () => {},
   readListingSnapshot: async () => ({
     treasury: Keypair.generate().publicKey,
     fees: { mode: "fixed", feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 },
@@ -63,6 +63,21 @@ test("buyer raises a dispute after the delivery deadline", async () => {
   assert.equal(result.spot.state, "disputed");
   assert.equal(result.dispute.state, "open");
   assert.equal(sent[0].op, "raise_dispute");
+  assert.deepEqual(sent[0].signers?.map((signer) => signer.publicKey.toBase58()), [buyer!.signer.publicKey.toBase58()]);
+});
+
+test("a separate platform rent payer co-signs the dispute and receives rent on timeout", async () => {
+  const { buyer, spot, seller } = await overdueSpot();
+  const rentPayer = keypairSigner(Keypair.generate());
+  const withRentPayer = (now?: Date) => ({ ...deps(now), rentPayer });
+  await raiseDispute(withRentPayer(), buyer!.user.id, buyer!.signer, spot.id, { reason: REASON });
+  assert.deepEqual(sent[0].signers?.map((signer) => signer.publicKey.toBase58()), [buyer!.signer.publicKey.toBase58(), rentPayer.publicKey.toBase58()]);
+  timeoutSeconds = 0;
+  await timeoutDispute(withRentPayer(), spot.id);
+  const keys = sent[1].instructions.at(-1)!.keys;
+  assert.ok(keys.some((key) => key.pubkey.equals(rentPayer.publicKey) && key.isWritable));
+  // The creator's wallet is no longer part of a timeout.
+  assert.ok(!keys.some((key) => key.pubkey.toBase58() === seller.user.walletAddress));
 });
 
 test("disputes are blocked before delivery is due, for non-buyers, and with thin reasons", async () => {

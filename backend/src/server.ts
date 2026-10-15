@@ -28,7 +28,6 @@ async function start() {
         mint: usdcMintFor(config.solana.cluster, process.env.USDC_MINT),
         reviewerKeypairPath: config.solana.reviewerWalletPath,
         privyAuthorizationKey: process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY,
-        sellerRentFloorLamports: config.solana.cluster === "devnet" ? 50_000_000 : 10_000_000,
       })
     : undefined;
   const v2Router = createV2Router({

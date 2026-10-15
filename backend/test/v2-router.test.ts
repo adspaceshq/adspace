@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import request from "supertest";
+import { Connection, Keypair, type PublicKey } from "@solana/web3.js";
+import { createProgram } from "../src/chain/program.js";
+import type { ChainTxRequest } from "../src/chain/runner.js";
+import { keypairSigner } from "../src/chain/signers.js";
 import { createApp } from "../src/index.js";
 import { AppAuthRepository } from "../src/repositories/app-auth.js";
 import type { Db } from "../src/db/client.js";
+import type { ChainContext } from "../src/v2/chain-context.js";
 import { createV2Router, parseUsdc } from "../src/v2/router.js";
 import { createTestDb } from "./helpers/db.js";
+import { fakeRunTx, seedListing } from "./helpers/seed.js";
 
 let db: Db;
 let close: () => Promise<void>;
@@ -155,4 +161,71 @@ test("session exchange is rate limited", async () => {
   const limited = createApp({ v2Router: createV2Router({ db, reviewers: [], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }) });
   for (let i = 0; i < 20; i++) assert.equal((await request(limited).post("/api/v2/auth/session")).status, 401);
   assert.equal((await request(limited).post("/api/v2/auth/session")).status, 429);
+});
+
+test("rent reclaim is admin-only and the creator close routes are gone", async () => {
+  const platform = keypairSigner(Keypair.generate());
+  const sent: ChainTxRequest[] = [];
+  const chain = {
+    program: createProgram(new Connection("http://127.0.0.1:8899")),
+    mint: Keypair.generate().publicKey,
+    reviewer: platform,
+    rentPayer: platform,
+    runTx: fakeRunTx(db, sent),
+    readVaultBalance: async () => 0n,
+    accountExists: async () => true,
+    readLamports: async (addresses: PublicKey[]) => addresses.map(() => 2_000_000),
+  } as unknown as ChainContext;
+  const adminApp = createApp({
+    v2Router: createV2Router({
+      db,
+      chain,
+      reviewers: ["did:privy:rent_reviewer"],
+      admins: ["did:privy:rent_admin"],
+      termsVersion: "test",
+      metadataBaseUrl: "https://adspaces.test",
+    }),
+  });
+  const HOUR = 60 * 60 * 1000;
+  const expired = await seedListing(db, { deadline: new Date(Date.now() - HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR) });
+  const selling = await seedListing(db, { deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR) });
+
+  // Creators used to sign their own closes; those routes no longer exist.
+  const creator = await auth.createSession({ did: expired.seller.user.privyDid, xUserId: "x-rent-creator", handle: `@${expired.seller.user.handle}`, hasX: true });
+  const creatorCookie = `adspaces_v2_session=${creator.token}`;
+  for (const path of [`/api/v2/spots/${expired.spot.id}/close`, `/api/v2/listings/${expired.listing.id}/close`]) {
+    const response = await request(adminApp).post(path).set("Cookie", creatorCookie).set("X-CSRF-Token", creator.session.csrfToken);
+    assert.equal(response.status, 404);
+  }
+
+  for (const handle of ["rent_reviewer", "rent_user"]) {
+    const user = await signIn(handle);
+    assert.equal((await request(adminApp).get("/api/v2/admin/rent").set("Cookie", user.cookie)).status, 403);
+    const post = (path: string) => request(adminApp).post(path).set("Cookie", user.cookie).set("X-CSRF-Token", user.csrf).send({ force: true });
+    assert.equal((await post(`/api/v2/admin/spots/${expired.spot.id}/close`)).status, 403);
+    assert.equal((await post(`/api/v2/admin/listings/${expired.listing.id}/close`)).status, 403);
+  }
+  assert.equal(sent.length, 0);
+
+  const admin = await signIn("rent_admin");
+  const adminPost = (path: string, body: object = {}) =>
+    request(adminApp).post(path).set("Cookie", admin.cookie).set("X-CSRF-Token", admin.csrf).send(body);
+  const report = await request(adminApp).get("/api/v2/admin/rent").set("Cookie", admin.cookie);
+  assert.equal(report.status, 200);
+  const reported = report.body.spots.find((spot: { id: string }) => spot.id === expired.spot.id);
+  assert.equal(reported?.lamports, 4_000_000);
+  assert.ok(!report.body.spots.some((spot: { id: string }) => spot.id === selling.spot.id));
+
+  const closedSpot = await adminPost(`/api/v2/admin/spots/${expired.spot.id}/close`);
+  assert.equal(closedSpot.status, 200);
+  assert.equal(closedSpot.body.spot.state, "cancelled");
+  assert.equal(sent[0].actorId, admin.id);
+
+  assert.equal((await adminPost(`/api/v2/admin/spots/${selling.spot.id}/close`)).status, 409);
+  assert.equal((await adminPost(`/api/v2/admin/listings/${selling.listing.id}/close`)).status, 409);
+  assert.equal((await adminPost(`/api/v2/admin/spots/${selling.spot.id}/close`, { force: true })).status, 200);
+
+  const closedListing = await adminPost(`/api/v2/admin/listings/${expired.listing.id}/close`);
+  assert.equal(closedListing.status, 200);
+  assert.equal(closedListing.body.listing.state, "closed");
 });

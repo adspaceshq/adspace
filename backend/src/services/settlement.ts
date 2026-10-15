@@ -26,6 +26,8 @@ export interface SettlementDeps {
   program: AdspacesProgram;
   mint: PublicKey;
   caller: TxSigner;
+  // The listing's on-chain rent payer; receives the spot, vault and proof rent back.
+  rentPayer: PublicKey;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
@@ -93,6 +95,7 @@ export async function payoutSeller(deps: SettlementDeps, spotId: string, trigger
         caller: deps.caller.publicKey,
         listing: listingKey,
         seller,
+        rentPayer: deps.rentPayer,
         spot: spotKey,
         vault,
         sellerAta: associatedTokenAddress(seller, deps.mint),

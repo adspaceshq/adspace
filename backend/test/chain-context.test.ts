@@ -45,7 +45,6 @@ function context(account: { delegated: boolean; mfa: number }) {
     mint: Keypair.generate().publicKey.toBase58(),
     reviewerKeypairPath: keypairFile,
     privyAuthorizationKey: "test-key",
-    sellerRentFloorLamports: 0,
   });
 }
 

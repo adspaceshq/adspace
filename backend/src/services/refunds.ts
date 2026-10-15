@@ -1,11 +1,11 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, lte } from "drizzle-orm";
 import { PublicKey, type TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { listings, settlements, spotEvents, spots } from "../db/schema.js";
 import { nextSpotState, terminalSpotStates } from "../domain/spot-state.js";
 import { associatedTokenAddress, pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
-import type { TxSigner } from "../chain/signers.js";
+import { cosigners, type TxSigner } from "../chain/signers.js";
 import { createAtaIdempotent } from "./settlement.js";
 
 export class RefundError extends Error {
@@ -19,6 +19,9 @@ export interface RefundDeps {
   program: AdspacesProgram;
   mint: PublicKey;
   feePayer: TxSigner;
+  // The platform key recorded on-chain as each listing's rent payer. It gets every account's rent
+  // back, and is the only key that can close unsold spots and listings.
+  rentPayer: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
@@ -72,13 +75,13 @@ export async function refundSpot(
       .accountsStrict({
         caller: caller.publicKey,
         listing: new PublicKey(listing.chainAddress!),
-        seller: new PublicKey(listing.sellerWallet!),
+        rentPayer: deps.rentPayer.publicKey,
         spot: new PublicKey(spot.chainAddress!),
         vault,
         buyerAta: associatedTokenAddress(buyer, deps.mint),
         usdcMint: deps.mint,
         tokenProgram: TOKEN_PROGRAM_ID,
-        // Proof exists once submitted; the program closes it so its rent returns to the seller.
+        // Proof exists once submitted; the program closes it so its rent returns to the rent payer.
         proof: spot.proofSubmittedAt ? pdas(deps.program.programId).proof(new PublicKey(spot.chainAddress!)) : null,
       })
       .instruction(),
@@ -119,22 +122,23 @@ export async function refundSpot(
   });
 }
 
-// Withdraws an unsold spot from sale and returns its rent to the creator.
-export async function closeSpot(deps: RefundDeps, sellerId: string, seller: TxSigner, spotId: string) {
+// Admin action: withdraws an unsold spot from sale and returns its rent to the platform.
+// Only after the listing deadline, unless `force` takes it off sale early.
+export async function closeSpot(deps: RefundDeps, adminId: string, spotId: string, options: { force?: boolean } = {}) {
   const now = deps.now?.() ?? new Date();
   const { spot, listing } = await loadSpot(deps.db, spotId);
-  if (listing.sellerId !== sellerId) throw new RefundError("only the creator can close a spot", 403);
   if (spot.state !== "open") throw new RefundError("only unsold spots can be closed");
-  if (seller.publicKey.toBase58() !== listing.sellerWallet) throw new RefundError("close with your listing wallet");
+  if (now < listing.deadline && !options.force) throw new RefundError("the listing is still selling; force to close it early");
+  const seller = new PublicKey(listing.sellerWallet!);
   // Anything sent to the open spot's vault is swept to the creator's token account before it closes.
   const instruction = await deps.program.methods
     .closeSpot()
     .accountsStrict({
-      seller: seller.publicKey,
+      rentPayer: deps.rentPayer.publicKey,
       listing: new PublicKey(listing.chainAddress!),
       spot: new PublicKey(spot.chainAddress!),
       vault: new PublicKey(spot.vaultAddress!),
-      sellerAta: associatedTokenAddress(seller.publicKey, deps.mint),
+      sellerAta: associatedTokenAddress(seller, deps.mint),
       usdcMint: deps.mint,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
@@ -144,10 +148,10 @@ export async function closeSpot(deps: RefundDeps, sellerId: string, seller: TxSi
     idempotencyKey: `close-spot:${spot.id}`,
     listingId: listing.id,
     spotId: spot.id,
-    actorId: sellerId,
-    instructions: [createAtaIdempotent(deps.feePayer.publicKey, seller.publicKey, deps.mint), instruction],
+    actorId: adminId,
+    instructions: [createAtaIdempotent(deps.feePayer.publicKey, seller, deps.mint), instruction],
     feePayer: deps.feePayer,
-    signers: [seller],
+    signers: cosigners(deps.feePayer, deps.rentPayer),
   });
   return deps.db.transaction(async (trx) => {
     const to = nextSpotState("open", "closed");
@@ -162,46 +166,38 @@ export async function closeSpot(deps: RefundDeps, sellerId: string, seller: TxSi
       fromState: "open",
       toState: to,
       type: "closed",
-      actorId: sellerId,
+      actorId: adminId,
       chainTxId: tx.chainTxId,
+      data: { force: Boolean(options.force) },
     });
     return { spot: updated, signature: tx.signature };
   });
 }
 
-// The program requires every spot account to be closed; settled, refunded and cancelled spots are.
-export async function closeListing(deps: RefundDeps, sellerId: string, seller: TxSigner, listingId: string) {
+// Admin action: the program requires every spot account to be closed first; settled, refunded
+// and cancelled spots are. The listing's rent returns to the platform.
+export async function closeListing(deps: RefundDeps, adminId: string, listingId: string) {
   const now = deps.now?.() ?? new Date();
   const [listing] = await deps.db.select().from(listings).where(eq(listings.id, listingId));
   if (!listing) throw new RefundError("listing not found", 404);
-  if (listing.sellerId !== sellerId) throw new RefundError("only the creator can close this listing", 403);
-  if (listing.state !== "published") throw new RefundError("only live listings can be closed");
-  if (now < listing.deadline) throw new RefundError("close the listing after its deadline");
-  if (!listing.chainAddress || seller.publicKey.toBase58() !== listing.sellerWallet) {
-    throw new RefundError("close with your listing wallet");
-  }
-  const listingSpots = await deps.db.select().from(spots).where(eq(spots.listingId, listing.id)).orderBy(asc(spots.index));
+  if (listing.state !== "published" || !listing.chainAddress) throw new RefundError("only live listings can be closed");
+  const listingSpots = await deps.db.select().from(spots).where(eq(spots.listingId, listing.id));
   const active = listingSpots.filter((spot) => !terminalSpotStates.has(spot.state));
   if (active.length > 0) {
     throw new RefundError(`finish or close ${active.length} remaining spot${active.length === 1 ? "" : "s"} first`);
   }
-  const listingKey = new PublicKey(listing.chainAddress);
-  const addresses = pdas(deps.program.programId);
   const instruction = await deps.program.methods
     .closeListing()
-    .accountsStrict({ seller: seller.publicKey, listing: listingKey })
-    .remainingAccounts(
-      listingSpots.map((spot) => ({ pubkey: addresses.spot(listingKey, spot.index), isSigner: false, isWritable: false })),
-    )
+    .accountsStrict({ rentPayer: deps.rentPayer.publicKey, listing: new PublicKey(listing.chainAddress) })
     .instruction();
   const tx = await deps.runTx({
     op: "close_listing",
     idempotencyKey: `close-listing:${listing.id}`,
     listingId: listing.id,
-    actorId: sellerId,
+    actorId: adminId,
     instructions: [instruction],
     feePayer: deps.feePayer,
-    signers: [seller],
+    signers: cosigners(deps.feePayer, deps.rentPayer),
   });
   const [closed] = await deps.db
     .update(listings)
@@ -210,4 +206,57 @@ export async function closeListing(deps: RefundDeps, sellerId: string, seller: T
     .returning();
   if (!closed) throw new RefundError("listing changed while closing; reconciling", 500);
   return { listing: closed, signature: tx.signature };
+}
+
+export interface RentReportDeps {
+  db: Db;
+  // Lamports held by each account, null once it is closed.
+  readLamports: (addresses: PublicKey[]) => Promise<Array<number | null>>;
+  now?: () => Date;
+}
+
+// What the platform can reclaim: unsold spots past their listing deadline, and live listings whose
+// spots are all finished. Lamports come from chain, so an account already closed counts as 0.
+export async function rentReport(deps: RentReportDeps) {
+  const now = deps.now?.() ?? new Date();
+  const openSpots = await deps.db
+    .select({
+      id: spots.id,
+      index: spots.index,
+      chainAddress: spots.chainAddress,
+      vaultAddress: spots.vaultAddress,
+      listingId: listings.id,
+      listingTitle: listings.title,
+      listingSlug: listings.slug,
+      deadline: listings.deadline,
+    })
+    .from(spots)
+    .innerJoin(listings, eq(listings.id, spots.listingId))
+    .where(and(eq(spots.state, "open"), eq(listings.state, "published"), lte(listings.deadline, now), isNotNull(spots.chainAddress)))
+    .orderBy(asc(listings.deadline), asc(spots.index));
+
+  const live = await deps.db
+    .select({ id: listings.id, title: listings.title, slug: listings.slug, chainAddress: listings.chainAddress, spotState: spots.state })
+    .from(listings)
+    .leftJoin(spots, eq(spots.listingId, listings.id))
+    .where(and(eq(listings.state, "published"), isNotNull(listings.chainAddress)));
+  const byListing = new Map<string, { id: string; title: string; slug: string; chainAddress: string; done: boolean }>();
+  for (const row of live) {
+    const entry = byListing.get(row.id) ?? { id: row.id, title: row.title, slug: row.slug, chainAddress: row.chainAddress!, done: true };
+    if (row.spotState && !terminalSpotStates.has(row.spotState)) entry.done = false;
+    byListing.set(row.id, entry);
+  }
+  const closable = [...byListing.values()].filter((listing) => listing.done);
+
+  const addresses = [...openSpots.flatMap((spot) => [spot.chainAddress!, spot.vaultAddress!]), ...closable.map((listing) => listing.chainAddress)];
+  const lamports = addresses.length ? await deps.readLamports(addresses.map((address) => new PublicKey(address))) : [];
+  const held = new Map(addresses.map((address, i) => [address, lamports[i] ?? 0]));
+
+  const spotItems = openSpots.map(({ vaultAddress, ...spot }) => ({
+    ...spot,
+    lamports: (held.get(spot.chainAddress!) ?? 0) + (held.get(vaultAddress!) ?? 0),
+  }));
+  const listingItems = closable.map(({ done: _done, ...listing }) => ({ ...listing, lamports: held.get(listing.chainAddress) ?? 0 }));
+  const reclaimableLamports = [...spotItems, ...listingItems].reduce((sum, item) => sum + item.lamports, 0);
+  return { spots: spotItems, listings: listingItems, reclaimableLamports };
 }

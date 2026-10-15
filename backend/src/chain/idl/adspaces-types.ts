@@ -106,11 +106,15 @@ export type Adspaces = {
       "accounts": [
         {
           "name": "seller",
-          "writable": true,
           "signer": true,
           "relations": [
             "listing"
           ]
+        },
+        {
+          "name": "rentPayer",
+          "writable": true,
+          "signer": true
         },
         {
           "name": "listing",
@@ -425,12 +429,9 @@ export type Adspaces = {
       ],
       "accounts": [
         {
-          "name": "seller",
+          "name": "rentPayer",
           "writable": true,
-          "signer": true,
-          "relations": [
-            "listing"
-          ]
+          "signer": true
         },
         {
           "name": "listing",
@@ -451,7 +452,8 @@ export type Adspaces = {
               },
               {
                 "kind": "account",
-                "path": "seller"
+                "path": "listing.seller",
+                "account": "listing"
               },
               {
                 "kind": "account",
@@ -478,15 +480,13 @@ export type Adspaces = {
       ],
       "accounts": [
         {
-          "name": "seller",
+          "name": "rentPayer",
           "writable": true,
-          "signer": true,
-          "relations": [
-            "listing"
-          ]
+          "signer": true
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -503,7 +503,8 @@ export type Adspaces = {
               },
               {
                 "kind": "account",
-                "path": "seller"
+                "path": "listing.seller",
+                "account": "listing"
               },
               {
                 "kind": "account",
@@ -553,11 +554,18 @@ export type Adspaces = {
       "accounts": [
         {
           "name": "seller",
-          "writable": true,
           "signer": true
         },
         {
           "name": "reviewer",
+          "signer": true
+        },
+        {
+          "name": "rentPayer",
+          "docs": [
+            "Platform account that pays the rent for the listing and everything under it, and gets it back."
+          ],
+          "writable": true,
           "signer": true
         },
         {
@@ -1200,7 +1208,7 @@ export type Adspaces = {
         {
           "name": "rentPayer",
           "docs": [
-            "Platform key that pays the dispute's rent, so buyers never need SOL. Co-signs the raise."
+            "The listing's rent payer funds the dispute's rent, so buyers never need SOL. Co-signs the raise."
           ],
           "writable": true,
           "signer": true
@@ -1269,6 +1277,7 @@ export type Adspaces = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1297,7 +1306,7 @@ export type Adspaces = {
           }
         },
         {
-          "name": "seller",
+          "name": "rentPayer",
           "writable": true
         },
         {
@@ -1322,7 +1331,7 @@ export type Adspaces = {
         {
           "name": "proof",
           "docs": [
-            "Proof submitted before a seller-initiated refund; closed so its rent returns to the seller."
+            "Proof submitted before a seller-initiated refund; closed so its rent returns to the rent payer."
           ],
           "writable": true,
           "optional": true,
@@ -1385,6 +1394,7 @@ export type Adspaces = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1443,7 +1453,7 @@ export type Adspaces = {
         {
           "name": "rentPayer",
           "docs": [
-            "Gets the dispute account's rent back: the platform account that paid it."
+            "Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it."
           ],
           "writable": true
         },
@@ -1456,8 +1466,7 @@ export type Adspaces = {
           "writable": true
         },
         {
-          "name": "seller",
-          "writable": true
+          "name": "seller"
         },
         {
           "name": "buyerAta",
@@ -1580,11 +1589,15 @@ export type Adspaces = {
       "accounts": [
         {
           "name": "seller",
-          "writable": true,
           "signer": true,
           "relations": [
             "listing"
           ]
+        },
+        {
+          "name": "rentPayer",
+          "writable": true,
+          "signer": true
         },
         {
           "name": "listing",
@@ -1698,6 +1711,7 @@ export type Adspaces = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -1724,10 +1738,6 @@ export type Adspaces = {
               }
             ]
           }
-        },
-        {
-          "name": "seller",
-          "writable": true
         },
         {
           "name": "spot",
@@ -1760,7 +1770,7 @@ export type Adspaces = {
         {
           "name": "rentPayer",
           "docs": [
-            "Gets the dispute account's rent back: the platform account that paid it."
+            "Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it."
           ],
           "writable": true
         },
@@ -2039,6 +2049,7 @@ export type Adspaces = {
         },
         {
           "name": "listing",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -2067,7 +2078,10 @@ export type Adspaces = {
           }
         },
         {
-          "name": "seller",
+          "name": "seller"
+        },
+        {
+          "name": "rentPayer",
           "writable": true
         },
         {
@@ -3294,6 +3308,13 @@ export type Adspaces = {
             "type": "u8"
           },
           {
+            "name": "closedSpotCount",
+            "docs": [
+              "Spots already closed (paid out, refunded, settled by dispute or withdrawn unsold)."
+            ],
+            "type": "u8"
+          },
+          {
             "name": "status",
             "type": "u8"
           },
@@ -3312,6 +3333,14 @@ export type Adspaces = {
           {
             "name": "maxFeeBps",
             "type": "u16"
+          },
+          {
+            "name": "rentPayer",
+            "docs": [
+              "Platform account that paid the rent for this listing and its spots, vaults and proofs.",
+              "Every one of those accounts returns its rent here when it closes."
+            ],
+            "type": "pubkey"
           },
           {
             "name": "bump",
