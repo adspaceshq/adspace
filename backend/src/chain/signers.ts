@@ -6,6 +6,17 @@ export interface TxSigner {
   sign(transaction: Transaction): Promise<Transaction>;
 }
 
+// Signers to pass next to the fee payer: drops the fee payer itself and repeats, so a
+// platform key that is both fee payer and rent payer signs once.
+export function cosigners(feePayer: TxSigner, ...signers: TxSigner[]): TxSigner[] {
+  const out: TxSigner[] = [];
+  for (const signer of signers) {
+    if (signer.publicKey.equals(feePayer.publicKey) || out.some((seen) => seen.publicKey.equals(signer.publicKey))) continue;
+    out.push(signer);
+  }
+  return out;
+}
+
 export function keypairSigner(keypair: Keypair): TxSigner {
   return {
     publicKey: keypair.publicKey,

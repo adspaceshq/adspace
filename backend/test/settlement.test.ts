@@ -30,11 +30,13 @@ beforeEach(() => {
 });
 
 const treasury = Keypair.generate().publicKey;
+const rentPayer = Keypair.generate().publicKey;
 const deps = (now = new Date()): SettlementDeps => ({
   db,
   program: createProgram(new Connection("http://127.0.0.1:8899")),
   mint: Keypair.generate().publicKey,
   caller: keypairSigner(Keypair.generate()),
+  rentPayer,
   runTx: fakeRunTx(db, sent),
   readListingSnapshot: async () => ({ treasury, fees: { mode: "fixed", feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 } }),
   readVaultBalance: async () => vaultBalance,
@@ -59,6 +61,9 @@ test("pays the seller after the review window and records the settlement", async
   assert.equal(result.settlement.fee, 5n * USDC);
   assert.equal(result.settlement.sellerNet, 95n * USDC);
   assert.equal(sent[0].idempotencyKey, `payout:${spot.id}`);
+  // Spot, vault and proof rent go back to the platform's rent payer.
+  const rentKey = sent[0].instructions.at(-1)!.keys.find((key) => key.pubkey.equals(rentPayer));
+  assert.ok(rentKey?.isWritable);
   const events = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));
   assert.deepEqual(events.map((event) => event.type), ["seller_paid"]);
 });

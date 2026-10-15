@@ -8,7 +8,7 @@ import { calculateDisputeSplit } from "../domain/fees.js";
 import { nextSpotState } from "../domain/spot-state.js";
 import { associatedTokenAddress, pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
-import type { TxSigner } from "../chain/signers.js";
+import { cosigners, type TxSigner } from "../chain/signers.js";
 import { createAtaIdempotent, payoutAvailableAt, type ListingSnapshot } from "./settlement.js";
 
 export class DisputeError extends Error {
@@ -22,11 +22,11 @@ export interface DisputeDeps {
   program: AdspacesProgram;
   mint: PublicKey;
   feePayer: TxSigner;
+  // The listing's on-chain rent payer: pays dispute rent (buyers never need SOL) and gets all rent back.
+  rentPayer: TxSigner;
   // Must be the program's config authority: only it can resolve disputes on-chain.
   resolver: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
-  // Tops up a seller's SOL for rent. Buyers never need SOL: the platform pays dispute rent.
-  ensureRent: (payer: PublicKey) => Promise<void>;
   readListingSnapshot: (listing: PublicKey) => Promise<ListingSnapshot>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
@@ -107,8 +107,8 @@ export async function raiseDispute(
     .accountsStrict({
       buyer: buyer.publicKey,
       config: pdas(deps.program.programId).config(),
-      // The platform pays the dispute's rent, so buyers never need SOL. It's the fee payer key, which signs anyway.
-      rentPayer: deps.feePayer.publicKey,
+      // The platform pays the dispute's rent, so buyers never need SOL.
+      rentPayer: deps.rentPayer.publicKey,
       listing: new PublicKey(listing.chainAddress!),
       spot: spotKey,
       dispute: disputeKey,
@@ -125,7 +125,7 @@ export async function raiseDispute(
     actorId: buyerId,
     instructions: [instruction],
     feePayer: deps.feePayer,
-    signers: [buyer],
+    signers: cosigners(deps.feePayer, buyer, deps.rentPayer),
   });
 
   return deps.db.transaction(async (trx) => {
@@ -163,7 +163,7 @@ export async function withdrawDispute(deps: DisputeDeps, buyerId: string, buyer:
     .withdrawDispute()
     .accountsStrict({
       buyer: buyer.publicKey,
-      rentPayer: deps.feePayer.publicKey,
+      rentPayer: deps.rentPayer.publicKey,
       listing: new PublicKey(listing.chainAddress!),
       spot: spotKey,
       dispute: pdas(deps.program.programId).dispute(spotKey),
@@ -245,7 +245,7 @@ export async function resolveDispute(
       .resolveDispute(sellerShareBps, Array.from(sha256(`adspaces-decision-v1\n${dispute.id}\n${sellerShareBps}\n${decision}`)), listingUri(deps.listingBaseUrl, handle, listing.slug, `decision-${spot.index + 1}`))
       .accountsStrict({
         resolver: deps.resolver.publicKey,
-        rentPayer: deps.feePayer.publicKey,
+        rentPayer: deps.rentPayer.publicKey,
         config: addresses.config(),
         listing: listingKey,
         spot: spotKey,
@@ -269,7 +269,7 @@ export async function resolveDispute(
     actorId: reviewerId,
     instructions,
     feePayer: deps.feePayer,
-    signers: deps.resolver.publicKey.equals(deps.feePayer.publicKey) ? [] : [deps.resolver],
+    signers: cosigners(deps.feePayer, deps.resolver),
   });
   // Tokens can land in the vault between the balance read and the transfer; trust the program's event.
   const resolved = await deps.readTxEvent?.(tx.signature, "DisputeResolved").catch(() => null);
@@ -346,10 +346,9 @@ export async function timeoutDispute(deps: DisputeDeps, spotId: string, triggere
       .timeoutDispute()
       .accountsStrict({
         caller: deps.feePayer.publicKey,
-        rentPayer: deps.feePayer.publicKey,
+        rentPayer: deps.rentPayer.publicKey,
         config: addresses.config(),
         listing: listingKey,
-        seller: new PublicKey(listing.sellerWallet!),
         spot: spotKey,
         dispute: addresses.dispute(spotKey),
         proof: spot.proofSubmittedAt ? addresses.proof(spotKey) : null,

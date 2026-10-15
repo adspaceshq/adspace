@@ -6,7 +6,7 @@ import { listingPosts, listings, spotEvents, spotProofPosts, spots, users } from
 import { nextSpotState } from "../domain/spot-state.js";
 import { pdas, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
-import type { TxSigner } from "../chain/signers.js";
+import { cosigners, type TxSigner } from "../chain/signers.js";
 
 export class ProofError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -18,6 +18,8 @@ export interface ProofDeps {
   db: Db;
   program: AdspacesProgram;
   feePayer: TxSigner;
+  // Pays the proof account's rent; must be the listing's on-chain rent payer, which signs.
+  rentPayer: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   listingBaseUrl: string;
   now?: () => Date;
@@ -72,6 +74,7 @@ export async function submitSpotProof(deps: ProofDeps, sellerId: string, seller:
     .submitProof(Array.from(hash), uri)
     .accountsStrict({
       seller: seller.publicKey,
+      rentPayer: deps.rentPayer.publicKey,
       listing: new PublicKey(listing.chainAddress),
       spot: spotKey,
       proof: pdas(deps.program.programId).proof(spotKey),
@@ -86,7 +89,7 @@ export async function submitSpotProof(deps: ProofDeps, sellerId: string, seller:
     actorId: sellerId,
     instructions: [instruction],
     feePayer: deps.feePayer,
-    signers: [seller],
+    signers: cosigners(deps.feePayer, seller, deps.rentPayer),
   });
 
   return deps.db.transaction(async (trx) => {

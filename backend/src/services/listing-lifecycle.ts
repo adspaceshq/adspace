@@ -6,7 +6,7 @@ import type { Db } from "../db/client.js";
 import { listingPhotos, listings, mediaAssets, spots, users } from "../db/schema.js";
 import { pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
-import type { TxSigner } from "../chain/signers.js";
+import { cosigners, type TxSigner } from "../chain/signers.js";
 import { notify } from "./notifications.js";
 
 // Smallest auction bid step, in USDC base units (6 decimals); mirrors the program's MIN_BID_INCREMENT.
@@ -329,9 +329,9 @@ export interface PublishDeps {
   program: AdspacesProgram;
   mint: PublicKey;
   reviewer: TxSigner;
+  // Platform key that pays the listing and spot rent and gets it back; creators never need SOL.
+  rentPayer: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
-  // Seller pays rent for listing and spot accounts; top up their SOL first if needed.
-  ensureSellerFunding: (seller: PublicKey) => Promise<void>;
   metadataBaseUrl: string;
   termsVersion: string;
   now?: () => Date;
@@ -373,8 +373,6 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
     })
     .where(and(eq(listings.id, listing.id), inArray(listings.state, ["approved", "publishing"])));
 
-  await deps.ensureSellerFunding(seller.publicKey);
-
   const createListing = await deps.program.methods
     .createListing(
       Array.from(slugHash(listing.slug)),
@@ -393,6 +391,7 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
     .accountsStrict({
       seller: seller.publicKey,
       reviewer: deps.reviewer.publicKey,
+      rentPayer: deps.rentPayer.publicKey,
       listing: listingKey,
       config,
       reviewAuthority: addresses.reviewAuthority(config),
@@ -407,7 +406,7 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
     actorId: sellerId,
     instructions: [createListing],
     feePayer: deps.reviewer,
-    signers: [seller],
+    signers: cosigners(deps.reviewer, seller, deps.rentPayer),
   });
 
   for (const spot of listingSpots) {
@@ -416,6 +415,7 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
       .addSpot(bn(spot.price))
       .accountsStrict({
         seller: seller.publicKey,
+        rentPayer: deps.rentPayer.publicKey,
         listing: listingKey,
         spot: spotKey,
         vault: addresses.vault(spotKey),
@@ -437,7 +437,7 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
       actorId: sellerId,
       instructions: [addSpot],
       feePayer: deps.reviewer,
-      signers: [seller],
+      signers: cosigners(deps.reviewer, seller, deps.rentPayer),
     });
     await deps.db
       .update(spots)

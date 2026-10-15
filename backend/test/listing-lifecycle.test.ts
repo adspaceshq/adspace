@@ -42,12 +42,13 @@ beforeEach(() => {
 });
 
 // Honours idempotency like the real runner: a confirmed key is returned, not re-sent.
+const platformKey = keypairSigner(Keypair.generate());
 const publishDeps = (): PublishDeps => ({
   db,
   program: createProgram(new Connection("http://127.0.0.1:8899")),
   mint: Keypair.generate().publicKey,
-  reviewer: keypairSigner(Keypair.generate()),
-  ensureSellerFunding: async () => {},
+  reviewer: platformKey,
+  rentPayer: platformKey,
   metadataBaseUrl: "https://adspaces.fun",
   termsVersion: "2026-10-01",
   now: () => NOW,
@@ -165,6 +166,14 @@ test("publishing creates the listing and every spot on-chain", async () => {
   );
   const stored = await db.select().from(spots).where(eq(spots.listingId, listing.id));
   assert.ok(stored.every((spot) => spot.chainAddress && spot.vaultAddress));
+  // The platform pays all rent: the creator signs but is never a writable (paying) account.
+  for (const tx of sent) {
+    assert.deepEqual(tx.signers?.map((signer) => signer.publicKey.toBase58()), [sellerSigner.publicKey.toBase58()]);
+    const keys = tx.instructions[0].keys;
+    const rentPayer = keys.find((key) => key.pubkey.equals(platformKey.publicKey) && key.isWritable);
+    assert.ok(rentPayer?.isSigner);
+    assert.ok(keys.filter((key) => key.pubkey.equals(sellerSigner.publicKey)).every((key) => !key.isWritable));
+  }
 });
 
 test("a publish that fails midway resumes without re-sending finished steps", async () => {
