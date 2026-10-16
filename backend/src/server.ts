@@ -37,6 +37,7 @@ async function start() {
     reviewers: config.platformReviewers,
     admins: (process.env.PLATFORM_ADMINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
     termsVersion: TERMS_VERSION,
+    cluster: config.solana.cluster,
     metadataBaseUrl: config.frontendUrl,
     withdrawalDailyLimit: BigInt(Math.round(Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000) * 1_000_000)),
   });

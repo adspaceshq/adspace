@@ -624,3 +624,29 @@ export const staff = app.table("staff", {
   grantedBy: uuid("granted_by").references(() => users.id, { onDelete: "set null" }),
   grantedAt: createdAt(),
 });
+
+// ---------- terms consent ----------
+
+// Append-only record of every terms acceptance outside publishing (creators are recorded on the
+// listing row at publish): sponsors on each claim or bid, and every user once at onboarding.
+// A log rather than columns on spots or bids: an auction spot row is overwritten by each new top
+// bidder and claims have no bid row, while this keeps one row per acceptance, outbid sponsors included.
+export const termsAcceptances = app.table(
+  "terms_acceptances",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    context: text("context").notNull(),
+    spotId: uuid("spot_id").references(() => spots.id, { onDelete: "set null" }),
+    termsVersion: text("terms_version").notNull(),
+    acceptedAt: at("accepted_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("terms_acceptances_user_idx").on(t.userId, t.acceptedAt),
+    index("terms_acceptances_spot_idx").on(t.spotId),
+    check("terms_acceptances_context", sql`context IN ('onboarding', 'claim', 'bid')`),
+    check("terms_acceptances_version_length", sql`length(terms_version) BETWEEN 1 AND 40`),
+  ],
+);

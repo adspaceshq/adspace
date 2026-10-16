@@ -21,6 +21,7 @@ import {
 import { getOwnedListing, getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewQueue, getSponsoredSpot } from "../services/listing-queries.js";
 import { parseAssetKind, registerMedia, signUpload } from "../services/media.js";
 import { claimSpot, placeBid } from "../services/spot-purchase.js";
+import { assertCurrentTerms } from "../services/terms.js";
 import { createPost, deletePost, listPosts, recordMetrics } from "../services/listing-posts.js";
 import { listMessages, postMessage } from "../services/spot-messages.js";
 import { submitSpotProof } from "../services/spot-proof.js";
@@ -138,6 +139,10 @@ export function createV2Router(options: {
   termsVersion: string;
   metadataBaseUrl: string;
   withdrawalDailyLimit?: bigint;
+  // Reported by the public status endpoint so the app can label test money.
+  cluster?: string;
+  // How long the public status endpoint reuses the on-chain pause flag.
+  statusCacheMs?: number;
 }) {
   const { db, chain, reviewers } = options;
   const badRoles = invalidRoleEntries([...reviewers, ...(options.admins ?? [])]);
@@ -206,6 +211,32 @@ export function createV2Router(options: {
     res.status(ok ? 200 : 503).json({ status: ok ? "ok" : "degraded", database, rpc });
   });
 
+  // Public protocol status: whether trading is paused (read from the on-chain config), the cluster and
+  // the current terms version. The pause flag is cached briefly so page loads don't each hit the RPC.
+  const statusCacheMs = options.statusCacheMs ?? 20_000;
+  let pausedCache: { paused: boolean; at: number } | undefined;
+  const readPaused = async (): Promise<boolean> => {
+    if (!chain) return false;
+    if (pausedCache && Date.now() - pausedCache.at < statusCacheMs) return pausedCache.paused;
+    try {
+      const { paused } = await chain.readProtocolStatus();
+      pausedCache = { paused, at: Date.now() };
+      return paused;
+    } catch (error) {
+      // Serve the last known value while the RPC is down rather than flipping the banner.
+      if (pausedCache) return pausedCache.paused;
+      throw Object.assign(new Error("status is unavailable right now"), { status: 503, cause: error });
+    }
+  };
+  router.get(
+    "/status",
+    handle(async (_req, res) => {
+      const paused = await readPaused();
+      res.setHeader("Cache-Control", `public, max-age=${Math.floor(statusCacheMs / 1000)}`);
+      send(res, { paused, cluster: options.cluster ?? "devnet", termsVersion: options.termsVersion });
+    }),
+  );
+
   router.use(attach);
 
   // ---------- auth & profile ----------
@@ -244,7 +275,14 @@ export function createV2Router(options: {
       send(res, { ok: true });
     }),
   );
-  router.put("/me/onboarding", ...mutate, handle(async (req, res) => send(res, await auth.saveOnboarding(me(req).id, req.body))));
+  router.put(
+    "/me/onboarding",
+    ...mutate,
+    handle(async (req, res) => {
+      const { termsVersion, ...input } = (req.body ?? {}) as Record<string, unknown>;
+      send(res, await auth.saveOnboarding(me(req).id, input, { accepted: termsVersion, current: options.termsVersion }));
+    }),
+  );
   router.patch("/me", ...mutate, handle(async (req, res) => send(res, await auth.updateProfile(me(req).id, req.body ?? {}))));
   router.get(
     "/handles/:handle/available",
@@ -326,6 +364,7 @@ export function createV2Router(options: {
     ...mutate,
     handle(async (req, res) => {
       const context = requireChain();
+      if (await readPaused().catch(() => false)) throw Object.assign(new Error("trading is paused"), { status: 409 });
       const published = await acceptTermsAndPublish(
         {
           db,
@@ -372,14 +411,24 @@ export function createV2Router(options: {
       readTokenBalance: context.readTokenBalance,
     };
   };
+  // Checks shared by claim and bid, before any chain work: a verified email (outbid, proof and
+  // dispute emails go there), agreement to the current terms, and trading not paused.
+  const purchaseGate = async (req: Request): Promise<string> => {
+    if (!me(req).emailVerified) throw Object.assign(new Error("verify your email first"), { status: 403 });
+    const termsVersion = assertCurrentTerms((req.body ?? {}).termsVersion, options.termsVersion);
+    // Best effort: the program refuses paused purchases anyway; this just answers sooner.
+    if (await readPaused().catch(() => false)) throw Object.assign(new Error("trading is paused"), { status: 409 });
+    return termsVersion;
+  };
   router.post(
     "/spots/:id/claim",
     ...mutate,
     moneyLimiter,
     handle(async (req, res) => {
+      const termsVersion = await purchaseGate(req);
       const deps = purchaseDeps();
       const signer = await requireChain().userSigner(me(req));
-      send(res, await claimSpot(deps, req.params.id, { id: me(req).id, signer }, (req.body ?? {}).brand));
+      send(res, await claimSpot(deps, req.params.id, { id: me(req).id, signer, termsVersion }, (req.body ?? {}).brand));
     }),
   );
   router.post(
@@ -387,10 +436,11 @@ export function createV2Router(options: {
     ...mutate,
     moneyLimiter,
     handle(async (req, res) => {
+      const termsVersion = await purchaseGate(req);
       const deps = purchaseDeps();
       const amount = parseUsdc((req.body ?? {}).amount, "amount");
       const signer = await requireChain().userSigner(me(req));
-      send(res, await placeBid(deps, req.params.id, { id: me(req).id, signer }, amount, (req.body ?? {}).brand));
+      send(res, await placeBid(deps, req.params.id, { id: me(req).id, signer, termsVersion }, amount, (req.body ?? {}).brand));
     }),
   );
 

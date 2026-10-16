@@ -3,6 +3,7 @@ import { and, eq, gt, lte, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { sessions, users } from "../db/schema.js";
 import { isOwnUpload } from "../cloudinary.js";
+import { assertCurrentTerms, recordTermsAcceptance } from "../services/terms.js";
 import {
   parseBio,
   parseOnboarding,
@@ -179,22 +180,33 @@ export class AppAuthRepository implements AuthRepository, ProfileRepository {
     return (row?.onboarding as Onboarding | null | undefined) ?? null;
   }
 
-  async saveOnboarding(userId: string, input: unknown): Promise<Onboarding> {
+  // `terms`: the version the user agreed to and the current one. Finishing onboarding the first time
+  // requires the current version and records the acceptance; later edits (settings) don't ask again.
+  async saveOnboarding(userId: string, input: unknown, terms?: { accepted: unknown; current: string }): Promise<Onboarding> {
     const onboarding = parseOnboarding(input);
-    const [user] = await this.db.select({ email: users.email, emailVerifiedAt: users.emailVerifiedAt }).from(users).where(eq(users.id, userId));
+    const [user] = await this.db
+      .select({ email: users.email, emailVerifiedAt: users.emailVerifiedAt, onboardedAt: users.onboardedAt })
+      .from(users)
+      .where(eq(users.id, userId));
     if (!user) throw new HttpError("user not found", 404);
     if (!user.email || !user.emailVerifiedAt) throw new HttpError("verify your email first", 403);
-    const [row] = await this.db
-      .update(users)
-      .set({
-        onboarding: onboarding as unknown as Record<string, unknown>,
-        intent: onboarding.accountType === "creator" ? "sell" : onboarding.accountType,
-        onboardedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, userId))
-      .returning({ id: users.id });
-    if (!row) throw new HttpError("user not found", 404);
-    return onboarding;
+    const firstTime = !user.onboardedAt;
+    const termsVersion = firstTime || terms?.accepted !== undefined ? assertCurrentTerms(terms?.accepted, terms?.current ?? "") : undefined;
+    const now = new Date();
+    return this.db.transaction(async (trx) => {
+      const [row] = await trx
+        .update(users)
+        .set({
+          onboarding: onboarding as unknown as Record<string, unknown>,
+          intent: onboarding.accountType === "creator" ? "sell" : onboarding.accountType,
+          onboardedAt: user.onboardedAt ?? now,
+          updatedAt: now,
+        })
+        .where(eq(users.id, userId))
+        .returning({ id: users.id });
+      if (!row) throw new HttpError("user not found", 404);
+      if (termsVersion) await recordTermsAcceptance(trx, { userId, context: "onboarding", termsVersion, at: now });
+      return onboarding;
+    });
   }
 }

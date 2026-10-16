@@ -7,6 +7,7 @@ import { nextSpotState } from "../domain/spot-state.js";
 import { associatedTokenAddress, pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import type { TxSigner } from "../chain/signers.js";
+import { recordTermsAcceptance } from "./terms.js";
 
 export class PurchaseError extends Error {
   constructor(message: string, readonly status = 409) {
@@ -42,6 +43,9 @@ async function assertFunds(deps: PurchaseDeps, owner: PublicKey, amount: bigint)
 export interface Purchaser {
   id: string;
   signer: TxSigner;
+  // The terms version the sponsor agreed to at checkout (the route checks it is current).
+  // Recorded before anything is sent to Solana, so every on-chain purchase has a consent row.
+  termsVersion?: string;
 }
 
 // The sponsor tells the creator what to show on the spot; validated before any chain call.
@@ -92,6 +96,7 @@ export async function claimSpot(deps: PurchaseDeps, spotId: string, buyer: Purch
   assertPurchaser(listing, buyer, now, listing.deadline);
   if (spot.state !== "open") throw new PurchaseError("this spot has already been taken");
   await assertFunds(deps, buyer.signer.publicKey, spot.price);
+  if (buyer.termsVersion) await recordTermsAcceptance(deps.db, { userId: buyer.id, context: "claim", termsVersion: buyer.termsVersion, spotId: spot.id, at: now });
 
   const listingKey = new PublicKey(listing.chainAddress!);
   const spotKey = new PublicKey(spot.chainAddress!);
@@ -172,6 +177,7 @@ export async function placeBid(deps: PurchaseDeps, spotId: string, bidder: Purch
     throw new PurchaseError(`that bid is over ${MAX_BID_MULTIPLE}x the minimum of ${usd(minimum)}; check the amount`, 400);
   }
   await assertFunds(deps, bidder.signer.publicKey, amount);
+  if (bidder.termsVersion) await recordTermsAcceptance(deps.db, { userId: bidder.id, context: "bid", termsVersion: bidder.termsVersion, spotId: spot.id, at: now });
 
   const listingKey = new PublicKey(listing.chainAddress!);
   const spotKey = new PublicKey(spot.chainAddress!);

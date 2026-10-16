@@ -1,7 +1,11 @@
 export type Mode = "fixed" | "auction";
 export type SpotStatus = "open" | "claimed" | "sold";
 
-/** Current seller terms version recorded when a listing is published. */
+/**
+ * Current terms version: recorded when a listing is published, and required (and recorded) for every
+ * claim, bid and first onboarding. Source of truth: the app reads it from GET /api/v2/status, and
+ * frontend/src/lib/terms.test.ts fails if TERMS_VERSION in frontend/src/components/legal/LegalPage.tsx drifts.
+ */
 export const TERMS_VERSION = "v1";
 
 export interface Bid {
