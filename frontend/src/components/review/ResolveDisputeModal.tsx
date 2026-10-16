@@ -9,6 +9,8 @@ import { userErrorMessage } from "@/lib/errors";
 import { formatUsd } from "@/lib/money";
 import { queryKeys } from "@/lib/query";
 import { useTx } from "@/lib/use-tx";
+import { useNow } from "@/lib/use-now";
+import { resolveBlockedReason } from "@/lib/dispute-rules";
 import { Button } from "@/components/ui/Button";
 import { Countdown } from "@/components/ui/Countdown";
 import { Textarea } from "@/components/ui/Field";
@@ -31,6 +33,8 @@ export function ResolveDisputeModal({ item, viaMultisig, onClose }: { item: Revi
   // Set when the multisig is the config authority: the decision went to Squads instead of the chain.
   const [pending, setPending] = useState<SquadsPending>();
   const tx = useTx(() => api.review.resolveDispute(item.spotId, share * 100, decision.trim()));
+  const now = useNow(30_000);
+  const blocked = resolveBlockedReason(item.timeoutAt, viaMultisig, now);
 
   // The program splits the vault balance, which is what the sponsor paid.
   const amount = BigInt(item.amount ?? 0);
@@ -64,7 +68,7 @@ export function ResolveDisputeModal({ item, viaMultisig, onClose }: { item: Revi
             <Button variant="ghost" onClick={onClose} disabled={tx.busy}>
               cancel
             </Button>
-            <Button onClick={() => void resolve()} loading={tx.busy}>
+            <Button onClick={() => void resolve()} loading={tx.busy} disabled={Boolean(blocked)}>
               {viaMultisig ? "propose to the multisig" : "resolve"}
             </Button>
           </>
@@ -82,6 +86,11 @@ export function ResolveDisputeModal({ item, viaMultisig, onClose }: { item: Revi
             times out <Countdown to={item.timeoutAt} prefix="in" endedLabel="now: the sponsor can take a full refund" urgentWithinMs={DISPUTE_URGENT_MS} className="font-medium" />
             {viaMultisig ? ". multisig members still need to approve and execute after you propose." : "."}
           </p>
+          {blocked && (
+            <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-small text-danger">
+              {blocked}
+            </p>
+          )}
           {detail.isPending ? (
             <Skeleton className="h-32 w-full" />
           ) : detail.isError ? (

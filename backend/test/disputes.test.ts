@@ -9,7 +9,16 @@ import { keypairSigner } from "../src/chain/signers.js";
 import { squadsProposalInstructions, squadsVault, type SquadsProposalStatus, type SquadsProposer } from "../src/chain/squads.js";
 import type { Db } from "../src/db/client.js";
 import { chainTxs, disputes, settlements, spotEvents, spots } from "../src/db/schema.js";
-import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../src/services/disputes.js";
+import { ChainError } from "../src/chain/errors.js";
+import {
+  BUYER_DISPUTE_MIN_LAMPORTS,
+  DisputeError,
+  raiseDispute,
+  resolveDispute,
+  timeoutDispute,
+  withdrawDispute,
+  type DisputeDeps,
+} from "../src/services/disputes.js";
 import { reconcile, type ChainSpotStatus } from "../src/services/reconciler.js";
 import { createTestDb } from "./helpers/db.js";
 import { fakeRunTx, seedListing, seedUser, USDC } from "./helpers/seed.js";
@@ -334,4 +343,155 @@ test("a dispute closed on-chain without our decision is left for drift detection
   assert.ok(report.spotDrift.some((drift) => drift.spotId === spot.id && drift.dbState === "disputed"));
   const [row] = await db.select().from(disputes).where(eq(disputes.spotId, spot.id));
   assert.equal(row.state, "open");
+});
+
+// ---------- CertiK changes: dispute rent payer, resolve before timeout, buyer-paid fallback ----------
+
+const keyAt = (ix: TransactionInstruction, index: number) => ix.keys[index].pubkey.toBase58();
+// Account positions from the IDL: rent_payer then dispute_rent_payer in resolve and timeout.
+const RENT_PAYER = 5;
+const DISPUTE_RENT_PAYER = 6;
+const WITHDRAW_RENT_PAYER = 4;
+const RAISE_RENT_PAYER = 4;
+
+test("resolve is refused once the dispute has timed out; nothing is sent", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  timeoutSeconds = 0;
+  await assert.rejects(resolveDispute(deps(new Date(Date.now() + 1000)), reviewer.user.id, spot.id, DECISION), /timed out and can no longer be resolved/);
+  assert.equal(sent.length, 0);
+});
+
+test("a Squads resolve needs at least 6 hours before the on-chain timeout", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  const now = new Date();
+  const record = (hours: number) => async () => ({ rentPayer: reviewerKey.publicKey, timesOutAt: new Date(now.getTime() + hours * HOUR) });
+  await assert.rejects(
+    resolveDispute({ ...viaSquads(), now: () => now, readDisputeRecord: record(5) }, reviewer.user.id, spot.id, DECISION),
+    /only 5h 0m left before this dispute times out at .*needs at least 6 hours/,
+  );
+  assert.equal(sent.length, 0);
+  const proposed: TransactionInstruction[][] = [];
+  const result = await resolveDispute({ ...viaSquads(proposed), now: () => now, readDisputeRecord: record(7) }, reviewer.user.id, spot.id, DECISION);
+  assert.ok("pending" in result && "timesOutAt" in result);
+  assert.equal(result.timesOutAt.getTime(), now.getTime() + 7 * HOUR);
+  // The proposed resolve names the dispute's rent payer right after the listing's rent payer.
+  assert.equal(keyAt(proposed[0][0], DISPUTE_RENT_PAYER), reviewerKey.publicKey.toBase58());
+});
+
+test("resolve, timeout and withdraw return the dispute rent to whoever the chain says paid it", async () => {
+  const buyerPaid = Keypair.generate().publicKey;
+  const onChain = (now?: Date): DisputeDeps => ({ ...deps(now), readDisputeRecord: async () => ({ rentPayer: buyerPaid, timesOutAt: new Date(Date.now() + HOUR) }) });
+
+  const resolved = await disputedSpot();
+  await resolveDispute(onChain(), resolved.reviewer.user.id, resolved.spot.id, DECISION);
+  const resolveIx = sent.at(-1)!.instructions.at(-1)!;
+  assert.equal(keyAt(resolveIx, RENT_PAYER), reviewerKey.publicKey.toBase58());
+  assert.equal(keyAt(resolveIx, DISPUTE_RENT_PAYER), buyerPaid.toBase58());
+  assert.ok(resolveIx.keys[DISPUTE_RENT_PAYER].isWritable);
+
+  const timedOut = await disputedSpot();
+  // The chain's own timeout counts, not the config value.
+  await assert.rejects(timeoutDispute(onChain(), timedOut.spot.id), /auto-refund opens/);
+  await timeoutDispute(onChain(new Date(Date.now() + 2 * HOUR)), timedOut.spot.id);
+  assert.equal(keyAt(sent.at(-1)!.instructions.at(-1)!, DISPUTE_RENT_PAYER), buyerPaid.toBase58());
+
+  const withdrawn = await disputedSpot();
+  await withdrawDispute(onChain(), withdrawn.buyer!.user.id, withdrawn.buyer!.signer, withdrawn.spot.id);
+  assert.equal(keyAt(sent.at(-1)!.instructions[0], WITHDRAW_RENT_PAYER), buyerPaid.toBase58());
+
+  // A dispute already gone on-chain is left to reconciliation.
+  const gone = await disputedSpot();
+  await assert.rejects(timeoutDispute({ ...deps(), readDisputeRecord: async () => null }, gone.spot.id), /no longer open on-chain/);
+});
+
+// Delivery was due an hour ago and the creator posted proof: the review window is open.
+async function provenSpot() {
+  const seeded = await overdueSpot();
+  await db.update(spots).set({ state: "delivered", proofSubmittedAt: new Date(Date.now() - 2 * HOUR), proofHash: "ab" }).where(eq(spots.id, seeded.spot.id));
+  return seeded;
+}
+
+const outOfSol = () => new ChainError("not enough SOL to cover network fees or rent for this transaction");
+// Fails while the platform pays; succeeds once the buyer pays.
+const platformBroke = (): DisputeDeps["runTx"] => {
+  const run = fakeRunTx(db, sent);
+  return async (request) => {
+    if (request.feePayer.publicKey.equals(reviewerKey.publicKey)) throw outOfSol();
+    return run(request);
+  };
+};
+
+test("when the platform can't pay, a buyer with SOL pays the dispute rent and gets it back", async () => {
+  const { buyer, spot } = await provenSpot();
+  const buyerKey = buyer!.signer.publicKey;
+  const fallback: DisputeDeps = {
+    ...deps(),
+    runTx: platformBroke(),
+    buyerPaidDisputes: true,
+    readLamports: async () => [BUYER_DISPUTE_MIN_LAMPORTS],
+  };
+  const result = await raiseDispute(fallback, buyer!.user.id, buyer!.signer, spot.id, { reason: REASON });
+  assert.equal(result.buyerPaidRent, true);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].idempotencyKey, /:buyer-paid$/);
+  assert.ok(sent[0].feePayer.publicKey.equals(buyerKey));
+  assert.equal(sent[0].signers, undefined);
+  assert.equal(keyAt(sent[0].instructions[0], RAISE_RENT_PAYER), buyerKey.toBase58());
+  const [raised] = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));
+  assert.equal((raised.data as { rentPayer: string }).rentPayer, buyerKey.toBase58());
+
+  // Without a chain reader, the payer recorded at raise gets the rent back on timeout.
+  timeoutSeconds = 0;
+  await timeoutDispute(deps(new Date(Date.now() + 1000)), spot.id);
+  assert.equal(keyAt(sent.at(-1)!.instructions.at(-1)!, DISPUTE_RENT_PAYER), buyerKey.toBase58());
+});
+
+test("the buyer-paid fallback needs the flag, proof and enough SOL", async () => {
+  const proven = await provenSpot();
+  const base = (): DisputeDeps => ({ ...deps(), runTx: platformBroke(), readLamports: async () => [1_000_000] });
+  const raise = (extra: Partial<DisputeDeps>, seeded = proven) =>
+    raiseDispute({ ...base(), ...extra }, seeded.buyer!.user.id, seeded.buyer!.signer, seeded.spot.id, { reason: REASON });
+  await assert.rejects(raise({}), (error: DisputeError) => error.status === 503 && /try again later/.test(error.message));
+  await assert.rejects(raise({ buyerPaidDisputes: true }), /open it yourself with 0\.0053 SOL in your wallet .*you have 0\.0010 SOL/);
+  // No proof: the program only lets the platform pay, so the fallback isn't offered.
+  const unproven = await overdueSpot();
+  await assert.rejects(raise({ buyerPaidDisputes: true, readLamports: async () => [10 ** 9] }, unproven), /try again later/);
+  assert.equal(sent.length, 0);
+});
+
+test("a platform signing failure falls back; a buyer signing failure does not", async () => {
+  const { buyer, spot } = await provenSpot();
+  const broken = {
+    publicKey: reviewerKey.publicKey,
+    sign: async (): Promise<Transaction> => {
+      throw new Error("signer offline");
+    },
+  };
+  // Signs like the real runner: extra signers first, then the fee payer.
+  const signingRunTx: DisputeDeps["runTx"] = async (request) => {
+    const transaction = new Transaction({ feePayer: request.feePayer.publicKey, recentBlockhash: PublicKey.default.toBase58() }).add(...request.instructions);
+    for (const signer of request.signers ?? []) await signer.sign(transaction);
+    await request.feePayer.sign(transaction);
+    return fakeRunTx(db, sent)(request);
+  };
+  const withSigners = (platform: typeof broken | typeof reviewerKey): DisputeDeps => ({
+    ...deps(),
+    feePayer: platform,
+    rentPayer: platform,
+    runTx: signingRunTx,
+    buyerPaidDisputes: true,
+    readLamports: async () => [10 ** 9],
+  });
+  const lockedBuyer = {
+    publicKey: buyer!.signer.publicKey,
+    sign: async (): Promise<Transaction> => {
+      throw new Error("buyer wallet locked");
+    },
+  };
+  await assert.rejects(raiseDispute(withSigners(reviewerKey), buyer!.user.id, lockedBuyer, spot.id, { reason: REASON }), /buyer wallet locked/);
+  assert.equal(sent.length, 0);
+  const result = await raiseDispute(withSigners(broken), buyer!.user.id, buyer!.signer, spot.id, { reason: REASON });
+  assert.equal(result.buyerPaidRent, true);
+  assert.equal(result.spot.state, "disputed");
+  assert.ok(sent[0].feePayer.publicKey.equals(buyer!.signer.publicKey));
 });
