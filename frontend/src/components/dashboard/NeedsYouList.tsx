@@ -33,7 +33,6 @@ export const NEEDS_YOU_COPY: Record<NeedsYouType, Copy> = {
   changes_requested: { icon: FilePen, tone: "bg-warning-soft text-warning", title: () => "the reviewer asked for changes", cta: "edit listing", href: (i) => `/sell/drafts/${i.listingId}` },
   dispute_open: { icon: AlertTriangle, tone: "bg-warning-soft text-warning", title: (i) => `a sponsor disputed ${spotLabel(i)}`, cta: "view", href: control },
   payout_ready: { icon: Banknote, tone: "bg-success-soft text-success", title: (i) => `payout ready for ${spotLabel(i)}`, cta: "get paid", href: control },
-  close_listing: { icon: CheckCircle2, tone: "bg-ink/5 text-ink", title: () => "every spot is finished", cta: "close listing", href: (i) => `/sell/listings/${i.listingId}` },
   review_proof: { icon: BadgeCheck, tone: "bg-accent-soft text-accent", title: (i) => `check delivery of ${spotLabel(i)}`, cta: "review", href: sponsorSpot },
   refund_available: { icon: RotateCcw, tone: "bg-warning-soft text-warning", title: (i) => `${spotLabel(i)} wasn't delivered`, cta: "get refund", href: sponsorSpot },
   outbid: { icon: Gavel, tone: "bg-danger-soft text-danger", title: (i) => `you were outbid on ${spotLabel(i)}`, cta: "bid again", href: (i) => listingHref(i.sellerHandle, i.listingSlug) },
