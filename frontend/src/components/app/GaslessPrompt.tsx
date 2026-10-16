@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Zap } from "lucide-react";
+import { userErrorMessage } from "@/lib/errors";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
 
@@ -19,7 +20,7 @@ export function GaslessPrompt({ action, onBusyChange }: { action: string; onBusy
     try {
       await wallet.enableGasless();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "couldn't enable gasless transactions");
+      setError(userErrorMessage(cause, "couldn't enable gasless transactions"));
     } finally {
       setBusy(false);
       onBusyChange?.(false);
