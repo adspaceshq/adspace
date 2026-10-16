@@ -28,6 +28,7 @@ async function start() {
         mint: usdcMintFor(config.solana.cluster, process.env.USDC_MINT),
         reviewerKeypairPath: config.solana.reviewerWalletPath,
         privyAuthorizationKey: process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY,
+        squadsMultisig: config.solana.squadsMultisig,
       })
     : undefined;
   const v2Router = createV2Router({
@@ -43,10 +44,15 @@ async function start() {
   let lastReconcile: MonitorInput["lastReconcile"];
   if (v2Chain && reconcileEveryMs > 0) {
     const run = () =>
-      reconcile({ db, signatureOutcomes: v2Chain.signatureOutcomes, readSpotStatus: v2Chain.readSpotStatus })
+      reconcile({
+        db,
+        signatureOutcomes: v2Chain.signatureOutcomes,
+        readSpotStatus: v2Chain.readSpotStatus,
+        findDisputeResolution: v2Chain.findDisputeResolution,
+      })
         .then((report) => {
           lastReconcile = { at: new Date(), report };
-          if (report.confirmedTxs || report.failedTxs || report.withdrawalsUpdated || report.spotDrift.length) {
+          if (report.confirmedTxs || report.failedTxs || report.withdrawalsUpdated || report.disputesResolved || report.spotDrift.length) {
             console.log("reconcile:", JSON.stringify(report));
           }
         })

@@ -1,13 +1,16 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import { eq } from "drizzle-orm";
-import { Connection, Keypair } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
+import * as multisig from "@sqds/multisig";
 import { createProgram } from "../src/chain/program.js";
 import type { ChainTxRequest } from "../src/chain/runner.js";
 import { keypairSigner } from "../src/chain/signers.js";
+import { squadsProposalInstructions, squadsVault, type SquadsProposalStatus, type SquadsProposer } from "../src/chain/squads.js";
 import type { Db } from "../src/db/client.js";
-import { disputes, settlements, spots } from "../src/db/schema.js";
+import { chainTxs, disputes, settlements, spotEvents, spots } from "../src/db/schema.js";
 import { raiseDispute, resolveDispute, timeoutDispute, withdrawDispute, type DisputeDeps } from "../src/services/disputes.js";
+import { reconcile, type ChainSpotStatus } from "../src/services/reconciler.js";
 import { createTestDb } from "./helpers/db.js";
 import { fakeRunTx, seedListing, seedUser, USDC } from "./helpers/seed.js";
 
@@ -136,4 +139,199 @@ test("unresolved disputes refund the buyer once the configured timeout passes", 
   assert.equal(stored.kind, "timeout_refund");
   const [refunded] = await db.select().from(spots).where(eq(spots.id, spot.id));
   assert.equal(refunded.state, "refunded");
+});
+
+// ---------- config authority is a Squads vault ----------
+
+const multisigKey = Keypair.generate().publicKey;
+const vaultKey = squadsVault(multisigKey);
+const proposerKey = keypairSigner(Keypair.generate());
+
+// Builds real Squads instructions; only the multisig account read (the next index) is faked.
+function fakeSquads(statuses: Map<bigint, SquadsProposalStatus>, proposed: TransactionInstruction[][], firstIndex = 7n): SquadsProposer {
+  let next = firstIndex;
+  return {
+    multisig: multisigKey,
+    vault: vaultKey,
+    proposer: proposerKey,
+    propose: async (instructions, memo) => {
+      proposed.push(instructions);
+      const transactionIndex = next++;
+      return squadsProposalInstructions({ multisig: multisigKey, proposer: proposerKey.publicKey, transactionIndex, instructions, memo });
+    },
+    proposalStatus: async (index) => statuses.get(index) ?? null,
+  };
+}
+
+const viaSquads = (proposed: TransactionInstruction[][] = [], statuses = new Map<bigint, SquadsProposalStatus>(), firstIndex = 7n): DisputeDeps => ({
+  ...deps(),
+  readConfigAuthority: async () => vaultKey,
+  squads: fakeSquads(statuses, proposed, firstIndex),
+});
+
+async function disputedSpot() {
+  const seeded = await overdueSpot();
+  await raiseDispute(deps(), seeded.buyer!.user.id, seeded.buyer!.signer, seeded.spot.id, { reason: REASON });
+  sent.length = 0;
+  return { ...seeded, reviewer: await seedUser(db, "reviewer") };
+}
+
+const DECISION = { sellerShareBps: 5000, decision: "half delivered, photos show partial placement" };
+
+test("with a Squads vault as config authority, resolving opens a proposal and keeps the dispute open", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  const statuses = new Map<bigint, SquadsProposalStatus>();
+  const proposed: TransactionInstruction[][] = [];
+
+  const result = await resolveDispute(viaSquads(proposed, statuses), reviewer.user.id, spot.id, DECISION);
+  assert.ok("pending" in result);
+  assert.equal(result.pending.transactionIndex, 7);
+  assert.equal(result.pending.url, "https://backup.app.squads.so");
+  assert.equal(result.pending.proposal, multisig.getProposalPda({ multisigPda: multisigKey, transactionIndex: 7n })[0].toBase58());
+
+  // The server only sends vault_transaction_create + proposal_create, signed by the proposer.
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].op, "squads_proposal");
+  assert.deepEqual(
+    sent[0].instructions.map((ix) => ix.programId.toBase58()),
+    [multisig.PROGRAM_ID.toBase58(), multisig.PROGRAM_ID.toBase58()],
+  );
+  assert.deepEqual(sent[0].signers?.map((signer) => signer.publicKey.toBase58()), [proposerKey.publicKey.toBase58()]);
+  // Fits one legacy transaction (1232 bytes) with both signatures.
+  const outer = new Transaction({ feePayer: reviewerKey.publicKey, recentBlockhash: PublicKey.default.toBase58() }).add(...sent[0].instructions);
+  const size = outer.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
+  assert.ok(size <= 1232);
+  // The wrapped resolve_dispute names the vault as resolver, a signer the vault provides on execute.
+  assert.equal(proposed[0].length, 1);
+  const [resolve] = proposed[0];
+  assert.ok(resolve.keys[0].pubkey.equals(vaultKey) && resolve.keys[0].isSigner);
+
+  const [row] = await db.select().from(disputes).where(eq(disputes.spotId, spot.id));
+  assert.equal(row.state, "open");
+  assert.equal(row.squadsTransactionIndex, 7);
+  assert.equal(row.squadsMultisig, multisigKey.toBase58());
+  assert.equal(row.squadsProposal, result.pending.proposal);
+  assert.equal(row.proposedSellerShareBps, 5000);
+  assert.equal(row.proposedBy, reviewer.user.id);
+  assert.match(row.decisionHash!, /^[0-9a-f]{64}$/);
+  assert.match(row.decisionUri!, /#decision-1$/);
+  assert.equal(row.sellerShareBps, null);
+  const [stillDisputed] = await db.select().from(spots).where(eq(spots.id, spot.id));
+  assert.equal(stillDisputed.state, "disputed");
+  assert.equal((await db.select().from(settlements).where(eq(settlements.spotId, spot.id))).length, 0);
+
+  // A live proposal blocks a second one; a rejected one can be replaced.
+  statuses.set(7n, "active");
+  await assert.rejects(resolveDispute(viaSquads([], statuses), reviewer.user.id, spot.id, DECISION), /waiting for multisig approval \(Squads #7\)/);
+  statuses.set(7n, "rejected");
+  const again = await resolveDispute(viaSquads([], statuses, 8n), reviewer.user.id, spot.id, DECISION);
+  assert.ok("pending" in again);
+  assert.equal(again.pending.transactionIndex, 8);
+});
+
+test("missing token accounts are created by the platform before the proposal", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  const proposed: TransactionInstruction[][] = [];
+  await resolveDispute({ ...viaSquads(proposed), accountExists: async () => false }, reviewer.user.id, spot.id, DECISION);
+  assert.deepEqual(sent.map((tx) => tx.idempotencyKey.split(":")[0]), ["squads-resolve-atas", "squads-resolve"]);
+  assert.equal(sent[0].instructions.length, 3);
+  assert.equal(proposed[0].length, 1);
+});
+
+test("without SQUADS_MULTISIG a server key that is not the config authority can't resolve", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  await assert.rejects(
+    resolveDispute({ ...deps(), readConfigAuthority: async () => vaultKey }, reviewer.user.id, spot.id, DECISION),
+    (error: Error & { status?: number }) => error.status === 409 && /needs the multisig; set SQUADS_MULTISIG/.test(error.message),
+  );
+  // A multisig whose vault isn't the authority is refused too.
+  await assert.rejects(
+    resolveDispute({ ...viaSquads(), readConfigAuthority: async () => Keypair.generate().publicKey }, reviewer.user.id, spot.id, DECISION),
+    /is not the SQUADS_MULTISIG vault/,
+  );
+  assert.equal(sent.length, 0);
+  // The server key as authority still resolves directly, even with a multisig configured.
+  const direct = await resolveDispute({ ...viaSquads(), readConfigAuthority: async () => reviewerKey.publicKey }, reviewer.user.id, spot.id, DECISION);
+  assert.equal(direct.spot.state, "settled");
+  assert.equal(sent[0].op, "resolve_dispute");
+});
+
+test("the reconciler settles a dispute once the multisig executes the resolution", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  await resolveDispute(viaSquads(), reviewer.user.id, spot.id, DECISION);
+  const [proposed] = await db.select().from(disputes).where(eq(disputes.spotId, spot.id));
+
+  let chainStatus: ChainSpotStatus = "disputed";
+  let lookups = 0;
+  const executed = `sig-squads-${proposed.id}`;
+  const reconcileDeps = () => ({
+    db,
+    signatureOutcomes: async () => new Map(),
+    // Other tests' proposals are still waiting on the multisig.
+    readSpotStatus: async (address: string): Promise<ChainSpotStatus> => (address === spot.chainAddress ? chainStatus : "disputed"),
+    findDisputeResolution: async (address: string, hash: string) => {
+      if (address !== spot.chainAddress) return null;
+      lookups += 1;
+      if (hash !== proposed.decisionHash) return null;
+      return {
+        signature: executed,
+        event: {
+          decisionHash: Array.from(Buffer.from(hash, "hex")),
+          sellerShareBps: 5000,
+          buyerRefund: "50000000",
+          sellerAmount: "47500000",
+          fee: "2500000",
+        },
+      };
+    },
+  });
+
+  // Still waiting for approval: nothing changes and the chain isn't searched.
+  const waiting = await reconcile(reconcileDeps());
+  assert.equal(waiting.disputesResolved, 0);
+  assert.equal(lookups, 0);
+  assert.equal((await db.select().from(disputes).where(eq(disputes.id, proposed.id)))[0].state, "open");
+
+  chainStatus = "closed";
+  const report = await reconcile(reconcileDeps());
+  assert.equal(report.disputesResolved, 1);
+  assert.ok(!report.spotDrift.some((drift) => drift.spotId === spot.id));
+
+  const [resolved] = await db.select().from(disputes).where(eq(disputes.id, proposed.id));
+  assert.equal(resolved.state, "resolved");
+  assert.equal(resolved.sellerShareBps, 5000);
+  assert.equal(resolved.decision, DECISION.decision);
+  assert.equal(resolved.resolvedBy, reviewer.user.id);
+  const [settled] = await db.select().from(spots).where(eq(spots.id, spot.id));
+  assert.equal(settled.state, "settled");
+  const [settlement] = await db.select().from(settlements).where(eq(settlements.spotId, spot.id));
+  assert.equal(settlement.kind, "dispute_split");
+  assert.equal(settlement.buyerRefund, 50n * USDC);
+  assert.equal(settlement.sellerNet, (475n * USDC) / 10n);
+  assert.equal(settlement.fee, (25n * USDC) / 10n);
+  assert.equal(settlement.gross, 100n * USDC);
+  const [tx] = await db.select().from(chainTxs).where(eq(chainTxs.id, settlement.chainTxId));
+  assert.equal(tx.signature, executed);
+  assert.equal(tx.op, "resolve_dispute");
+  assert.equal(tx.status, "confirmed");
+  const events = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));
+  assert.ok(events.some((event) => event.type === "dispute_resolved" && event.chainTxId === tx.id));
+
+  // Settled once: a later run finds nothing to do.
+  assert.equal((await reconcile(reconcileDeps())).disputesResolved, 0);
+});
+
+test("a dispute closed on-chain without our decision is left for drift detection", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  await resolveDispute(viaSquads(), reviewer.user.id, spot.id, DECISION);
+  const report = await reconcile({
+    db,
+    signatureOutcomes: async () => new Map(),
+    readSpotStatus: async (address: string): Promise<ChainSpotStatus> => (address === spot.chainAddress ? "closed" : "open"),
+    findDisputeResolution: async () => null,
+  });
+  assert.equal(report.disputesResolved, 0);
+  assert.ok(report.spotDrift.some((drift) => drift.spotId === spot.id && drift.dbState === "disputed"));
+  const [row] = await db.select().from(disputes).where(eq(disputes.spotId, spot.id));
+  assert.equal(row.state, "open");
 });

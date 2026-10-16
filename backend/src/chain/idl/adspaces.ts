@@ -708,6 +708,78 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "guardian_pause",
+      "discriminator": [
+        184,
+        93,
+        27,
+        13,
+        127,
+        100,
+        198,
+        238
+      ],
+      "accounts": [
+        {
+          "name": "guardian",
+          "signer": true,
+          "relations": [
+            "pause_guardian"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pause_guardian",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  117,
+                  115,
+                  101,
+                  95,
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initialize_config",
       "discriminator": [
         208,
@@ -767,6 +839,88 @@ export const ADSPACES_IDL = {
         {
           "name": "fee_bps",
           "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "initialize_pause_guardian",
+      "discriminator": [
+        239,
+        43,
+        86,
+        107,
+        57,
+        253,
+        112,
+        71
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pause_guardian",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  117,
+                  115,
+                  101,
+                  95,
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "guardian",
+          "type": "pubkey"
         }
       ]
     },
@@ -1864,6 +2018,83 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "update_pause_guardian",
+      "discriminator": [
+        73,
+        47,
+        112,
+        171,
+        134,
+        145,
+        85,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pause_guardian",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  117,
+                  115,
+                  101,
+                  95,
+                  103,
+                  117,
+                  97,
+                  114,
+                  100,
+                  105,
+                  97,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "guardian",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "update_review_authority",
       "discriminator": [
         243,
@@ -2184,6 +2415,19 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "PauseGuardian",
+      "discriminator": [
+        198,
+        150,
+        21,
+        87,
+        129,
+        78,
+        135,
+        183
+      ]
+    },
+    {
       "name": "ProofRecord",
       "discriminator": [
         237,
@@ -2417,6 +2661,19 @@ export const ADSPACES_IDL = {
         186,
         12,
         96
+      ]
+    },
+    {
+      "name": "PauseGuardianSet",
+      "discriminator": [
+        65,
+        50,
+        111,
+        132,
+        193,
+        5,
+        19,
+        69
       ]
     },
     {
@@ -2772,6 +3029,11 @@ export const ADSPACES_IDL = {
       "code": 6046,
       "name": "InvalidDisputeTimeout",
       "msg": "Dispute timeout is outside the allowed range."
+    },
+    {
+      "code": 6047,
+      "name": "InvalidPauseGuardian",
+      "msg": "Pause guardian must be a nondefault address."
     }
   ],
   "types": [
@@ -3408,6 +3670,50 @@ export const ADSPACES_IDL = {
       }
     },
     {
+      "name": "PauseGuardian",
+      "docs": [
+        "A key that can pause the protocol but never unpause it, so an incident does not wait on the",
+        "config authority's multisig. `Pubkey::default()` means the guardian is disabled."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "config",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauseGuardianSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "previous_guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "ProofRecord",
       "type": {
         "kind": "struct",
@@ -3802,6 +4108,11 @@ export const ADSPACES_IDL = {
       "name": "MODE_FIXED",
       "type": "u8",
       "value": "0"
+    },
+    {
+      "name": "PAUSE_GUARDIAN_SEED",
+      "type": "bytes",
+      "value": "[112, 97, 117, 115, 101, 95, 103, 117, 97, 114, 100, 105, 97, 110]"
     },
     {
       "name": "PROOF_SEED",
