@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { Address } from "@/components/ui/Address";
+import { userErrorMessage } from "@/lib/errors";
 
 const PAGE = 30;
 type Role = "creator" | "sponsor" | undefined;
@@ -46,7 +47,7 @@ export function ActivityView() {
       {query.isPending ? (
         <Skeleton className="h-64 w-full" />
       ) : query.isError ? (
-        <p className="text-body text-danger">{query.error.message}</p>
+        <p className="text-body text-danger">{userErrorMessage(query.error, "couldn't load your activity. try again.")}</p>
       ) : items.length === 0 ? (
         <EmptyState icon={History} title="nothing here yet" description="claims, bids, proofs and payouts show up as they happen." />
       ) : (

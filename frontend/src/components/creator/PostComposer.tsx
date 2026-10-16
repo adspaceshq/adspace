@@ -7,6 +7,7 @@ import { api } from "@/lib/api/v2";
 import { queryKeys } from "@/lib/query";
 import { ACCEPT_ATTRIBUTE, uploadImage } from "@/lib/upload";
 import { Button } from "@/components/ui/Button";
+import { userErrorMessage } from "@/lib/errors";
 
 const MAX_MEDIA = 4;
 const detect = (url: string) => {
@@ -51,7 +52,7 @@ export function PostComposer({ listingId }: { listingId: string }) {
           const asset = await uploadImage("post_media", file);
           setMedia((current) => [...current, { id: asset.id, url: asset.url }]);
         } catch (cause) {
-          setUploadError(cause instanceof Error ? cause.message : "upload failed");
+          setUploadError(userErrorMessage(cause, "upload failed"));
         } finally {
           setUploading((count) => count - 1);
         }
@@ -135,7 +136,7 @@ export function PostComposer({ listingId }: { listingId: string }) {
       />
       {(uploadError || post.isError) && (
         <p role="alert" className="text-small text-danger">
-          {uploadError ?? post.error?.message}
+          {uploadError ?? userErrorMessage(post.error, "couldn't post that update. try again.")}
         </p>
       )}
     </div>

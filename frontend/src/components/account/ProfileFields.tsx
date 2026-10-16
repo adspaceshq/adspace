@@ -10,6 +10,7 @@ import { useHandleCheck } from "@/lib/use-handle-check";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Field";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
+import { userErrorMessage } from "@/lib/errors";
 
 // Shared by onboarding and settings: photo, name and (for non-X accounts) handle.
 export function useProfileForm(session: Session) {
@@ -29,7 +30,7 @@ export function useProfileForm(session: Session) {
     try {
       setAvatar((await uploadImage("avatar", file)).url);
     } catch (cause) {
-      setError((cause as Error).message);
+      setError(userErrorMessage(cause, "upload failed"));
     } finally {
       setUploading(false);
     }
@@ -52,7 +53,7 @@ export function useProfileForm(session: Session) {
       await refresh();
       return true;
     } catch (cause) {
-      setError((cause as Error).message);
+      setError(userErrorMessage(cause, "couldn't save your profile. try again."));
       return false;
     } finally {
       setSaving(false);

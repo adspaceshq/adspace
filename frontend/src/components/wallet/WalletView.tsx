@@ -1,11 +1,11 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, Check, CircleCheck, Copy, ShieldCheck, Wallet, Zap } from "lucide-react";
+import { ArrowDownToLine, ArrowUpFromLine, CircleCheck, ShieldCheck, Wallet, Zap } from "lucide-react";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api/v2";
 import type { Withdrawal } from "@/lib/api/types";
-import { ADSPACES_CLUSTER } from "@/lib/chain-config";
+import { DepositDetails } from "./DepositDetails";
 import { formatUsd, toBaseUnits, toInputValue } from "@/lib/money";
 import { useSession } from "@/lib/session";
 import { useUsdcBalance } from "@/lib/use-balance";
@@ -50,21 +50,6 @@ export function WalletView() {
   );
 }
 
-function CopyButton({ value, label }: { value: string; label: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    await navigator.clipboard.writeText(value);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-  return (
-    <Button variant="secondary" size="sm" onClick={() => void copy()} aria-label={label}>
-      {copied ? <Check className="size-4" aria-hidden /> : <Copy className="size-4" aria-hidden />}
-      {copied ? "copied" : "copy"}
-    </Button>
-  );
-}
-
 function BalanceCard({ address, balance, loading, onRetry }: { address: string; balance?: string; loading: boolean; onRetry: () => void }) {
   return (
     <Card className="flex flex-col gap-4 p-5">
@@ -92,25 +77,7 @@ function DepositCard({ address }: { address: string }) {
       <p className="flex items-center gap-2 text-body font-semibold">
         <ArrowDownToLine className="size-4" aria-hidden /> add funds
       </p>
-      <p className="text-small text-muted">send USDC on Solana to this address. other tokens or networks will be lost.</p>
-      {ADSPACES_CLUSTER !== "mainnet-beta" && (
-        <p className="text-small text-muted">
-          <span className="font-medium text-ink">{ADSPACES_CLUSTER} only.</span> don&apos;t send real (mainnet) USDC to this address.
-        </p>
-      )}
-      <div className="flex items-center gap-2 rounded-control bg-canvas p-3">
-        <code className="min-w-0 flex-1 break-all font-mono text-caption tracking-tight sm:text-small">{address}</code>
-        <CopyButton value={address} label="copy deposit address" />
-      </div>
-      {ADSPACES_CLUSTER !== "mainnet-beta" && (
-        <p className="text-small text-muted">
-          testing on {ADSPACES_CLUSTER}? get test USDC from the{" "}
-          <a href="https://faucet.circle.com" target="_blank" rel="noreferrer" className="text-accent hover:underline">
-            Circle faucet
-          </a>
-          .
-        </p>
-      )}
+      <DepositDetails address={address} />
     </Card>
   );
 }

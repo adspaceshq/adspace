@@ -14,6 +14,9 @@ import { Button } from "@/components/ui/Button";
 import { Checkbox, NewTabLink } from "@/components/ui/Checkbox";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
+import { PausedBanner } from "@/components/app/PausedBanner";
+import { useToast } from "@/components/ToastProvider";
+import { usePaused } from "@/lib/use-status";
 
 const pct = (bps: number) => `${(bps / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
 const date = (value: string | Date) => new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -22,6 +25,8 @@ const date = (value: string | Date) => new Date(value).toLocaleString(undefined,
 export function PublishPanel({ listing }: { listing: OwnedListing }) {
   const { wallet } = useSession();
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const paused = usePaused();
   const [accepted, setAccepted] = useState(false);
   const tx = useTx(async () => {
     const published = await api.listings.publish(listing.id);
@@ -57,6 +62,8 @@ export function PublishPanel({ listing }: { listing: OwnedListing }) {
         queryClient.invalidateQueries({ queryKey: ["me", "listing", listing.id] }),
         queryClient.invalidateQueries({ queryKey: queryKeys.creatorDashboard }),
       ]);
+      // This panel is replaced by the live control room, so confirm with a toast.
+      toast.success("your listing is live", "sponsors can claim or bid on your spots now.");
     }
   };
 
@@ -152,7 +159,8 @@ export function PublishPanel({ listing }: { listing: OwnedListing }) {
                 <NewTabLink href="/content-policy">content policy</NewTabLink>, and will deliver every sold spot by the deadline.
               </Checkbox>
             )}
-            <Button size="lg" onClick={() => void publish()} loading={tx.busy} disabled={!resuming && !accepted}>
+            <PausedBanner variant="inline" />
+            <Button size="lg" onClick={() => void publish()} loading={tx.busy} disabled={(!resuming && !accepted) || paused}>
               {resuming ? "resume publishing" : "accept & publish"}
             </Button>
             <p className="text-center text-small text-muted">publishing puts your listing and spots on Solana. network fees and rent are covered for you.</p>

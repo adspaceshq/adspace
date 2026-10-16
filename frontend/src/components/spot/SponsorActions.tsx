@@ -18,6 +18,7 @@ import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
 import { UserLink } from "@/components/ui/UserLink";
+import { useToast } from "@/components/ToastProvider";
 
 function useRefreshSpot(spotId: string) {
   const queryClient = useQueryClient();
@@ -49,13 +50,19 @@ function Block({ icon: Icon, tone, title, children }: { icon: typeof Clock; tone
 export function SponsorActions({ detail, now }: { detail: SpotDetail; now: number }) {
   const { spot, dispute, deadlines, settlement, seller } = detail;
   const refresh = useRefreshSpot(spot.id);
+  const toast = useToast();
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const refund = useTx(() => api.spots.refund(spot.id, false));
   const withdraw = useTx(() => api.spots.withdrawDispute(spot.id));
   const timeout = useTx(() => api.spots.timeoutDispute(spot.id));
-  const run = async (tx: { execute: () => Promise<unknown> }) => {
-    if (await tx.execute()) await refresh();
+  // On success the panel switches to the spot's new state and the inline status goes with it,
+  // so a toast confirms what happened.
+  const run = async (tx: { execute: () => Promise<unknown> }, success: string, detail?: string) => {
+    if (await tx.execute()) {
+      await refresh();
+      toast.success(success, detail);
+    }
   };
 
   const deliveryPassed = now >= new Date(deadlines.deliveryDueAt).getTime();
@@ -76,7 +83,7 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
         <Block icon={AlertTriangle} tone="bg-warning-soft text-warning" title="not delivered on time">
           no proof arrived before the delivery deadline. you can take a full refund now, or open a dispute if something else went wrong.
         </Block>
-        <Button onClick={() => void run(refund)} loading={refund.busy}>
+        <Button onClick={() => void run(refund, "refund sent", "your USDC is back in your wallet.")} loading={refund.busy}>
           get a full refund
         </Button>
         <Button variant="secondary" onClick={() => setDisputeOpen(true)}>
@@ -118,7 +125,7 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
         </Block>
         <blockquote className="rounded-control bg-canvas px-3 py-2 text-small text-muted">&ldquo;{dispute.reason}&rdquo;</blockquote>
         {timedOut && (
-          <Button onClick={() => void run(timeout)} loading={timeout.busy}>
+          <Button onClick={() => void run(timeout, "refund sent", "your USDC is back in your wallet.")} loading={timeout.busy}>
             get my refund
           </Button>
         )}
@@ -128,7 +135,7 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
         <ConfirmModal
           open={confirmWithdraw}
           onClose={() => setConfirmWithdraw(false)}
-          onConfirm={() => void run(withdraw)}
+          onConfirm={() => void run(withdraw, "dispute withdrawn")}
           title="withdraw your dispute?"
           description={
             spot.proofSubmittedAt
@@ -176,7 +183,15 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
         <SpotStateBadge state={spot.state} perspective="sponsor" />
       </div>
       {body}
-      <DisputeSheet spotId={spot.id} open={disputeOpen} onClose={() => setDisputeOpen(false)} onDone={refresh} />
+      <DisputeSheet
+        spotId={spot.id}
+        open={disputeOpen}
+        onClose={() => setDisputeOpen(false)}
+        onDone={async () => {
+          await refresh();
+          toast.success("dispute opened", "the adspaces team will review it. the escrow stays locked until then.");
+        }}
+      />
     </div>
   );
 }
@@ -186,20 +201,23 @@ function DisputeSheet({ spotId, open, onClose, onDone }: { spotId: string; open:
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string>();
   const tx = useTx((text: string) => api.spots.raiseDispute(spotId, text));
+  // True while Privy's gasless approval popup is open; the dialog steps aside so it can be clicked.
+  const [approving, setApproving] = useState(false);
 
   const submit = async () => {
     if (reason.trim().length < 10) return setError("explain what went wrong in at least 10 characters");
     setError(undefined);
     if (await tx.execute(reason.trim())) {
-      await onDone();
       onClose();
+      await onDone();
     }
   };
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      suspended={approving}
+      onClose={() => !approving && onClose()}
       title="open a dispute"
       description="the adspaces team reviews the proof and your reason, then splits or refunds the escrow."
       footer={
@@ -230,7 +248,7 @@ function DisputeSheet({ spotId, open, onClose, onDone }: { spotId: string; open:
           <TxStatus state={tx.state} action="dispute" onRetry={tx.retry} />
         </div>
       ) : (
-        <GaslessPrompt action="open a dispute" />
+        <GaslessPrompt action="open a dispute" onBusyChange={setApproving} />
       )}
     </Modal>
   );
