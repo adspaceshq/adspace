@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import anchor from "@coral-xyz/anchor";
-import type { PublicKey } from "@solana/web3.js";
+import { and, eq } from "drizzle-orm";
+import { PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
+import { chainTxs } from "../db/schema.js";
 import { pdas, type AdspacesProgram } from "../chain/program.js";
-import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
-import { cosigners, type TxSigner } from "../chain/signers.js";
+import type { ChainTxRequest, ChainTxResult, PreparedChainTx } from "../chain/runner.js";
+import { cosigners, externalSigner, type TxSigner } from "../chain/signers.js";
 import { squadsPending, type SquadsPending, type SquadsProposer } from "../chain/squads.js";
 
 export class AdminError extends Error {
@@ -115,5 +117,88 @@ export async function setDisputeTimeout(deps: AdminDeps, adminId: string, second
     instructions: [instruction],
     feePayer: deps.authority,
   });
+  return { status: await deps.readProtocolStatus(), signature: tx.signature };
+}
+
+// Emergency pause by the pause guardian's own wallet, connected in the admin panel. The server builds
+// the transaction (the browser has no RPC) and later submits it, but never signs it: the guardian is
+// the fee payer and only signer.
+export interface GuardianPauseDeps {
+  db: Db;
+  program: AdspacesProgram;
+  readProtocolStatus: () => Promise<ProtocolStatus>;
+  prepareTx: (request: Omit<ChainTxRequest, "signers">) => Promise<PreparedChainTx>;
+  submitTx: (chainTxId: string, signedBase64: string) => Promise<ChainTxResult>;
+}
+
+function guardianPauseInstruction(program: AdspacesProgram, guardian: PublicKey): Promise<TransactionInstruction> {
+  const config = pdas(program.programId).config();
+  return program.methods
+    .guardianPause()
+    .accountsStrict({ guardian, config, pauseGuardian: pdas(program.programId).pauseGuardian(config) })
+    .instruction();
+}
+
+async function activeGuardian(deps: GuardianPauseDeps): Promise<PublicKey> {
+  const status = await deps.readProtocolStatus();
+  if (status.paused) throw new AdminError("the protocol is already paused", 409);
+  if (!status.pauseGuardian) throw new AdminError("no pause guardian is set on-chain; the multisig must set one first", 409);
+  return status.pauseGuardian;
+}
+
+// Step 1: an unsigned guardian_pause transaction for the connected wallet, which must be the on-chain guardian.
+export async function prepareGuardianPause(deps: GuardianPauseDeps, adminId: string, walletInput: string): Promise<PreparedChainTx> {
+  let wallet: PublicKey;
+  try {
+    wallet = new PublicKey(walletInput.trim());
+  } catch {
+    throw new AdminError("that isn't a valid wallet address");
+  }
+  const guardian = await activeGuardian(deps);
+  if (!wallet.equals(guardian)) throw new AdminError(`this wallet is not the pause guardian (${guardian.toBase58()})`, 409);
+  return deps.prepareTx({
+    op: "pause_protocol",
+    idempotencyKey: `guardian-pause:${randomUUID()}`,
+    actorId: adminId,
+    instructions: [await guardianPauseInstruction(deps.program, guardian)],
+    feePayer: externalSigner(guardian),
+  });
+}
+
+// The signed transaction must be exactly one guardian_pause, paid for and signed by the on-chain guardian alone.
+function assertGuardianPause(transaction: Transaction, expected: TransactionInstruction, guardian: PublicKey) {
+  const [instruction, ...rest] = transaction.instructions;
+  const same =
+    instruction &&
+    rest.length === 0 &&
+    instruction.programId.equals(expected.programId) &&
+    instruction.data.equals(expected.data) &&
+    instruction.keys.length === expected.keys.length &&
+    instruction.keys.every((key, index) => key.pubkey.equals(expected.keys[index].pubkey));
+  if (!same) throw new AdminError("the transaction must contain only the guardian pause");
+  const [signature, ...others] = transaction.signatures;
+  if (!transaction.feePayer?.equals(guardian) || !signature?.publicKey.equals(guardian) || others.length > 0) {
+    throw new AdminError("the transaction must be paid for and signed by the pause guardian only");
+  }
+  if (!signature.signature || !transaction.verifySignatures(true)) throw new AdminError("the transaction is missing the guardian's signature");
+}
+
+// Step 2: checks what the guardian signed, then sends it with the server's RPC and waits for confirmation.
+// The runner also refuses anything that isn't byte-identical to the prepared transaction.
+export async function submitGuardianPause(deps: GuardianPauseDeps, adminId: string, chainTxId: string, signedBase64: string) {
+  const [row] = await deps.db
+    .select({ id: chainTxs.id, preparedTx: chainTxs.preparedTx })
+    .from(chainTxs)
+    .where(and(eq(chainTxs.id, chainTxId), eq(chainTxs.op, "pause_protocol"), eq(chainTxs.actorId, adminId)));
+  if (!row?.preparedTx) throw new AdminError("pause transaction not found", 404);
+  let signed: Transaction;
+  try {
+    signed = Transaction.from(Buffer.from(signedBase64, "base64"));
+  } catch {
+    throw new AdminError("the signed transaction could not be read");
+  }
+  const guardian = await activeGuardian(deps);
+  assertGuardianPause(signed, await guardianPauseInstruction(deps.program, guardian), guardian);
+  const tx = await deps.submitTx(row.id, signedBase64);
   return { status: await deps.readProtocolStatus(), signature: tx.signature };
 }

@@ -11,6 +11,7 @@ import { useSession } from "@/lib/session";
 import { useUsdcBalance } from "@/lib/use-balance";
 import { useNow } from "@/lib/use-now";
 import { useTx } from "@/lib/use-tx";
+import { userErrorMessage } from "@/lib/errors";
 import { DAILY_WITHDRAWAL_LIMIT, usedInLastDay, validateWithdrawal, withdrawable, type WithdrawErrors } from "@/lib/withdraw";
 import { Address } from "@/components/ui/Address";
 import { Button } from "@/components/ui/Button";
@@ -172,7 +173,7 @@ function WithdrawCard({ address, balance, history }: { address: string; balance?
     try {
       await action();
     } catch (error) {
-      setSetupError((error as Error).message);
+      setSetupError(userErrorMessage(error));
     }
   };
 
