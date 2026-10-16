@@ -2,6 +2,7 @@ import { and, eq, gte, inArray, isNotNull, lt, notInArray, or, sql, type SQL } f
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { Db } from "../db/client.js";
 import { chainTxs, spots, withdrawals } from "../db/schema.js";
+import { settleSquadsResolutions, type DisputeResolution } from "./disputes.js";
 
 // What the chain says about a transaction signature; `missing` means not found at all.
 export type SignatureOutcome = "confirmed" | "failed" | "missing";
@@ -12,6 +13,8 @@ export interface ReconcilerDeps {
   db: Db;
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
   readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
+  // Finds the multisig's executed resolve_dispute; without it, disputes proposed to Squads are not settled here.
+  findDisputeResolution?: (spotAddress: string, decisionHash: string) => Promise<DisputeResolution | null>;
   now?: () => Date;
 }
 
@@ -26,6 +29,8 @@ export interface ReconcileReport {
   confirmedTxs: number;
   failedTxs: number;
   withdrawalsUpdated: number;
+  // Disputes the multisig resolved on-chain since the last run, now settled in the DB.
+  disputesResolved: number;
   spotDrift: SpotDrift[];
 }
 
@@ -121,12 +126,17 @@ export async function reconcile(deps: ReconcilerDeps): Promise<ReconcileReport> 
   const now = deps.now?.() ?? new Date();
   const txs = await reconcileTransactions(deps, now);
   const withdrawalsUpdated = await reconcileWithdrawals(deps, now);
+  const { findDisputeResolution } = deps;
+  const disputesResolved = findDisputeResolution
+    ? await settleSquadsResolutions({ db: deps.db, readSpotStatus: deps.readSpotStatus, findDisputeResolution, now: () => now })
+    : 0;
   const spotDrift = await detectSpotDrift(deps);
   return {
     checkedTxs: txs.checked,
     confirmedTxs: txs.confirmed,
     failedTxs: txs.failed,
     withdrawalsUpdated,
+    disputesResolved,
     spotDrift,
   };
 }
