@@ -23,6 +23,9 @@ import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
 import { isNotFound, userErrorMessage } from "@/lib/errors";
 import { listingStateLabel } from "@/components/ui/StateBadge";
+import { Badge } from "@/components/ui/Badge";
+import { ADMIN_APPROVAL_AFTER_DAYS, adminApprovalMessage, beyondHorizon, MAX_DELIVERY_DAYS, needsAdminApproval } from "@/lib/listing-rules";
+import { useNow } from "@/lib/use-now";
 
 const toLocal = (iso: string) => {
   const date = new Date(iso);
@@ -75,6 +78,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewListingDetail; flo
   const [delivery, setDelivery] = useState(toLocal(listing.deliveryDueAt));
   const [note, setNote] = useState("");
   const [error, setError] = useState<string>();
+  const now = useNow(60_000);
 
   const decide = useMutation({
     mutationFn: (decision: ReviewDecision) => api.review.decide(listing.id, decision),
@@ -90,6 +94,11 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewListingDetail; flo
   });
 
   const ownListing = session?.id === listing.sellerId;
+  // Delivery more than N days out (the date in the form, which the reviewer may change) needs an admin.
+  const approvalAfterDays = listing.adminApprovalAfterDays ?? ADMIN_APPROVAL_AFTER_DAYS;
+  const adminOnly = needsAdminApproval(delivery, now, approvalAfterDays);
+  const deliveryTooFar = beyondHorizon(delivery, now);
+  const blockedForReviewer = adminOnly && !session?.isAdmin;
   const auction = listing.mode === "auction";
   const parsed = {
     feeBps: parsePercentToBps(feeText.feeBps),
@@ -124,6 +133,8 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewListingDetail; flo
     const hours = Number(reviewHours);
     if (!fees || policyError) return setError(policyError ?? "fix the fee fields");
     if (!Number.isInteger(hours) || hours < 1 || hours > 720) return setError("review window must be 1-720 hours");
+    if (deliveryTooFar) return setError(`delivery must be within ${MAX_DELIVERY_DAYS} days`);
+    if (blockedForReviewer) return setError(adminApprovalMessage(approvalAfterDays));
     setError(undefined);
     if (highFee) return setConfirm("high_fee");
     submitApproval();
@@ -254,6 +265,25 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewListingDetail; flo
               <Input label="deliver by" type="datetime-local" value={delivery} onChange={(event) => setDelivery(event.target.value)} />
               <Input label="review window (h)" inputMode="numeric" value={reviewHours} onChange={(event) => setReviewHours(event.target.value)} />
             </div>
+            {deliveryTooFar ? (
+              <p role="alert" className="text-small text-danger">
+                delivery must be within {MAX_DELIVERY_DAYS} days. move the date earlier or request changes.
+              </p>
+            ) : (
+              adminOnly && (
+                <div role="note" className="flex flex-col gap-1.5 rounded-control bg-warning-soft px-3 py-2 text-small text-ink">
+                  <Badge tone="warning" className="self-start">
+                    admin approval
+                  </Badge>
+                  <p>
+                    {adminApprovalMessage(approvalAfterDays)}.{" "}
+                    {session?.isAdmin
+                      ? "you're an admin, so you can approve it."
+                      : `you can request changes, or move delivery within ${approvalAfterDays} days to approve it yourself.`}
+                  </p>
+                </div>
+              )
+            )}
             <Textarea label="note to the creator" value={note} onChange={(event) => setNote(event.target.value)} rows={3} maxLength={1000} hint="required to request changes or reject" />
             {error && (
               <p role="alert" className="text-small text-danger">
@@ -261,7 +291,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewListingDetail; flo
               </p>
             )}
             <div className="flex flex-col gap-2">
-              <Button onClick={approve} loading={decide.isPending && decide.variables?.action === "approve"} disabled={decide.isPending || ownListing}>
+              <Button onClick={approve} loading={decide.isPending && decide.variables?.action === "approve"} disabled={decide.isPending || ownListing || blockedForReviewer || deliveryTooFar}>
                 approve
               </Button>
               <div className="grid grid-cols-2 gap-2">

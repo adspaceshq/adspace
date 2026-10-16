@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OwnedListing } from "@/lib/api/types";
-import { emptyWizard, fromOwnedListing, templateSpots, toDraftInput, validateStep } from "./sell-draft";
+import { deliveryNotice, emptyWizard, fromOwnedListing, templateSpots, toDraftInput, validateStep } from "./sell-draft";
 
 const NOW = Date.UTC(2026, 9, 8, 12);
 
@@ -21,6 +21,21 @@ describe("sell draft", () => {
     expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0.001" }, NOW)).toHaveProperty("minIncrement");
     expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "0.01" }, NOW)).not.toHaveProperty("minIncrement");
     expect(validateStep("pricing", { ...filled, deadline: "2026-10-08T12:10" }, NOW)).toHaveProperty("deadline");
+  });
+
+  it("allows delivery up to 365 days out, flags past 90 for admin approval, and caps the bid step", () => {
+    const filled = { ...emptyWizard("laptop", NOW), title: "Lid", photos: [{ assetId: "a1", url: "https://x/y.jpg" }] };
+    // The default deadline is 7 days out.
+    expect(validateStep("pricing", { ...filled, deliveryDays: "60" }, NOW)).not.toHaveProperty("deliveryDays");
+    expect(deliveryNotice({ ...filled, deliveryDays: "60" }, NOW)).toBeNull();
+    expect(validateStep("pricing", { ...filled, deliveryDays: "120" }, NOW)).not.toHaveProperty("deliveryDays");
+    expect(deliveryNotice({ ...filled, deliveryDays: "120" }, NOW)).toMatch(/more than 90 days out, so an admin has to approve/);
+    expect(validateStep("pricing", { ...filled, deliveryDays: "358" }, NOW)).not.toHaveProperty("deliveryDays");
+    expect(validateStep("pricing", { ...filled, deliveryDays: "359" }, NOW).deliveryDays).toMatch(/within 365 days of today/);
+    expect(validateStep("pricing", { ...filled, deliveryDays: "366" }, NOW).deliveryDays).toBe("1 to 365 days");
+    expect(deliveryNotice({ ...filled, deliveryDays: "359" }, NOW)).toBeNull();
+    expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "1000000" }, NOW)).not.toHaveProperty("minIncrement");
+    expect(validateStep("pricing", { ...filled, mode: "auction", minIncrement: "1000000.01" }, NOW).minIncrement).toMatch(/at most 1,000,000 USDC/);
   });
 
   it("builds the API draft with base-unit-safe prices and computed delivery date", () => {

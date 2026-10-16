@@ -3,12 +3,13 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Check, Gavel, Tag } from "lucide-react";
+import { AlertTriangle, Check, Gavel, Tag } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { Surface } from "@/lib/api/types";
 import { mockupChoiceFor, mockupPresets, mockupUploaded, photoSourceFor, presetFile, restorePresets } from "@/lib/mac-mockup";
 import { uploadImage } from "@/lib/upload";
-import { emptyWizard, STEPS, toDraftInput, validateStep, type StepErrors, type WizardState, type WizardStep } from "@/lib/sell-draft";
+import { deliveryNotice, emptyWizard, STEPS, toDraftInput, validateStep, type StepErrors, type WizardState, type WizardStep } from "@/lib/sell-draft";
+import { ADMIN_APPROVAL_AFTER_DAYS, MAX_DELIVERY_DAYS } from "@/lib/listing-rules";
 import { SURFACE_LABELS } from "@/lib/listing-display";
 import { viewLabel } from "@/lib/spot-views";
 import { formatUsd, toBaseUnits } from "@/lib/money";
@@ -329,16 +330,23 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
               value={state.deliveryDays}
               onChange={(event) => set("deliveryDays", event.target.value)}
               error={errors.deliveryDays}
-              hint="time to place the brands and post proof"
+              hint={`time to place the brands and post proof. over ${ADMIN_APPROVAL_AFTER_DAYS} days needs admin approval (max ${MAX_DELIVERY_DAYS})`}
             />
           </div>
+          {!errors.deliveryDays && deliveryNotice(state) && (
+            <p role="note" className="flex gap-2 rounded-control bg-warning-soft px-3 py-2 text-small text-ink">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              {deliveryNotice(state)}
+            </p>
+          )}
           {!errors.deadline && !Number.isNaN(new Date(state.deadline).getTime()) && Number(state.deliveryDays) > 0 && (
             <Timeline
               steps={[
                 { label: `${state.mode === "auction" ? "bidding" : "claims"} close`, detail: new Date(state.deadline).toLocaleString(), state: "current" },
                 {
                   label: "you deliver and post proof",
-                  detail: `by ${new Date(new Date(state.deadline).getTime() + Number(state.deliveryDays) * 86_400_000).toLocaleDateString()}`,
+                  // Artwork is final an hour after close (anti-snipe headroom); proof opens then.
+                  detail: `proof opens an hour after close, when the artwork is final; deliver by ${new Date(new Date(state.deadline).getTime() + Number(state.deliveryDays) * 86_400_000).toLocaleDateString()}`,
                   state: "upcoming",
                 },
                 { label: "sponsors review, then you're paid", detail: "48 hours by default, set at approval", state: "upcoming" },

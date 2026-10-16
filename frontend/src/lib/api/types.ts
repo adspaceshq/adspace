@@ -460,7 +460,12 @@ export interface ReviewSummary {
   failedTxs: Array<{ id: string; op: string; error: string | null; signature: string | null; updatedAt: IsoDate; spotId: string | null }>;
 }
 
-export type ReviewQueueItem = Omit<PublicListing, "spots"> & { spots: Spot[] };
+export type ReviewQueueItem = Omit<PublicListing, "spots"> & {
+  spots: Spot[];
+  // Delivery is more than adminApprovalAfterDays out: only an admin can approve.
+  needsAdminApproval?: boolean;
+  adminApprovalAfterDays?: number;
+};
 
 // The creator's record on other listings, for the reviewer decision screen.
 export interface SellerHistory {
