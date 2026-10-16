@@ -11,6 +11,7 @@ import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { useTx } from "@/lib/use-tx";
 import { Button } from "@/components/ui/Button";
+import { Checkbox, NewTabLink } from "@/components/ui/Checkbox";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
 
@@ -146,16 +147,10 @@ export function PublishPanel({ listing }: { listing: OwnedListing }) {
         ) : (
           <div className="flex flex-col gap-3 border-t border-line pt-5">
             {!resuming && (
-              <label className="flex cursor-pointer items-start gap-2 text-body">
-                <input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)} className="mt-1 size-4 accent-ink" />
-                <span>
-                  I accept the{" "}
-                  <a href="/terms" target="_blank" className="text-accent hover:underline">
-                    adspaces terms
-                  </a>{" "}
-                  and will deliver every sold spot by the deadline.
-                </span>
-              </label>
+              <Checkbox checked={accepted} onChange={setAccepted} disabled={tx.busy}>
+                i accept the <NewTabLink href="/terms">terms</NewTabLink>, <NewTabLink href="/fees">fees</NewTabLink> and{" "}
+                <NewTabLink href="/content-policy">content policy</NewTabLink>, and will deliver every sold spot by the deadline.
+              </Checkbox>
             )}
             <Button size="lg" onClick={() => void publish()} loading={tx.busy} disabled={!resuming && !accepted}>
               {resuming ? "resume publishing" : "accept & publish"}

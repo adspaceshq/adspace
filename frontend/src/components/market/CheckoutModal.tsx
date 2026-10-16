@@ -13,6 +13,7 @@ import { useSession } from "@/lib/session";
 import { useUsdcBalance } from "@/lib/use-balance";
 import { useTx } from "@/lib/use-tx";
 import { Button } from "@/components/ui/Button";
+import { Checkbox, NewTabLink } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
@@ -45,6 +46,8 @@ export function CheckoutModal({
   const [errors, setErrors] = useState<Record<string, string>>({});
   // True while Privy's gasless approval popup is open; our dialog steps aside so it can be used.
   const [approving, setApproving] = useState(false);
+  // Sponsors agree to the terms and content policy before each claim or bid (frontend-only for now).
+  const [agreed, setAgreed] = useState(false);
 
   const tx = useTx(async (payload: { brand: SponsorBrand; amount: string }) =>
     auction ? api.spots.bid(spot.id, payload.amount, payload.brand) : api.spots.claim(spot.id, payload.brand),
@@ -118,7 +121,7 @@ export function CheckoutModal({
             <Button variant="ghost" onClick={onClose} disabled={tx.busy}>
               cancel
             </Button>
-            <Button onClick={() => void submit()} loading={tx.busy} disabled={insufficient}>
+            <Button onClick={() => void submit()} loading={tx.busy} disabled={insufficient || !agreed}>
               {auction ? `bid ${amount !== null ? formatUsd(amount) : ""}` : `claim for ${formatUsd(spot.price)}`}
             </Button>
           </>
@@ -206,6 +209,11 @@ export function CheckoutModal({
               </p>
             </div>
           </dl>
+
+          <Checkbox checked={agreed} onChange={setAgreed} disabled={tx.busy}>
+            i agree to the <NewTabLink href="/terms">terms</NewTabLink> and{" "}
+            <NewTabLink href="/content-policy">content policy</NewTabLink>
+          </Checkbox>
 
           {insufficient && (
             <p role="alert" className="text-small text-danger">

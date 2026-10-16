@@ -9,6 +9,7 @@ import type { Session } from "@/lib/api/types";
 import { BRAND_CATEGORIES, buildOnboarding, landingPath, SOCIAL_PLATFORMS, sells, sponsors, type Role, type RoleErrors, type RoleForm } from "@/lib/onboarding";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
+import { Checkbox, NewTabLink } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Field";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -63,7 +64,7 @@ export function OnboardingFlow() {
       {step === "role" && (
         <section className="flex flex-col gap-5">
           <h1 className="text-title font-semibold">how will you use adspaces?</h1>
-          <RoleEditor session={session} onBack={() => setProfileDone(false)} submitLabel="finish" />
+          <RoleEditor session={session} onBack={() => setProfileDone(false)} submitLabel="finish" requireConsent />
         </section>
       )}
     </div>
@@ -111,7 +112,20 @@ const ROLES: Array<{ id: Role; title: string; description: string; icon: typeof 
 ];
 
 // Used by onboarding (first save) and settings (edits); prefilled from saved answers.
-export function RoleEditor({ session, onBack, submitLabel, onSaved }: { session: Session; onBack?: () => void; submitLabel: string; onSaved?: () => void }) {
+// requireConsent: first sign-up asks for age and terms agreement before finishing (frontend-only).
+export function RoleEditor({
+  session,
+  onBack,
+  submitLabel,
+  onSaved,
+  requireConsent = false,
+}: {
+  session: Session;
+  onBack?: () => void;
+  submitLabel: string;
+  onSaved?: () => void;
+  requireConsent?: boolean;
+}) {
   const { refresh } = useSession();
   const saved = session.onboarding;
   const [form, setForm] = useState<RoleForm>({
@@ -123,6 +137,7 @@ export function RoleEditor({ session, onBack, submitLabel, onSaved }: { session:
   });
   const [errors, setErrors] = useState<RoleErrors>({});
   const [saving, setSaving] = useState(false);
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState<string>();
   const set = (patch: Partial<RoleForm>) => setForm((current) => ({ ...current, ...patch }));
 
@@ -214,6 +229,12 @@ export function RoleEditor({ session, onBack, submitLabel, onSaved }: { session:
         </fieldset>
       )}
 
+      {requireConsent && (
+        <Checkbox checked={agreed} onChange={setAgreed} disabled={saving}>
+          i&apos;m 18 or older and agree to the <NewTabLink href="/terms">terms</NewTabLink> and{" "}
+          <NewTabLink href="/privacy">privacy policy</NewTabLink>
+        </Checkbox>
+      )}
       {error && (
         <p role="alert" className="text-small text-danger">
           {error}
@@ -225,7 +246,7 @@ export function RoleEditor({ session, onBack, submitLabel, onSaved }: { session:
             back
           </Button>
         )}
-        <Button onClick={() => void submit()} loading={saving}>
+        <Button onClick={() => void submit()} loading={saving} disabled={requireConsent && !agreed}>
           {submitLabel}
         </Button>
       </div>
