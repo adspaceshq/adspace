@@ -34,7 +34,7 @@ import { listingLedger, searchListings, verifyLedger } from "../services/ledger.
 import { listWatchlist, unwatchListing, watchListing } from "../services/watchlist.js";
 import { getPrefs, listNotifications, markRead, setPrefs } from "../services/notifications.js";
 import { reconcile } from "../services/reconciler.js";
-import { setDisputeTimeout, setPaused, type AdminDeps } from "../services/admin.js";
+import { prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
 
@@ -715,6 +715,34 @@ export function createV2Router(options: {
       if (typeof req.body?.paused !== "boolean") throw new BadRequest("paused must be true or false");
       const result = await setPaused(adminDeps(), me(req).id, req.body.paused);
       send(res, { paused: result.status.paused, signature: result.signature, pending: result.pending ?? null });
+    }),
+  );
+  // Emergency pause signed by the pause guardian's own wallet, connected in the admin panel only.
+  // The server builds and submits the transaction so the browser never needs an RPC.
+  const guardianDeps = (): GuardianPauseDeps => {
+    const context = requireChain();
+    return { db, program: context.program, readProtocolStatus: context.readProtocolStatus, prepareTx: context.prepareTx, submitTx: context.submitTx };
+  };
+  router.post(
+    "/admin/guardian-pause/prepare",
+    ...mutate,
+    requireAdmin,
+    handle(async (req, res) => {
+      const wallet = (req.body as { wallet?: unknown } | undefined)?.wallet;
+      if (typeof wallet !== "string" || wallet.length > 64) throw new BadRequest("wallet must be a Solana address");
+      send(res, await prepareGuardianPause(guardianDeps(), me(req).id, wallet), 201);
+    }),
+  );
+  router.post(
+    "/admin/guardian-pause/submit",
+    ...mutate,
+    requireAdmin,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as { chainTxId?: unknown; transaction?: unknown };
+      if (typeof body.chainTxId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.chainTxId)) throw new BadRequest("chainTxId is required");
+      if (typeof body.transaction !== "string" || body.transaction.length > 4000) throw new BadRequest("transaction must be a base64 string");
+      const result = await submitGuardianPause(guardianDeps(), me(req).id, body.chainTxId, body.transaction);
+      send(res, { paused: result.status.paused, signature: result.signature });
     }),
   );
   router.post(

@@ -18,10 +18,7 @@ import { TeamPanel } from "./TeamPanel";
 import { RentPanel } from "./RentPanel";
 import { Address } from "@/components/ui/Address";
 import { SquadsPendingNote } from "./SquadsPendingNote";
-
-// The guardian is an external wallet (not the Privy embedded one) and the app has no external wallet
-// connection, so the guardian signs guardian_pause from the adspaces-program repo instead.
-const GUARDIAN_PAUSE_COMMAND = "ADSPACES_GUARDIAN_WALLET=/path/to/guardian-keypair.json node scripts/pause-guardian-devnet.js pause --confirm";
+import { GuardianPause } from "./GuardianPause";
 
 type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; disputesResolved?: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
 
@@ -36,7 +33,8 @@ export function OpsPanel() {
   const [days, setDays] = useState("");
   const [report, setReport] = useState<Report>();
   const [resumeProposal, setResumeProposal] = useState<SquadsPending>();
-  const [copied, setCopied] = useState(false);
+  // Kept here: the guardian card unmounts once the refetched status says paused.
+  const [guardianSignature, setGuardianSignature] = useState<string>();
 
   const pause = useMutation({
     mutationFn: (paused: boolean) => api.admin.setPaused(paused),
@@ -47,11 +45,6 @@ export function OpsPanel() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminStatus });
     },
   });
-  const copyCommand = async () => {
-    await navigator.clipboard.writeText(GUARDIAN_PAUSE_COMMAND);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
   const timeout = useMutation({
     mutationFn: (seconds: number) => api.admin.setDisputeTimeout(seconds),
     onSuccess: () => {
@@ -121,28 +114,23 @@ export function OpsPanel() {
             <p className="text-body font-semibold">emergency pause</p>
             <p className="text-small text-muted">blocks new listings, spots, claims and bids. payouts, refunds and disputes keep working so no funds get stuck.</p>
             {viaMultisig && !paused ? (
-              <div className="flex flex-col gap-2 text-small">
-                <p className="text-muted">
-                  the config authority is the multisig, so the server can&apos;t pause. the pause guardian
-                  {data.pauseGuardian && (
-                    <>
-                      {" "}
-                      <Address value={data.pauseGuardian} chars={4} />
-                    </>
-                  )}{" "}
-                  can, but its wallet isn&apos;t connected to this app. run this in the adspaces-program repo with the guardian&apos;s keypair:
-                </p>
-                <pre className="no-scrollbar overflow-x-auto rounded-control bg-canvas px-3 py-2 font-mono text-caption">{GUARDIAN_PAUSE_COMMAND}</pre>
-                <Button variant="secondary" size="sm" className="self-start" onClick={() => void copyCommand()}>
-                  {copied ? "copied" : "copy command"}
-                </Button>
-                {!data.pauseGuardian && <p className="text-warning">no active guardian is set on-chain; the multisig must set one first.</p>}
-              </div>
+              <GuardianPause
+                guardian={data.pauseGuardian}
+                onPaused={(signature) => {
+                  setGuardianSignature(signature);
+                  void queryClient.invalidateQueries({ queryKey: queryKeys.adminStatus });
+                }}
+              />
             ) : (
               <Button variant={paused ? "primary" : "danger"} onClick={() => setConfirmPause(true)}>
                 {paused ? <PlayCircle className="size-4" aria-hidden /> : <PauseCircle className="size-4" aria-hidden />}
                 {paused ? (viaMultisig ? "propose resume to the multisig" : "resume protocol") : "pause protocol"}
               </Button>
+            )}
+            {guardianSignature && paused && (
+              <p className="flex flex-wrap items-center gap-2 text-small text-success">
+                paused by the guardian <Address value={guardianSignature} kind="tx" chars={6} />
+              </p>
             )}
             {resumeProposal && paused && (
               <SquadsPendingNote index={resumeProposal.transactionIndex} url={resumeProposal.url}>

@@ -153,11 +153,12 @@ async function settlePreviousAttempt(
 
 export interface PreparedChainTx {
   chainTxId: string;
-  // Base64 transaction signed by the fee payer; the user's wallet adds its signature in the browser.
+  // Base64 transaction signed by the fee payer (unless it is external, like the pause guardian); the
+  // user's wallet adds its signature in the browser.
   transaction: string;
 }
 
-// Step 1 of a user-signed transaction (withdrawals). Builds the transaction, signs it as fee payer and
+// Step 1 of a user-signed transaction (withdrawals, the guardian pause). Builds the transaction, signs it as fee payer and
 // stores it, so step 2 can accept only this exact transaction back.
 export async function prepareChainTx(
   db: Db,
@@ -209,7 +210,7 @@ export async function submitPreparedChainTx(
   const height = await connection.getBlockHeight("confirmed");
   if (height > row.lastValidBlockHeight) {
     await db.update(chainTxs).set({ status: "failed", error: "expired before it was signed", updatedAt: new Date() }).where(eq(chainTxs.id, row.id));
-    throw new ChainError("this withdrawal expired before it was signed; start again", undefined, undefined, 409);
+    throw new ChainError("this transaction expired before it was signed; start again", undefined, undefined, 409);
   }
   return sendAndConfirm(db, connection, row.id, row.op, signed, { blockhash: signed.recentBlockhash!, lastValidBlockHeight: row.lastValidBlockHeight });
 }

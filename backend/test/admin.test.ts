@@ -1,13 +1,23 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
-import { Connection, Keypair } from "@solana/web3.js";
+import { eq } from "drizzle-orm";
+import { Connection, Keypair, SystemProgram, Transaction } from "@solana/web3.js";
 import { createProgram } from "../src/chain/program.js";
-import type { ChainTxRequest } from "../src/chain/runner.js";
+import { prepareChainTx, submitPreparedChainTx, type ChainTxRequest } from "../src/chain/runner.js";
 import * as multisig from "@sqds/multisig";
 import { keypairSigner } from "../src/chain/signers.js";
 import { squadsProposalInstructions, squadsVault, type SquadsProposer } from "../src/chain/squads.js";
 import type { Db } from "../src/db/client.js";
-import { setDisputeTimeout, setPaused, type AdminDeps, type ProtocolStatus } from "../src/services/admin.js";
+import { chainTxs } from "../src/db/schema.js";
+import {
+  prepareGuardianPause,
+  setDisputeTimeout,
+  setPaused,
+  submitGuardianPause,
+  type AdminDeps,
+  type GuardianPauseDeps,
+  type ProtocolStatus,
+} from "../src/services/admin.js";
 import { createTestDb } from "./helpers/db.js";
 import { fakeRunTx, seedUser } from "./helpers/seed.js";
 
@@ -105,4 +115,113 @@ test("with the multisig as config authority, resuming opens a Squads proposal", 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].op, "squads_proposal");
   assert.ok(sent[0].instructions.every((ix) => ix.programId.equals(multisig.PROGRAM_ID)));
+});
+
+// ---------- emergency pause by the guardian's own wallet ----------
+
+const guardianKey = Keypair.generate();
+
+// Just enough of a Connection for prepare/submit; a send pauses the protocol like guardian_pause would.
+function guardianConnection(sentRaw: Buffer[]) {
+  return {
+    getLatestBlockhash: async () => ({ blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 1000 }),
+    getBlockHeight: async () => 10,
+    sendRawTransaction: async (raw: Buffer) => {
+      sentRaw.push(raw);
+      status = { ...status, paused: true };
+      return "sig";
+    },
+    confirmTransaction: async () => ({ value: { err: null } }),
+  } as unknown as Connection;
+}
+
+const guardianDeps = (sentRaw: Buffer[]): GuardianPauseDeps => {
+  const connection = guardianConnection(sentRaw);
+  return {
+    db,
+    program: createProgram(connection),
+    readProtocolStatus: async () => status,
+    prepareTx: (request) => prepareChainTx(db, connection, request),
+    submitTx: (chainTxId, signed) => submitPreparedChainTx(db, connection, chainTxId, signed),
+  };
+};
+
+const signWith = (base64: string, ...signers: Keypair[]) => {
+  const tx = Transaction.from(Buffer.from(base64, "base64"));
+  tx.partialSign(...signers);
+  return tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64");
+};
+
+test("guardian pause: prepares an unsigned guardian_pause paid for by the guardian, then submits what it signed", async () => {
+  const { user } = await seedUser(db, "admin");
+  status = { ...status, authority: vaultKey, pauseGuardian: guardianKey.publicKey };
+  const sentRaw: Buffer[] = [];
+  const deps = guardianDeps(sentRaw);
+
+  const prepared = await prepareGuardianPause(deps, user.id, guardianKey.publicKey.toBase58());
+  const unsigned = Transaction.from(Buffer.from(prepared.transaction, "base64"));
+  assert.ok(unsigned.feePayer?.equals(guardianKey.publicKey));
+  assert.equal(unsigned.instructions.length, 1);
+  assert.ok(unsigned.instructions[0].programId.equals(deps.program.programId));
+  assert.equal(unsigned.signatures.length, 1);
+  assert.equal(unsigned.signatures[0].signature, null);
+
+  // Unsigned: refused before anything is sent.
+  await assert.rejects(submitGuardianPause(deps, user.id, prepared.chainTxId, prepared.transaction), /missing the guardian's signature/);
+  assert.equal(sentRaw.length, 0);
+
+  const result = await submitGuardianPause(deps, user.id, prepared.chainTxId, signWith(prepared.transaction, guardianKey));
+  assert.equal(sentRaw.length, 1);
+  assert.equal(result.status.paused, true);
+  const [row] = await db.select().from(chainTxs).where(eq(chainTxs.id, prepared.chainTxId));
+  assert.equal(row.op, "pause_protocol");
+  assert.equal(row.status, "confirmed");
+  assert.equal(row.actorId, user.id);
+  assert.equal(row.signature, result.signature);
+});
+
+test("guardian pause: refuses wallets that aren't the on-chain guardian, and a missing guardian or paused protocol", async () => {
+  const { user } = await seedUser(db, "admin");
+  const deps = guardianDeps([]);
+  await assert.rejects(prepareGuardianPause(deps, user.id, guardianKey.publicKey.toBase58()), /no pause guardian is set/);
+  status = { ...status, pauseGuardian: guardianKey.publicKey };
+  await assert.rejects(
+    prepareGuardianPause(deps, user.id, Keypair.generate().publicKey.toBase58()),
+    (error: Error & { status?: number }) => error.status === 409 && error.message.includes("not the pause guardian"),
+  );
+  await assert.rejects(prepareGuardianPause(deps, user.id, "not-a-key"), /valid wallet address/);
+  status = { ...status, paused: true };
+  await assert.rejects(prepareGuardianPause(deps, user.id, guardianKey.publicKey.toBase58()), /already paused/);
+});
+
+test("guardian pause: rejects extra instructions, other signers, and other admins' transactions", async () => {
+  const { user } = await seedUser(db, "admin");
+  const other = await seedUser(db, "admin");
+  status = { ...status, pauseGuardian: guardianKey.publicKey };
+  const sentRaw: Buffer[] = [];
+  const deps = guardianDeps(sentRaw);
+  const prepared = await prepareGuardianPause(deps, user.id, guardianKey.publicKey.toBase58());
+  const base = () => Transaction.from(Buffer.from(prepared.transaction, "base64"));
+
+  // An extra instruction riding along, signed by the guardian.
+  const extra = base();
+  extra.add(SystemProgram.transfer({ fromPubkey: guardianKey.publicKey, toPubkey: Keypair.generate().publicKey, lamports: 1 }));
+  extra.partialSign(guardianKey);
+  await assert.rejects(submitGuardianPause(deps, user.id, prepared.chainTxId, extra.serialize().toString("base64")), /only the guardian pause/);
+
+  // Someone else pays and signs next to the guardian.
+  const attacker = Keypair.generate();
+  const otherPayer = base();
+  otherPayer.feePayer = attacker.publicKey;
+  otherPayer.partialSign(attacker, guardianKey);
+  await assert.rejects(submitGuardianPause(deps, user.id, prepared.chainTxId, otherPayer.serialize().toString("base64")), /signed by the pause guardian only/);
+
+  // A guardian_pause for a different key, signed by that key.
+  const impostor = await prepareGuardianPause({ ...deps, readProtocolStatus: async () => ({ ...status, pauseGuardian: attacker.publicKey }) }, user.id, attacker.publicKey.toBase58());
+  await assert.rejects(submitGuardianPause(deps, user.id, prepared.chainTxId, signWith(impostor.transaction, attacker)), /only the guardian pause/);
+
+  // Only the admin who prepared it can submit it.
+  await assert.rejects(submitGuardianPause(deps, other.user.id, prepared.chainTxId, signWith(prepared.transaction, guardianKey)), /not found/);
+  await assert.rejects(submitGuardianPause(deps, user.id, prepared.chainTxId, "not base64 at all"), /could not be read/);
+  assert.equal(sentRaw.length, 0);
 });

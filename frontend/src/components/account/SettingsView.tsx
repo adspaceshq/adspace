@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api/v2";
 import type { Session } from "@/lib/api/types";
+import { userErrorMessage } from "@/lib/errors";
 import { useSession } from "@/lib/session";
 import { Address } from "@/components/ui/Address";
 import { Button } from "@/components/ui/Button";
@@ -181,7 +182,7 @@ function SecuritySection() {
     try {
       await action();
     } catch (cause) {
-      setError((cause as Error).message);
+      setError(userErrorMessage(cause));
     }
   };
   return (
