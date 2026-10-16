@@ -170,7 +170,10 @@ export async function placeBid(deps: PurchaseDeps, spotId: string, bidder: Purch
   if (listing.mode !== "auction") throw new PurchaseError("this spot is fixed price; claim it instead");
   assertPurchaser(listing, bidder, now, listing.deadline);
   if (spot.state !== "open" && spot.state !== "funded") throw new PurchaseError("bidding has ended for this spot");
-  if (spot.buyerId === bidder.id) throw new PurchaseError("you already hold the top bid");
+  // The program refuses a bid from the wallet that already leads (SelfOutbid); say so before signing.
+  if (spot.state === "funded" && (spot.buyerId === bidder.id || spot.buyerWallet === bidder.signer.publicKey.toBase58())) {
+    throw new PurchaseError("you're already the top bidder");
+  }
   const minimum = minimumBid(spot, listing);
   if (amount < minimum) throw new PurchaseError(`bid must be at least ${usd(minimum)}`, 400);
   if (amount > minimum * MAX_BID_MULTIPLE) {

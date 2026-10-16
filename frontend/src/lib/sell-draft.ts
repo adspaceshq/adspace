@@ -2,6 +2,7 @@ import type { DraftInput, OwnedListing, PricingMode, SpotLayout, Surface } from 
 import type { MacPreset, MockupChoice } from "@/lib/mac-mockup";
 import { toBaseUnits, toInputValue } from "@/lib/money";
 import { normalizeView } from "@/lib/spot-views";
+import { ADMIN_APPROVAL_AFTER_DAYS, beyondHorizon, MAX_BID_INCREMENT, MAX_DELIVERY_DAYS, needsAdminApproval } from "@/lib/listing-rules";
 
 // Smallest auction bid step, in USDC base units (6 decimals); mirrors the program's MIN_BID_INCREMENT.
 export const MIN_BID_INCREMENT = 10_000n;
@@ -128,17 +129,37 @@ export function validateStep(step: WizardStep, state: WizardState, now = Date.no
     if (Number.isNaN(deadline)) errors.deadline = "pick when claims close";
     else if (deadline <= now + 60 * 60 * 1000) errors.deadline = "close claims at least an hour from now";
     const days = Number(state.deliveryDays);
-    if (!Number.isInteger(days) || days < 1 || days > 60) errors.deliveryDays = "1 to 60 days";
+    if (!Number.isInteger(days) || days < 1 || days > MAX_DELIVERY_DAYS) errors.deliveryDays = `1 to ${MAX_DELIVERY_DAYS} days`;
+    else if (!Number.isNaN(deadline) && beyondHorizon(deadline + days * DAY, now)) {
+      errors.deliveryDays = `delivery must be within ${MAX_DELIVERY_DAYS} days of today`;
+    }
     if (state.mode === "auction" && !state.doubleUp) {
       try {
-        // Same floor as the program (MIN_BID_INCREMENT): smaller steps let bidders creep up by dust.
-        if (BigInt(toBaseUnits(state.minIncrement)) < MIN_BID_INCREMENT) errors.minIncrement = "the minimum bid increment is 0.01 USDC";
+        // Same bounds as the program: smaller steps let bidders creep up by dust, larger ones overflow.
+        const increment = BigInt(toBaseUnits(state.minIncrement));
+        if (increment < MIN_BID_INCREMENT) errors.minIncrement = "the minimum bid increment is 0.01 USDC";
+        else if (increment > MAX_BID_INCREMENT) errors.minIncrement = "the minimum bid increment can be at most 1,000,000 USDC";
       } catch {
         errors.minIncrement = "enter an amount like 1 or 0.50";
       }
     }
   }
   return errors;
+}
+
+// When the creator commits to deliver, or null while the dates are incomplete.
+export function deliveryTime(state: Pick<WizardState, "deadline" | "deliveryDays">): number | null {
+  const deadline = new Date(state.deadline).getTime();
+  const days = Number(state.deliveryDays);
+  if (Number.isNaN(deadline) || !Number.isInteger(days) || days < 1) return null;
+  return deadline + days * DAY;
+}
+
+// Shown (not blocking) when delivery is past the point a reviewer alone can approve.
+export function deliveryNotice(state: Pick<WizardState, "deadline" | "deliveryDays">, now = Date.now()): string | null {
+  const delivery = deliveryTime(state);
+  if (delivery === null || beyondHorizon(delivery, now) || !needsAdminApproval(delivery, now)) return null;
+  return `delivery is more than ${ADMIN_APPROVAL_AFTER_DAYS} days out, so an admin has to approve this listing. that can take a little longer.`;
 }
 
 export function toDraftInput(state: WizardState): DraftInput {

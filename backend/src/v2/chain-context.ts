@@ -11,7 +11,7 @@ import type { SessionUser } from "../types.js";
 import type { ListingSnapshot } from "../services/settlement.js";
 import type { ChainSpotStatus, SignatureOutcome } from "../services/reconciler.js";
 import type { ProtocolStatus } from "../services/admin.js";
-import type { DisputeResolution } from "../services/disputes.js";
+import type { ChainDisputeRecord, DisputeResolution } from "../services/disputes.js";
 
 export interface ChainContext {
   connection: Connection;
@@ -38,6 +38,8 @@ export interface ChainContext {
   readDisputeTimeoutSeconds: () => Promise<number>;
   // When each spot's dispute times out: opened_at plus the timeout captured at raise. Null without a dispute account.
   readDisputeDeadlines: (spotAddresses: string[]) => Promise<Array<Date | null>>;
+  // The spot's DisputeRecord: who paid its rent (the platform or the buyer) and when it times out.
+  readDisputeRecord: (spot: PublicKey) => Promise<ChainDisputeRecord | null>;
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
   readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
@@ -206,6 +208,15 @@ export function createChainContext(options: {
         out.push(...records.map((record) => (record ? new Date((record.openedAt.toNumber() + record.timeoutSeconds.toNumber()) * 1000) : null)));
       }
       return out;
+    },
+
+    async readDisputeRecord(spot) {
+      const record = await program.account.disputeRecord.fetchNullable(pdas(program.programId).dispute(spot));
+      if (!record) return null;
+      return {
+        rentPayer: record.rentPayer,
+        timesOutAt: new Date((record.openedAt.toNumber() + record.timeoutSeconds.toNumber()) * 1000),
+      };
     },
 
     async readDisputeTimeoutSeconds() {

@@ -43,6 +43,23 @@ test("program errors decode to their IDL message", () => {
   assert.equal(decoded.status, 409);
 });
 
+test("the CertiK-fix program errors decode to friendly copy", () => {
+  const cases: Array<[number, string, RegExp]> = [
+    [6049, "InvalidRentPayer", /rent account is misconfigured/],
+    [6050, "ArtworkWindowOpen", /proof opens when the artwork window closes/],
+    [6051, "DisputeTimeoutPassed", /timed out, so it can't be resolved/],
+    [6052, "SelfOutbid", /already the top bidder/],
+  ];
+  for (const [code, name, copy] of cases) {
+    const hex = decodeChainError(new Error(`custom program error: 0x${code.toString(16)}`));
+    assert.equal(hex.programError, name);
+    assert.equal(hex.code, code);
+    assert.match(hex.message, copy);
+    const logged = decodeChainError(new Error("failed"), [`Program log: AnchorError occurred. Error Code: ${name}. Error Number: ${code}. Error Message: raw.`]);
+    assert.match(logged.message, copy);
+  }
+});
+
 test("network expiry maps to a retryable error", () => {
   assert.equal(decodeChainError(new Error("Blockhash not found")).status, 503);
 });

@@ -143,6 +143,8 @@ export function createV2Router(options: {
   cluster?: string;
   // How long the public status endpoint reuses the on-chain pause flag.
   statusCacheMs?: number;
+  // Lets a buyer pay a dispute's rent from their own wallet when the platform can't co-sign.
+  buyerPaidDisputes?: boolean;
 }) {
   const { db, chain, reviewers } = options;
   const badRoles = invalidRoleEntries([...reviewers, ...(options.admins ?? [])]);
@@ -403,7 +405,7 @@ export function createV2Router(options: {
     requireReviewer,
     handle(async (req, res) => {
       const floor = await requireChain().configFeeFloorBps();
-      send(res, await reviewListing(db, me(req).id, req.params.id, parseDecision(req.body ?? {}), floor));
+      send(res, await reviewListing(db, me(req).id, req.params.id, parseDecision(req.body ?? {}), floor, new Date(), { isAdmin: roleIn(res) === "admin" }));
     }),
   );
 
@@ -562,6 +564,9 @@ export function createV2Router(options: {
       readTxEvent: context.readTxEvent,
       accountExists: context.accountExists,
       readDisputeTimeoutSeconds: context.readDisputeTimeoutSeconds,
+      readDisputeRecord: context.readDisputeRecord,
+      buyerPaidDisputes: options.buyerPaidDisputes,
+      readLamports: context.readLamports,
       listingBaseUrl: options.metadataBaseUrl,
     };
   };

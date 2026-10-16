@@ -128,7 +128,14 @@ test("proof respects the delivery window and ownership", async () => {
   const earlyPost = await createPost(db, { id: early.seller.user.id, isReviewer: false }, early.listing.id, { body: "x" });
   await assert.rejects(
     submitSpotProof(proofDeps(), early.seller.user.id, early.seller.signer, early.spot.id, [earlyPost.id]),
-    /after the listing closes/,
+    /proof opens at/,
+  );
+  // The listing closed but the artwork window hasn't: the program only accepts proof from artwork close.
+  const artworkOpen = await seedListing(db, { deadline: PAST_DEADLINE, artworkDueAt: new Date(Date.now() + 2 * HOUR), deliveryDueAt: DELIVERY, funded: true });
+  const artworkPost = await createPost(db, { id: artworkOpen.seller.user.id, isReviewer: false }, artworkOpen.listing.id, { body: "x" });
+  await assert.rejects(
+    submitSpotProof(proofDeps(), artworkOpen.seller.user.id, artworkOpen.seller.signer, artworkOpen.spot.id, [artworkPost.id]),
+    /proof opens at .* utc, when the artwork window closes/,
   );
 
   const { seller, buyer, listing, spot } = await seedListing(db, { deadline: PAST_DEADLINE, deliveryDueAt: DELIVERY, funded: true });

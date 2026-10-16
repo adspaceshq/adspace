@@ -19,6 +19,12 @@ const KNOWN: Array<[RegExp, string]> = [
   [/vault is empty/i, "this spot's escrow is already settled. refresh to see the latest state."],
   [/refund with your listing wallet/i, 'refunds have to be signed by the wallet that published this listing. sign in with that account and try again.'],
   [/already waiting for multisig approval/i, 'this decision is already waiting for multisig approval.'],
+  // Program errors added with the CertiK fixes (6049-6052), by name or by their IDL message.
+  [/InvalidRentPayer|only the review authority can pay/i, "this listing couldn't be published because of a platform setup problem. contact support."],
+  [/ArtworkWindowOpen|artwork window is still open/i, 'proof opens when the artwork window closes. try again after the artwork due date.'],
+  [/DisputeTimeoutPassed|dispute timeout has passed|timed out and can no longer be resolved/i, "this dispute has timed out, so it can't be resolved anymore. the sponsor can take a full refund."],
+  [/SelfOutbid|top bidder cannot outbid itself|already the top bidder/i, "you're already the top bidder."],
+  [/left before this dispute times out/i, 'too little time is left before this dispute times out for a multisig approval. let it time out: the sponsor gets a full refund.'],
   [/invalid csrf token/i, 'your session expired. refresh the page and try again.'],
   [/^sign in required$|^missing access token$/i, 'sign in again to continue.'],
   [/on-chain actions are not configured/i, "payments aren't available right now. try again later."],

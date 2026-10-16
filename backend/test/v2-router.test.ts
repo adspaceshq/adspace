@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import request from "supertest";
+import { eq } from "drizzle-orm";
 import { Connection, Keypair, Transaction, type PublicKey } from "@solana/web3.js";
 import { createProgram } from "../src/chain/program.js";
 import { prepareChainTx, submitPreparedChainTx, type ChainTxRequest } from "../src/chain/runner.js";
@@ -8,6 +9,7 @@ import { keypairSigner } from "../src/chain/signers.js";
 import { createApp } from "../src/index.js";
 import { AppAuthRepository } from "../src/repositories/app-auth.js";
 import type { Db } from "../src/db/client.js";
+import { listings } from "../src/db/schema.js";
 import type { ChainContext } from "../src/v2/chain-context.js";
 import { createV2Router, parseUsdc } from "../src/v2/router.js";
 import { createTestDb } from "./helpers/db.js";
@@ -382,4 +384,47 @@ test("guardian pause prepare and submit are admin-only and send what the guardia
   assert.equal(submitted.body.paused, true);
   assert.equal(typeof submitted.body.signature, "string");
   assert.equal(sentRaw.length, 1);
+});
+
+test("listings delivering more than 90 days out need an admin to approve over the API", async () => {
+  const chain = { configFeeFloorBps: async () => 250 } as unknown as ChainContext;
+  const reviewApp = createApp({
+    v2Router: createV2Router({
+      db,
+      chain,
+      reviewers: ["did:privy:long_reviewer"],
+      admins: ["did:privy:long_admin"],
+      termsVersion: "test",
+      metadataBaseUrl: "https://adspaces.test",
+    }),
+  });
+  const DAY = 24 * 60 * 60 * 1000;
+  const seeded = await seedListing(db, { deadline: new Date(Date.now() + DAY), deliveryDueAt: new Date(Date.now() + 120 * DAY) });
+  await db.update(listings).set({ state: "in_review", chainAddress: null }).where(eq(listings.id, seeded.listing.id));
+  const approve = { action: "approve", fees: { feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 } };
+
+  const reviewer = await signIn("long_reviewer");
+  const detail = await request(reviewApp).get(`/api/v2/review/listings/${seeded.listing.id}`).set("Cookie", reviewer.cookie);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.needsAdminApproval, true);
+  assert.equal(detail.body.adminApprovalAfterDays, 90);
+  const queue = await request(reviewApp).get("/api/v2/review/queue").set("Cookie", reviewer.cookie);
+  assert.equal(queue.body.find((item: { id: string }) => item.id === seeded.listing.id)?.needsAdminApproval, true);
+
+  const refused = await request(reviewApp)
+    .post(`/api/v2/review/listings/${seeded.listing.id}`)
+    .set("Cookie", reviewer.cookie)
+    .set("X-CSRF-Token", reviewer.csrf)
+    .send(approve);
+  assert.equal(refused.status, 403);
+  assert.equal(refused.body.error, "listings longer than 90 days need an admin to approve");
+
+  const admin = await signIn("long_admin");
+  const approved = await request(reviewApp)
+    .post(`/api/v2/review/listings/${seeded.listing.id}`)
+    .set("Cookie", admin.cookie)
+    .set("X-CSRF-Token", admin.csrf)
+    .send(approve);
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.state, "approved");
 });

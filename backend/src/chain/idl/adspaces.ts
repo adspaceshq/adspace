@@ -560,7 +560,8 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Platform account that pays the rent for the listing and everything under it, and gets it back."
+            "Platform account that pays the rent for the listing and everything under it, and gets it back.",
+            "Must be the review authority key, so a seller can never hold the rent payer role."
           ],
           "writable": true,
           "signer": true
@@ -1359,7 +1360,8 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "The listing's rent payer funds the dispute's rent, so buyers never need SOL. Co-signs the raise."
+            "Funds the dispute's rent and gets it back. Normally the listing's rent payer, so buyers never",
+            "need SOL; once proof exists the buyer may pay it instead, so no co-signature can block the dispute."
           ],
           "writable": true,
           "signer": true
@@ -1604,7 +1606,15 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it."
+            "Gets the rent back for the spot, vault and proof: the platform account that paid it."
+          ],
+          "writable": true
+        },
+        {
+          "name": "dispute_rent_payer",
+          "docs": [
+            "(usually the same key as rent_payer, or the buyer). Any owner is accepted, so a payer key that",
+            "later changes owner cannot block the resolution or the timeout."
           ],
           "writable": true
         },
@@ -1617,7 +1627,10 @@ export const ADSPACES_IDL = {
           "writable": true
         },
         {
-          "name": "seller"
+          "name": "seller",
+          "docs": [
+            "program-owned seller key can still be paid."
+          ]
         },
         {
           "name": "buyer_ata",
@@ -1921,7 +1934,15 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the rent back for the dispute, spot, vault and proof: the platform account that paid it."
+            "Gets the rent back for the spot, vault and proof: the platform account that paid it."
+          ],
+          "writable": true
+        },
+        {
+          "name": "dispute_rent_payer",
+          "docs": [
+            "(usually the same key as rent_payer, or the buyer). Any owner is accepted, so a payer key that",
+            "later changes owner cannot block the resolution or the timeout."
           ],
           "writable": true
         },
@@ -2251,7 +2272,7 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the dispute's rent back: the platform account that paid it."
+            "Gets the dispute's rent back: whoever paid it (the listing's rent payer or the buyer)."
           ],
           "writable": true
         }
@@ -2306,7 +2327,10 @@ export const ADSPACES_IDL = {
           }
         },
         {
-          "name": "seller"
+          "name": "seller",
+          "docs": [
+            "program-owned seller key can still be paid."
+          ]
         },
         {
           "name": "rent_payer",
@@ -3034,6 +3058,31 @@ export const ADSPACES_IDL = {
       "code": 6047,
       "name": "InvalidPauseGuardian",
       "msg": "Pause guardian must be a nondefault address."
+    },
+    {
+      "code": 6048,
+      "name": "ProofAccountRequired",
+      "msg": "The spot has a proof record; pass it so it closes with the spot."
+    },
+    {
+      "code": 6049,
+      "name": "InvalidRentPayer",
+      "msg": "Only the review authority can pay a listing's rent."
+    },
+    {
+      "code": 6050,
+      "name": "ArtworkWindowOpen",
+      "msg": "Artwork window is still open; proof is accepted from artwork close."
+    },
+    {
+      "code": 6051,
+      "name": "DisputeTimeoutPassed",
+      "msg": "Dispute timeout has passed; only the timeout refund remains."
+    },
+    {
+      "code": 6052,
+      "name": "SelfOutbid",
+      "msg": "The current top bidder cannot outbid itself."
     }
   ],
   "types": [
@@ -3433,6 +3482,10 @@ export const ADSPACES_IDL = {
           {
             "name": "fee",
             "type": "u64"
+          },
+          {
+            "name": "treasury_ata",
+            "type": "pubkey"
           }
         ]
       }
@@ -3665,6 +3718,10 @@ export const ADSPACES_IDL = {
           {
             "name": "max_fee_bps",
             "type": "u16"
+          },
+          {
+            "name": "treasury",
+            "type": "pubkey"
           }
         ]
       }
@@ -3871,6 +3928,10 @@ export const ADSPACES_IDL = {
           {
             "name": "fee",
             "type": "u64"
+          },
+          {
+            "name": "treasury_ata",
+            "type": "pubkey"
           }
         ]
       }
@@ -4067,9 +4128,27 @@ export const ADSPACES_IDL = {
       "value": "[108, 105, 115, 116, 105, 110, 103]"
     },
     {
+      "name": "MAX_BID_INCREMENT",
+      "docs": [
+        "Largest allowed auction bid step, in USDC base units (6 decimals): 1,000,000 USDC. Keeps",
+        "`current_bid + min_increment` representable."
+      ],
+      "type": "u64",
+      "value": "1000000000000"
+    },
+    {
       "name": "MAX_DISPUTE_TIMEOUT_SECONDS",
       "type": "i64",
       "value": "2592000"
+    },
+    {
+      "name": "MAX_LISTING_HORIZON_SECONDS",
+      "docs": [
+        "Furthest a listing's delivery deadline may lie in the future at creation: 365 days. It bounds how",
+        "long escrow can stay locked and keeps `delivery_deadline + review_window_seconds` far from overflow."
+      ],
+      "type": "i64",
+      "value": "31536000"
     },
     {
       "name": "MAX_REVIEW_WINDOW_SECONDS",
@@ -4095,6 +4174,11 @@ export const ADSPACES_IDL = {
       "value": "3600"
     },
     {
+      "name": "MIN_PROOF_WINDOW_SECONDS",
+      "type": "i64",
+      "value": "3600"
+    },
+    {
       "name": "MIN_REVIEW_WINDOW_SECONDS",
       "type": "i64",
       "value": "3600"
@@ -4113,6 +4197,14 @@ export const ADSPACES_IDL = {
       "name": "PAUSE_GUARDIAN_SEED",
       "type": "bytes",
       "value": "[112, 97, 117, 115, 101, 95, 103, 117, 97, 114, 100, 105, 97, 110]"
+    },
+    {
+      "name": "PAYMENT_MINT_DECIMALS",
+      "docs": [
+        "Decimals the payment mint must have; every price and the increment floor assume USDC's 6."
+      ],
+      "type": "u8",
+      "value": "6"
     },
     {
       "name": "PROOF_SEED",
