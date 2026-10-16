@@ -62,6 +62,12 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
   const { signTransaction: privySignTransaction } = useSignTransaction();
   const { refreshUser } = useUser();
   const { showMfaEnrollmentModal } = useMfaEnrollment();
+  // Privy's hooks hand back new functions and arrays on every render. Callbacks read them from this
+  // ref so the session object below only changes when real data changes; otherwise handing it to
+  // the parent re-renders this bridge and loops forever.
+  const hooks = { addSigners, removeSigners, wallets, privySignTransaction, refreshUser, showMfaEnrollmentModal, login, logout };
+  const live = useRef(hooks);
+  live.current = hooks;
 
   const embedded = user?.linkedAccounts.find(
     (account) =>
@@ -85,21 +91,21 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
     const policyId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_POLICY_ID;
     if (!walletAddress) throw new Error("your wallet is still being created; try again in a moment");
     if (!signerId) throw new Error("gasless transactions are not configured");
-    await addSigners({ address: walletAddress, signers: [{ signerId, policyIds: policyId ? [policyId] : [] }] });
-    await refreshUser();
-  }, [addSigners, walletAddress, refreshUser]);
+    await live.current.addSigners({ address: walletAddress, signers: [{ signerId, policyIds: policyId ? [policyId] : [] }] });
+    await live.current.refreshUser();
+  }, [walletAddress]);
 
   const reconnectGasless = useCallback(async () => {
     if (!walletAddress) throw new Error("your wallet is still being created; try again in a moment");
-    await removeSigners({ address: walletAddress });
+    await live.current.removeSigners({ address: walletAddress });
     await enableGasless();
-  }, [removeSigners, walletAddress, enableGasless]);
+  }, [walletAddress, enableGasless]);
 
   const signTransaction = useCallback(
     async (base64: string) => {
-      const target = wallets.find((item) => item.address === walletAddress);
+      const target = live.current.wallets.find((item) => item.address === walletAddress);
       if (!target) throw new Error("your wallet isn't ready yet; try again in a moment");
-      const { signedTransaction } = await privySignTransaction({
+      const { signedTransaction } = await live.current.privySignTransaction({
         transaction: fromBase64(base64),
         wallet: target,
         chain: SOLANA_CHAIN as never,
@@ -109,12 +115,13 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
       });
       return toBase64(signedTransaction);
     },
-    [wallets, walletAddress, privySignTransaction],
+    [walletAddress],
   );
 
+  const setupMfa = useCallback(() => live.current.showMfaEnrollmentModal(), []);
   const wallet = useMemo<WalletAccess>(
-    () => ({ delegated, mfaEnabled, enableGasless, reconnectGasless, setupMfa: showMfaEnrollmentModal, signTransaction }),
-    [delegated, mfaEnabled, enableGasless, reconnectGasless, showMfaEnrollmentModal, signTransaction],
+    () => ({ delegated, mfaEnabled, enableGasless, reconnectGasless, setupMfa, signTransaction }),
+    [delegated, mfaEnabled, enableGasless, reconnectGasless, setupMfa, signTransaction],
   );
 
   // External wallets, for the pause guardian in the ops panel.
@@ -125,35 +132,38 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
     if (result instanceof Error) pending?.reject(result);
     else pending?.resolve(result);
   }, []);
-  const { connectWallet } = useConnectWallet({
+  const { connectWallet: privyConnectWallet } = useConnectWallet({
     onSuccess: ({ wallet: connected }) => settleConnect(connected.type === "solana" ? connected.address : null),
     // Closing the modal isn't an error worth showing.
     onError: (error) => settleConnect(String(error).includes("exited") ? null : new Error("couldn't connect that wallet. try again.")),
   });
+  const connectLive = useRef(privyConnectWallet);
+  connectLive.current = privyConnectWallet;
+  const addressesKey = wallets.map((item) => item.address).join(",");
   const external = useMemo<ExternalWalletAccess>(
     () => ({
-      addresses: wallets.map((item) => item.address),
+      addresses: addressesKey ? addressesKey.split(",") : [],
       connect: (description) => {
         settleConnect(null);
         return new Promise<string | null>((resolve, reject) => {
           pendingConnect.current = { resolve, reject };
-          connectWallet({ walletChainType: "solana-only", walletList: ["phantom", "detected_solana_wallets", "solflare", "backpack"], description });
+          connectLive.current({ walletChainType: "solana-only", walletList: ["phantom", "detected_solana_wallets", "solflare", "backpack"], description });
         });
       },
       sign: async (address, base64) => {
-        const target = wallets.find((item) => item.address === address);
+        const target = live.current.wallets.find((item) => item.address === address);
         if (!target) throw new Error("connect the wallet first");
-        const { signedTransaction } = await privySignTransaction({ transaction: fromBase64(base64), wallet: target, chain: SOLANA_CHAIN });
+        const { signedTransaction } = await live.current.privySignTransaction({ transaction: fromBase64(base64), wallet: target, chain: SOLANA_CHAIN });
         return toBase64(signedTransaction);
       },
       disconnect: async (address) => {
-        await wallets
+        await live.current.wallets
           .find((item) => item.address === address)
           ?.disconnect()
           .catch(() => undefined);
       },
     }),
-    [wallets, connectWallet, privySignTransaction, settleConnect],
+    [addressesKey, settleConnect],
   );
 
   const privyEmail = user?.email?.address;
@@ -172,8 +182,8 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
     await api.auth.logout().catch(() => undefined);
     setCsrfToken(undefined);
     queryClient.clear();
-    await logout();
-  }, [logout, queryClient]);
+    await live.current.logout();
+  }, [queryClient]);
 
   const refresh = useCallback(async () => {
     await queryClient.invalidateQueries({ queryKey: queryKeys.session });
@@ -198,7 +208,7 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
       settleLink(false);
     }
   }, [resync, settleLink]);
-  const { linkEmail: privyLinkEmail } = useLinkAccount({
+  const { linkEmail: privyLinkEmailNow } = useLinkAccount({
     onSuccess: () => {
       setLinkError(undefined);
       void resyncAndSettle();
@@ -210,15 +220,17 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
       settleLink(false);
     },
   });
+  const linkLive = useRef(privyLinkEmailNow);
+  linkLive.current = privyLinkEmailNow;
   const linkEmail = useCallback(() => {
     settleLink(false);
     return new Promise<boolean>((resolve) => {
       pendingLink.current = resolve;
-      privyLinkEmail();
+      linkLive.current();
     });
-  }, [privyLinkEmail, settleLink]);
+  }, [settleLink]);
 
-  const { updateEmail } = useUpdateAccount({
+  const { updateEmail: privyUpdateEmail } = useUpdateAccount({
     onSuccess: () => {
       setLinkError(undefined);
       void resync();
@@ -228,13 +240,17 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
     },
   });
 
+  const updateLive = useRef(privyUpdateEmail);
+  updateLive.current = privyUpdateEmail;
+  const updateEmail = useCallback(() => updateLive.current(), []);
+  const signIn = useCallback(() => live.current.login(), []);
   const value = useMemo<BridgedSession>(
     () => ({
       ready: ready && (!authenticated || !query.isPending),
       session: authenticated ? (query.data ?? null) : null,
       wallet,
       external,
-      signIn: () => login(),
+      signIn,
       signOut,
       refresh,
       linkEmail,
@@ -242,7 +258,7 @@ function PrivySession({ onChange, loginRequested, onLoginHandled }: PrivyBridgeP
       linkError,
       loadError: authenticated && query.isError,
     }),
-    [ready, authenticated, query.isPending, query.isError, query.data, wallet, external, login, signOut, refresh, linkEmail, updateEmail, linkError],
+    [ready, authenticated, query.isPending, query.isError, query.data, wallet, external, signIn, signOut, refresh, linkEmail, updateEmail, linkError],
   );
 
   useEffect(() => onChange(value), [value, onChange]);
