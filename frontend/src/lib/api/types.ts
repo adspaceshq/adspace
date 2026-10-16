@@ -312,6 +312,20 @@ export interface ProtocolStatus {
   feeBps: number;
   paused: boolean;
   disputeTimeoutSeconds: number;
+  // Can only pause; null when not set up or disabled.
+  pauseGuardian: string | null;
+  // False when the config authority is the multisig: the server then proposes instead of signing.
+  serverIsAuthority: boolean;
+  squadsMultisig: string | null;
+}
+
+// A Squads proposal the server opened; members approve and execute it in the Squads app.
+export interface SquadsPending {
+  multisig: string;
+  transactionIndex: number;
+  vaultTransaction: string;
+  proposal: string;
+  url: string;
 }
 
 export interface ChainResult<T> {
@@ -414,7 +428,18 @@ export interface MediaAsset {
 export interface ReviewSummary {
   counts: { listingsInReview: number; openDisputes: number; payoutsReady: number; failedTxs: number };
   disputes: Array<{
-    dispute: { id: string; spotId: string; buyerId: string; state: string; reason: string; openedAt: IsoDate };
+    dispute: {
+      id: string;
+      spotId: string;
+      buyerId: string;
+      state: string;
+      reason: string;
+      openedAt: IsoDate;
+      // Set while a decision waits for multisig approval.
+      squadsTransactionIndex: number | null;
+      proposedSellerShareBps: number | null;
+      proposedAt: IsoDate | null;
+    };
     spotId: string;
     spotIndex: number;
     amount: BaseUnits | null;

@@ -4,7 +4,8 @@ import type { PublicKey } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { pdas, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
-import type { TxSigner } from "../chain/signers.js";
+import { cosigners, type TxSigner } from "../chain/signers.js";
+import { squadsPending, type SquadsPending, type SquadsProposer } from "../chain/squads.js";
 
 export class AdminError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -18,13 +19,17 @@ export interface ProtocolStatus {
   feeBps: number;
   paused: boolean;
   disputeTimeoutSeconds: number;
+  // Can only pause (guardian_pause); null when not set up or disabled.
+  pauseGuardian?: PublicKey | null;
 }
 
 export interface AdminDeps {
   db: Db;
   program: AdspacesProgram;
-  // Must be the program's config authority.
+  // Signs directly when it is the program's config authority; always the fee payer.
   authority: TxSigner;
+  // When the config authority is this multisig's vault, resuming becomes a Squads proposal.
+  squads?: SquadsProposer;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   readProtocolStatus: () => Promise<ProtocolStatus>;
 }
@@ -39,10 +44,21 @@ function assertAuthority(deps: AdminDeps, status: ProtocolStatus) {
   }
 }
 
-export async function setPaused(deps: AdminDeps, adminId: string, paused: boolean) {
+export async function setPaused(
+  deps: AdminDeps,
+  adminId: string,
+  paused: boolean,
+): Promise<{ status: ProtocolStatus; signature: string | null; pending?: SquadsPending }> {
   const status = await deps.readProtocolStatus();
-  assertAuthority(deps, status);
   if (status.paused === paused) return { status, signature: null };
+  if (!status.authority.equals(deps.authority.publicKey)) {
+    // The multisig can pause too, but an emergency shouldn't wait for 2 of 3: that's the guardian's job.
+    if (paused) {
+      const guardian = status.pauseGuardian ? ` (${status.pauseGuardian.toBase58()})` : "";
+      throw new AdminError(`the config authority is the multisig, so the server can't pause; the pause guardian${guardian} can, with emergency pause`, 409);
+    }
+    return proposeResume(deps, adminId, status);
+  }
   const instruction = await deps.program.methods
     .pauseProtocol(paused)
     .accountsStrict({ authority: deps.authority.publicKey, config: pdas(deps.program.programId).config() })
@@ -56,6 +72,29 @@ export async function setPaused(deps: AdminDeps, adminId: string, paused: boolea
     feePayer: deps.authority,
   });
   return { status: await deps.readProtocolStatus(), signature: tx.signature };
+}
+
+// Only the config authority can resume, so with the multisig in charge the server opens a Squads proposal.
+async function proposeResume(deps: AdminDeps, adminId: string, status: ProtocolStatus) {
+  const { squads } = deps;
+  if (!squads) throw new AdminError("resuming needs the multisig; set SQUADS_MULTISIG", 409);
+  if (!squads.vault.equals(status.authority)) {
+    throw new AdminError(`the config authority ${status.authority.toBase58()} is not the SQUADS_MULTISIG vault ${squads.vault.toBase58()}`, 409);
+  }
+  const instruction = await deps.program.methods
+    .pauseProtocol(false)
+    .accountsStrict({ authority: status.authority, config: pdas(deps.program.programId).config() })
+    .instruction();
+  const proposal = await squads.propose([instruction], "adspaces: resume protocol");
+  const tx = await deps.runTx({
+    op: "squads_proposal",
+    idempotencyKey: `squads-resume:${proposal.transactionIndex}:${randomUUID()}`,
+    actorId: adminId,
+    instructions: proposal.instructions,
+    feePayer: deps.authority,
+    signers: cosigners(deps.authority, squads.proposer),
+  });
+  return { status, signature: tx.signature, pending: squadsPending(proposal) };
 }
 
 export async function setDisputeTimeout(deps: AdminDeps, adminId: string, seconds: number) {

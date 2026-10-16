@@ -27,6 +27,7 @@ export function pdas(programId: PublicKey) {
   const find = (...seeds: Buffer[]) => PublicKey.findProgramAddressSync(seeds, programId)[0];
   return {
     config: () => find(seed("config")),
+    pauseGuardian: (config: PublicKey) => find(seed("pause_guardian"), config.toBuffer()),
     reviewAuthority: (config: PublicKey) => find(seed("review_authority"), config.toBuffer()),
     listing: (seller: PublicKey, slugHash: Uint8Array) => find(seed("listing"), seller.toBuffer(), Buffer.from(slugHash)),
     spot: (listing: PublicKey, index: number) => find(seed("spot"), listing.toBuffer(), Buffer.from([index])),

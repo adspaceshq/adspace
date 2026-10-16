@@ -29,6 +29,7 @@ import type {
   SponsorBrand,
   SponsorDashboard,
   Spot,
+  SquadsPending,
   SpotDetail,
   TimelineEvent,
   Withdrawal,
@@ -189,7 +190,8 @@ export const api = {
     summary: () => get<ReviewSummary>("/review/summary"),
     decide: (listingId: string, decision: ReviewDecision) => post<Listing>(`/review/listings/${enc(listingId)}`, decision),
     resolveDispute: (spotId: string, sellerShareBps: number, decision: string) =>
-      post<{ spot: Spot; settlement: Settlement; signature: string }>(`/review/spots/${enc(spotId)}/resolve`, {
+      // With the multisig as config authority the decision becomes a Squads proposal (pending), not a settlement.
+      post<{ spot: Spot; settlement?: Settlement; pending?: SquadsPending; signature: string }>(`/review/spots/${enc(spotId)}/resolve`, {
         sellerShareBps,
         decision,
       }),
@@ -201,7 +203,7 @@ export const api = {
 
   admin: {
     status: () => get<ProtocolStatus>("/admin/status"),
-    setPaused: (paused: boolean) => post<{ paused: boolean; signature: string | null }>("/admin/pause", { paused }),
+    setPaused: (paused: boolean) => post<{ paused: boolean; signature: string | null; pending: SquadsPending | null }>("/admin/pause", { paused }),
     setDisputeTimeout: (seconds: number) =>
       post<{ disputeTimeoutSeconds: number; signature: string | null }>("/admin/dispute-timeout", { seconds }),
     team: () => get<TeamMember[]>("/admin/team"),

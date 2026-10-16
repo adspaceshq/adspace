@@ -27,6 +27,7 @@ const MIN_REVIEW_WINDOW_SECONDS = 60 * 60;
 const MAX_REVIEW_WINDOW_SECONDS = 30 * 24 * 60 * 60;
 export const DEFAULT_REVIEW_WINDOW_SECONDS = 48 * 60 * 60;
 export const DEFAULT_DELIVERY_DAYS = 7;
+const ANTI_SNIPE_HEADROOM_MS = 60 * 60 * 1000;
 
 export interface DraftSpotInput {
   label?: string;
@@ -130,7 +131,8 @@ function normalizeDraft(input: DraftInput, now: Date) {
   if (input.spots.some(({ layout }) => !inRange(layout.x, 0, 100) || !inRange(layout.y, 0, 100) || !inRange(layout.w, 2, 60))) {
     throw new ListingError("spots must sit on the photo (position 0-100%, size 2-60%)");
   }
-  const artworkDueAt = input.artworkDueAt ?? input.deadline;
+  // On-chain anti-snipe extensions stop at artwork close, so by default leave an hour for them.
+  const artworkDueAt = input.artworkDueAt ?? new Date(input.deadline.getTime() + ANTI_SNIPE_HEADROOM_MS);
   const deliveryDueAt =
     input.deliveryDueAt ?? new Date(artworkDueAt.getTime() + DEFAULT_DELIVERY_DAYS * 24 * 60 * 60 * 1000);
   validateSchedule(input.deadline, artworkDueAt, deliveryDueAt, now);
