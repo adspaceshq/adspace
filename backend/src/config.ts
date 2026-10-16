@@ -11,7 +11,15 @@ export interface AppConfig {
   sessionTtlHours: number;
   /** X handles or stable user IDs allowed to review submissions (Step 3). */
   platformReviewers: string[];
-  solana: { cluster: SolanaCluster; programId: string; rpcUrl?: string; websocketUrl?: string; reviewerWalletPath?: string };
+  solana: {
+    cluster: SolanaCluster;
+    programId: string;
+    rpcUrl?: string;
+    websocketUrl?: string;
+    reviewerWalletPath?: string;
+    /** Squads v4 multisig whose vault 0 is the config authority; the reviewer key proposes to it. */
+    squadsMultisig?: string;
+  };
 }
 
 function positiveInteger(name: string, value: string | undefined, fallback: number): number {
@@ -44,9 +52,18 @@ function cluster(value: string | undefined): SolanaCluster {
   return selected;
 }
 
+const BASE58_KEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+
 function programId(value: string | undefined): string {
   const selected = value ?? DEFAULT_ADSPACES_PROGRAM_ID;
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(selected)) throw new Error("ADSPACES_PROGRAM_ID must be a base58 public key");
+  if (!BASE58_KEY.test(selected)) throw new Error("ADSPACES_PROGRAM_ID must be a base58 public key");
+  return selected;
+}
+
+function optionalKey(name: string, value: string | undefined): string | undefined {
+  const selected = value?.trim();
+  if (!selected) return undefined;
+  if (!BASE58_KEY.test(selected)) throw new Error(`${name} must be a base58 public key`);
   return selected;
 }
 
@@ -70,6 +87,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       rpcUrl: env.SOLANA_RPC_URL ? absoluteUrl("SOLANA_RPC_URL", env.SOLANA_RPC_URL) : undefined,
       websocketUrl: env.SOLANA_WEBSOCKET_URL ? absoluteUrl("SOLANA_WEBSOCKET_URL", env.SOLANA_WEBSOCKET_URL) : undefined,
       reviewerWalletPath: env.ADSPACES_REVIEWER_KEYPAIR?.trim() || env.ADSPACES_REVIEWER_KEYPAIR_PATH?.trim() || undefined,
+      squadsMultisig: optionalKey("SQUADS_MULTISIG", env.SQUADS_MULTISIG),
     },
   };
 }
