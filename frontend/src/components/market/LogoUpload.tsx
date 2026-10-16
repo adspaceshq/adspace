@@ -3,6 +3,7 @@
 import { ImagePlus, Loader2, RefreshCw } from "lucide-react";
 import { useRef, useState } from "react";
 import { ACCEPT_ATTRIBUTE, uploadImage } from "@/lib/upload";
+import { userErrorMessage } from "@/lib/errors";
 
 // The sponsor's artwork: exactly what the creator puts on the spot, and what the public listing shows once sold.
 export function LogoUpload({
@@ -30,7 +31,7 @@ export function LogoUpload({
       const asset = await uploadImage("brand_logo", file, { onProgress: setProgress });
       onChange(asset.url);
     } catch (cause) {
-      setUploadError((cause as Error).message);
+      setUploadError(userErrorMessage(cause, "upload failed"));
     } finally {
       setProgress(null);
       if (input.current) input.current.value = "";

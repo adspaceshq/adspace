@@ -4,7 +4,7 @@ import { getAccessToken, getIdentityToken, useLinkAccount, useMfaEnrollment, use
 import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
 import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setCsrfToken } from "@/lib/api/v2";
 import type { Session } from "@/lib/api/types";
 import { PRIVY_APP_ID } from "@/lib/privy";
@@ -31,10 +31,13 @@ export interface SessionState {
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
   // Opens Privy's email code flow; the session picks up the verified email afterwards.
-  linkEmail: () => void;
+  // Resolves true once the email is verified and the session updated, false if the user backs out.
+  linkEmail: () => Promise<boolean>;
   // Verifies the new address with a code before it replaces the old one.
   updateEmail: () => void;
   linkError?: string;
+  // Privy is signed in but the adspaces session couldn't load (API down), as opposed to signed out.
+  loadError: boolean;
 }
 
 const noWallet: WalletAccess = {
@@ -55,8 +58,9 @@ const guest: SessionState = {
   signIn: () => {},
   signOut: async () => {},
   refresh: async () => {},
-  linkEmail: () => {},
+  linkEmail: async () => false,
   updateEmail: () => {},
+  loadError: false,
 };
 
 const SessionContext = createContext<SessionState>(guest);
@@ -167,17 +171,40 @@ function PrivySession({ children }: { children: React.ReactNode }) {
   const resync = useCallback(async () => {
     queryClient.setQueryData(queryKeys.session, await exchangeSession());
   }, [queryClient]);
-  const { linkEmail } = useLinkAccount({
+  // Settles the promise handed out by linkEmail once Privy's flow ends either way.
+  const pendingLink = useRef<((linked: boolean) => void) | null>(null);
+  const settleLink = useCallback((linked: boolean) => {
+    pendingLink.current?.(linked);
+    pendingLink.current = null;
+  }, []);
+  const resyncAndSettle = useCallback(async () => {
+    try {
+      await resync();
+      settleLink(true);
+    } catch {
+      setLinkError("couldn't verify that email; try again");
+      settleLink(false);
+    }
+  }, [resync, settleLink]);
+  const { linkEmail: privyLinkEmail } = useLinkAccount({
     onSuccess: () => {
       setLinkError(undefined);
-      void resync();
+      void resyncAndSettle();
     },
     onError: (code) => {
       // Already linked in Privy: the session just needs to pull it in.
-      if (code === "cannot_link_more_of_type") return void resync();
+      if (code === "cannot_link_more_of_type") return void resyncAndSettle();
       if (code !== "exited_link_flow") setLinkError("couldn't verify that email; try again");
+      settleLink(false);
     },
   });
+  const linkEmail = useCallback(() => {
+    settleLink(false);
+    return new Promise<boolean>((resolve) => {
+      pendingLink.current = resolve;
+      privyLinkEmail();
+    });
+  }, [privyLinkEmail, settleLink]);
 
   const { updateEmail } = useUpdateAccount({
     onSuccess: () => {
@@ -200,8 +227,9 @@ function PrivySession({ children }: { children: React.ReactNode }) {
       linkEmail,
       updateEmail,
       linkError,
+      loadError: authenticated && query.isError,
     }),
-    [ready, authenticated, query.isPending, query.data, wallet, login, signOut, refresh, linkEmail, updateEmail, linkError],
+    [ready, authenticated, query.isPending, query.isError, query.data, wallet, login, signOut, refresh, linkEmail, updateEmail, linkError],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

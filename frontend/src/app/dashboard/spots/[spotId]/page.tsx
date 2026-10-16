@@ -9,7 +9,8 @@ export default async function SponsorSpotPage({ params }: { params: Promise<{ sp
   const { spotId } = await params;
   return (
     <AppShell variant="app">
-      <AuthGate reason="sign in to see your spot">
+      {/* No setup gate: a sponsor who paid must always be able to see their spot. */}
+      <AuthGate reason="sign in to see your spot" setup={false}>
         <SponsorSpotView spotId={spotId} />
       </AuthGate>
     </AppShell>

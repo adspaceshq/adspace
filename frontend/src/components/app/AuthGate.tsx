@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock, MailCheck, ShieldAlert, UserRoundPen } from "lucide-react";
+import { CloudOff, Lock, MailCheck, ShieldAlert, UserRoundPen } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "@/lib/session";
@@ -9,16 +9,20 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
 
 // Single gate for every signed-in surface: loading, signed out, email missing, not authorised.
+//  lets a page render for any signed-in user, before email and onboarding are done
+// (a sponsor's spot page: they may have paid before finishing setup and must always see what they bought).
 export function AuthGate({
   children,
   require = "user",
   reason = "sign in to continue",
+  setup = true,
 }: {
   children: React.ReactNode;
   require?: "user" | "reviewer" | "admin";
   reason?: string;
+  setup?: boolean;
 }) {
-  const { ready, session, signIn } = useSession();
+  const { ready, session, signIn, loadError, refresh } = useSession();
   const pathname = usePathname();
   const setupHref = `/onboarding?next=${encodeURIComponent(pathname)}`;
 
@@ -34,6 +38,17 @@ export function AuthGate({
     );
   }
 
+  if (!session && loadError) {
+    return (
+      <EmptyState
+        icon={CloudOff}
+        title="couldn't reach adspaces"
+        description="you're still signed in. check your connection and try again."
+        action={<Button onClick={() => void refresh()}>try again</Button>}
+      />
+    );
+  }
+
   if (!session) {
     return (
       <EmptyState
@@ -45,7 +60,7 @@ export function AuthGate({
     );
   }
 
-  if (!session.emailVerified) {
+  if (setup && !session.emailVerified) {
     return (
       <EmptyState
         icon={MailCheck}
@@ -60,7 +75,7 @@ export function AuthGate({
     );
   }
 
-  if (!session.onboarding) {
+  if (setup && !session.onboarding) {
     return (
       <EmptyState
         icon={UserRoundPen}
