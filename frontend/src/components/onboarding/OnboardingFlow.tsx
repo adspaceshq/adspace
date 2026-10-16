@@ -7,7 +7,7 @@ import { api } from "@/lib/api/v2";
 import { ProfileFields, useProfileForm } from "@/components/account/ProfileFields";
 import type { Session } from "@/lib/api/types";
 import { BRAND_CATEGORIES, buildOnboarding, landingPath, SOCIAL_PLATFORMS, sells, sponsors, type Role, type RoleErrors, type RoleForm } from "@/lib/onboarding";
-import { useSession } from "@/lib/session";
+import { useRequireAuth, useSession } from "@/lib/session";
 import { TERMS_VERSION } from "@/lib/terms";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, NewTabLink } from "@/components/ui/Checkbox";
@@ -24,6 +24,7 @@ const STEPS: Array<{ id: Step; label: string }> = [
 ];
 
 export function OnboardingFlow() {
+  useRequireAuth();
   const { ready, session, signIn } = useSession();
   const router = useRouter();
   const next = useSearchParams().get("next");

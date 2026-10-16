@@ -1,5 +1,7 @@
 "use client";
 
+import { PhotoUploader } from "@/components/sell/PhotoUploader";
+import type { WizardPhoto } from "@/lib/sell-draft";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { AlertTriangle, CheckCircle2, Clock, ShieldCheck } from "lucide-react";
@@ -200,12 +202,16 @@ function DisputeSheet({ spotId, open, onClose, onDone }: { spotId: string; open:
   const { wallet } = useSession();
   const [reason, setReason] = useState("");
   const [error, setError] = useState<string>();
-  const tx = useTx((text: string) => api.spots.raiseDispute(spotId, text));
+  // Optional images, as the terms promise; uploaded as "evidence" assets and attached by id.
+  const [evidence, setEvidence] = useState<WizardPhoto[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const tx = useTx((text: string) => api.spots.raiseDispute(spotId, text, evidence.length ? evidence.map((item) => item.assetId) : undefined));
   // True while Privy's gasless approval popup is open; the dialog steps aside so it can be clicked.
   const [approving, setApproving] = useState(false);
 
   const submit = async () => {
     if (reason.trim().length < 10) return setError("explain what went wrong in at least 10 characters");
+    if (uploading) return setError("wait for the images to finish uploading, or remove the failed ones");
     setError(undefined);
     if (await tx.execute(reason.trim())) {
       onClose();
@@ -245,6 +251,21 @@ function DisputeSheet({ spotId, open, onClose, onDone }: { spotId: string; open:
             rows={5}
             disabled={tx.busy}
           />
+          <div className="flex flex-col gap-2">
+            <p className="text-small font-medium">
+              evidence <span className="font-normal text-muted">(optional)</span>
+            </p>
+            <p className="text-small text-muted">screenshots or photos that show the problem. the team sees them next to the creator&apos;s proof.</p>
+            <PhotoUploader
+              photos={evidence}
+              onChange={(update) => setEvidence(update)}
+              kind="evidence"
+              cover={false}
+              addLabel="add images"
+              disabled={tx.busy}
+              onUploadingChange={setUploading}
+            />
+          </div>
           <TxStatus state={tx.state} action="dispute" onRetry={tx.retry} />
         </div>
       ) : (

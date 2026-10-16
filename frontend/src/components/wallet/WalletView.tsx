@@ -1,10 +1,16 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDownToLine, ArrowUpFromLine, CircleCheck, ShieldCheck, Wallet, Zap } from "lucide-react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import Link from "next/link";
+import { ArrowDownToLine, ArrowUpFromLine, CircleCheck, Hourglass, ShieldCheck, Wallet, Zap } from "lucide-react";
 import { useCallback, useState } from "react";
 import { api } from "@/lib/api/v2";
-import type { Withdrawal } from "@/lib/api/types";
+import type { ActivityItem, Withdrawal } from "@/lib/api/types";
+import { activityLabel } from "@/lib/activity";
+import { queryKeys } from "@/lib/query";
+import { isMoneyEvent, pendingEarnings } from "@/lib/wallet-history";
+import { cx } from "@/lib/cx";
+import { Countdown } from "@/components/ui/Countdown";
 import { DepositDetails } from "./DepositDetails";
 import { formatUsd, toBaseUnits, toInputValue } from "@/lib/money";
 import { useSession } from "@/lib/session";
@@ -28,6 +34,7 @@ export function WalletView() {
   const { session } = useSession();
   const address = session?.walletAddress;
   const balance = useUsdcBalance(address);
+  // The latest withdrawals feed the 24-hour limit; the history below pages on its own.
   const history = useQuery({ queryKey: ["withdrawals"], queryFn: () => api.me.withdrawals(), enabled: Boolean(address) });
 
   if (!address) return <EmptyState icon={Wallet} title="your wallet is being created" description="refresh in a moment. privy creates it the first time you sign in." />;
@@ -41,11 +48,12 @@ export function WalletView() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div className="flex flex-col gap-4">
           <BalanceCard address={address} balance={balance.data} loading={balance.isPending} onRetry={() => void balance.refetch()} />
+          <PendingCard />
           <DepositCard address={address} />
         </div>
         <WithdrawCard address={address} balance={balance.data ? BigInt(balance.data) : undefined} history={history.data ?? []} />
       </div>
-      <History items={history.data} loading={history.isPending} />
+      <History />
     </div>
   );
 }
@@ -273,29 +281,157 @@ function SetupStep({ icon: Icon, title, description, action, onClick }: { icon: 
   );
 }
 
-function History({ items, loading }: { items?: Withdrawal[]; loading: boolean }) {
+// Paid spots still in escrow: what the creator will receive once each review window closes.
+function PendingCard() {
+  const query = useQuery({ queryKey: queryKeys.creatorDashboard, queryFn: () => api.me.creatorDashboard() });
+  if (query.isPending || query.isError) return null;
+  const items = pendingEarnings(query.data.listings);
+  if (items.length === 0) return null;
+  const totalNet = items.reduce((sum, item) => sum + (item.net ?? item.gross), 0n);
   return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-body font-semibold">withdrawals</h2>
-      {loading ? (
-        <Skeleton className="h-24 w-full" />
-      ) : !items?.length ? (
+    <Card className="flex flex-col gap-3 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <p className="flex items-center gap-2 text-body font-semibold">
+          <Hourglass className="size-4" aria-hidden /> pending earnings
+        </p>
+        <p className="text-right">
+          <span className="block text-lead font-semibold tabular-nums">{formatUsd(totalNet)}</span>
+          <span className="text-caption text-muted">after fees, held in escrow</span>
+        </p>
+      </div>
+      <ul className="flex flex-col divide-y divide-line">
+        {items.map((item) => (
+          <li key={item.spotId} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 text-small">
+            <Link href={`/sell/listings/${item.listingId}`} className="min-w-0 flex-1 truncate font-medium hover:underline">
+              {item.listingTitle} · spot {item.spotIndex + 1}
+            </Link>
+            <span className="text-right">
+              <span className="block font-semibold tabular-nums">{formatUsd(item.net ?? item.gross)}</span>
+              {item.fee !== null && (
+                <span className="block text-caption text-muted">
+                  {formatUsd(item.gross)} minus {formatUsd(item.fee)} fee
+                </span>
+              )}
+            </span>
+            <span className="basis-full text-caption text-muted">
+              {item.needsProof ? "submit proof by the delivery deadline · " : "delivered · "}
+              payout <Countdown to={item.payoutAt} prefix="in" endedLabel="ready now" urgentWithinMs={0} /> ·{" "}
+              {item.payoutAt.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-caption text-muted">a dispute can change these amounts. payouts land in this wallet.</p>
+    </Card>
+  );
+}
+
+const PAGE = 20;
+type HistoryView = "payments" | "withdrawals";
+
+// Payments (claims, bids, payouts, refunds, dispute settlements) and withdrawals, each paged with "load more".
+function History() {
+  const [view, setView] = useState<HistoryView>("payments");
+  return (
+    <section aria-labelledby="wallet-history" className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="wallet-history" className="text-body font-semibold">
+          history
+        </h2>
+        <div role="group" aria-label="history type" className="inline-flex rounded-control border border-line bg-surface p-0.5">
+          {(["payments", "withdrawals"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              aria-pressed={view === option}
+              onClick={() => setView(option)}
+              className={cx(
+                "min-h-11 cursor-pointer rounded-control px-3 text-small font-medium sm:min-h-8",
+                view === option ? "bg-ink text-white" : "text-muted hover:text-ink",
+              )}
+            >
+              {option}
+            </button>
+          ))}
+        </div>
+      </div>
+      {view === "payments" ? <PaymentHistory /> : <WithdrawalHistory />}
+    </section>
+  );
+}
+
+function LoadMore({ hasMore, loading, onClick }: { hasMore: boolean; loading: boolean; onClick: () => void }) {
+  if (!hasMore) return null;
+  return (
+    <Button variant="secondary" className="self-center" loading={loading} onClick={onClick}>
+      load more
+    </Button>
+  );
+}
+
+function PaymentHistory() {
+  const query = useInfiniteQuery({
+    queryKey: [...queryKeys.activity, "wallet"],
+    queryFn: ({ pageParam }) => api.me.activity({ limit: PAGE, before: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: ActivityItem[]) => (last.length === PAGE ? last.at(-1)?.createdAt : undefined),
+  });
+  if (query.isPending) return <Skeleton className="h-24 w-full" />;
+  if (query.isError) return <p className="text-small text-danger">{userErrorMessage(query.error)}</p>;
+  const items = query.data.pages.flat().filter(isMoneyEvent);
+  return (
+    <div className="flex flex-col gap-3">
+      {items.length === 0 ? (
+        <p className="text-small text-muted">{query.hasNextPage ? "no payments in your latest activity." : "no payments yet."}</p>
+      ) : (
+        <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
+          {items.map((item) => (
+            <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-small">
+              <span className="w-32 shrink-0 font-medium">{activityLabel(item.type)}</span>
+              <Link href={`/dashboard/spots/${item.spotId}`} className="min-w-0 flex-1 truncate text-muted hover:text-ink hover:underline">
+                {item.listingTitle} · spot {item.spotIndex + 1} · {item.role === "creator" ? "selling" : "sponsoring"}
+              </Link>
+              <span className="shrink-0 text-muted">{new Date(item.createdAt).toLocaleString()}</span>
+              {item.signature && <Address value={item.signature} kind="tx" className="text-muted" />}
+            </li>
+          ))}
+        </ul>
+      )}
+      <LoadMore hasMore={Boolean(query.hasNextPage)} loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()} />
+    </div>
+  );
+}
+
+function WithdrawalHistory() {
+  const query = useInfiniteQuery({
+    queryKey: ["withdrawals", "history"],
+    queryFn: ({ pageParam }) => api.me.withdrawals({ limit: PAGE, before: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last: Withdrawal[]) => (last.length === PAGE ? last.at(-1)?.createdAt : undefined),
+  });
+  if (query.isPending) return <Skeleton className="h-24 w-full" />;
+  if (query.isError) return <p className="text-small text-danger">{userErrorMessage(query.error)}</p>;
+  const items = query.data.pages.flat();
+  return (
+    <div className="flex flex-col gap-3">
+      {items.length === 0 ? (
         <p className="text-small text-muted">nothing sent yet.</p>
       ) : (
         <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
           {items.map((item) => (
-            <li key={item.id} className="flex items-center gap-3 px-4 py-3 text-small">
+            <li key={item.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-small">
               <span className="w-24 shrink-0 font-semibold tabular-nums">{formatUsd(item.amount)}</span>
               <span className="flex min-w-0 flex-1 items-center gap-1 text-muted">
                 to <Address value={item.destination} explorer={false} />
               </span>
               <span className={item.state === "failed" ? "text-danger" : item.state === "confirmed" ? "text-success" : "text-muted"}>{STATE_LABEL[item.state]}</span>
-              <span className="hidden shrink-0 text-subtle sm:inline">{new Date(item.createdAt).toLocaleString()}</span>
-              {item.signature && <Address value={item.signature} kind="tx" className="hidden text-subtle md:inline-flex" />}
+              <span className="shrink-0 text-muted">{new Date(item.createdAt).toLocaleString()}</span>
+              {item.signature && <Address value={item.signature} kind="tx" className="text-muted" />}
             </li>
           ))}
         </ul>
       )}
-    </section>
+      <LoadMore hasMore={Boolean(query.hasNextPage)} loading={query.isFetchingNextPage} onClick={() => void query.fetchNextPage()} />
+    </div>
   );
 }

@@ -14,7 +14,6 @@ const preset = (path: string): string => `${STATIC_BASE}${path}`
 
 // --- Mac surface (gear listings) ---
 export const MAC_LID_PHOTO = preset('/adspaces/static/mac/macbook.png')
-export const MAC_HERO_PHOTO = preset('/adspaces/static/mac/macbook-open.webp')
 export const MAC_INSIDE_PHOTO = preset('/adspaces/static/mac/mac-inside.png')
 
 // --- T-shirt surface preview (shares the hero-2 shot) ---
@@ -24,7 +23,3 @@ export const TEE_PREVIEW_IMAGE = preset('/adspaces/static/landing/hero-2.png')
 export const HERO_IMAGE_1 = preset('/adspaces/static/landing/hero-1.png')
 export const HERO_IMAGE_2 = preset('/adspaces/static/landing/hero-2.png')
 export const HERO_IMAGE_3 = preset('/adspaces/static/landing/hero-3.png')
-export const STEP_IMAGE_1 = preset('/adspaces/static/landing/step-1.jpg')
-export const STEP_IMAGE_2 = preset('/adspaces/static/landing/step-2.jpg')
-export const STEP_IMAGE_3 = preset('/adspaces/static/landing/step-3.jpg')
-export const CTA_GRADIENT_IMAGE = preset('/adspaces/static/landing/cta-gradient.jpg')

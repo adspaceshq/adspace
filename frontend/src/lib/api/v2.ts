@@ -22,6 +22,7 @@ import type {
   PublicListing,
   PublicProfile,
   PublicStatus,
+  ReviewListingDetail,
   ReviewQueueItem,
   ReviewSummary,
   ReviewDecision,
@@ -130,7 +131,14 @@ export const api = {
     watchlist: () => get<WatchItem[]>("/me/watchlist"),
     watch: (listingId: string) => request<{ listingId: string; watching: boolean }>("PUT", `/me/watchlist/${enc(listingId)}`, {}),
     unwatch: (listingId: string) => request<{ listingId: string; watching: boolean }>("DELETE", `/me/watchlist/${enc(listingId)}`),
-    withdrawals: () => get<Withdrawal[]>("/me/withdrawals"),
+    // Newest first; `before` pages back by creation time.
+    withdrawals: (options: { before?: string; limit?: number } = {}) => {
+      const params = new URLSearchParams();
+      if (options.before) params.set("before", options.before);
+      if (options.limit) params.set("limit", String(options.limit));
+      const query = params.toString();
+      return get<Withdrawal[]>(`/me/withdrawals${query ? `?${query}` : ""}`);
+    },
     // Two steps: the server prepares the transfer (and pays the fee), the user's wallet signs it in the
     // browser (Privy asks for their two-factor), then the server checks and submits exactly that.
     prepareWithdrawal: (destination: string, amount: string) =>
@@ -201,6 +209,7 @@ export const api = {
 
   review: {
     queue: () => get<ReviewQueueItem[]>("/review/queue"),
+    listing: (listingId: string) => get<ReviewListingDetail>(`/review/listings/${enc(listingId)}`),
     summary: () => get<ReviewSummary>("/review/summary"),
     decide: (listingId: string, decision: ReviewDecision) => post<Listing>(`/review/listings/${enc(listingId)}`, decision),
     resolveDispute: (spotId: string, sellerShareBps: number, decision: string) =>
@@ -223,7 +232,7 @@ export const api = {
     submitGuardianPause: (chainTxId: string, transaction: string) =>
       post<{ paused: boolean; signature: string }>("/admin/guardian-pause/submit", { chainTxId, transaction }),
     setDisputeTimeout: (seconds: number) =>
-      post<{ disputeTimeoutSeconds: number; signature: string | null }>("/admin/dispute-timeout", { seconds }),
+      post<{ disputeTimeoutSeconds: number; signature: string | null; pending: SquadsPending | null }>("/admin/dispute-timeout", { seconds }),
     team: () => get<TeamMember[]>("/admin/team"),
     addTeamMember: (handle: string, role: "reviewer" | "admin") => post<TeamMember[]>("/admin/team", { handle, role }),
     removeTeamMember: (userId: string) => request<TeamMember[]>("DELETE", `/admin/team/${enc(userId)}`),

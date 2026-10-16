@@ -19,6 +19,7 @@ import { ShareSpotButton } from "./ShareSpotButton";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { MessagesPanel } from "./MessagesPanel";
 import { SponsorActions } from "./SponsorActions";
+import { DisputeEvidence } from "./DisputeEvidence";
 import { SpotActivity } from "./SpotActivity";
 import { XHandleLink } from "@/components/ui/UserLink";
 
@@ -109,7 +110,15 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
               )}
             </div>
           )}
-          {detail.proofPosts.length > 0 && (
+          {detail.dispute && (
+            <section aria-labelledby="dispute" className="flex flex-col gap-3">
+              <h2 id="dispute" className="text-lead font-semibold">
+                {detail.dispute.state === "open" ? "dispute" : "last dispute"}
+              </h2>
+              <DisputeEvidence dispute={detail.dispute} proofPosts={detail.proofPosts} headingLevel="h3" />
+            </section>
+          )}
+          {!detail.dispute && detail.proofPosts.length > 0 && (
             <section aria-labelledby="proof" className="flex flex-col gap-3">
               <h2 id="proof" className="text-lead font-semibold">
                 proof of delivery

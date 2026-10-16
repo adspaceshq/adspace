@@ -1,14 +1,9 @@
 "use client";
 
-import { getAccessToken, getIdentityToken, useLinkAccount, useMfaEnrollment, usePrivy, useSigners, useUpdateAccount, useUser } from "@privy-io/react-auth";
-import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
-import { ADSPACES_CLUSTER } from "@/lib/chain-config";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError, setCsrfToken } from "@/lib/api/v2";
+import dynamic from "next/dynamic";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Session } from "@/lib/api/types";
 import { PRIVY_APP_ID } from "@/lib/privy";
-import { queryKeys } from "@/lib/query";
 
 export interface WalletAccess {
   // Gasless: the backend submits transactions for the user's embedded wallet via a Privy signer.
@@ -23,10 +18,23 @@ export interface WalletAccess {
   signTransaction: (base64: string) => Promise<string>;
 }
 
+// A browser wallet (Phantom and the like) connected through Privy. Only the ops panel uses it, for the
+// pause guardian; it never takes part in login.
+export interface ExternalWalletAccess {
+  // Addresses of the Solana wallets Privy currently has connected (the embedded wallet included).
+  addresses: string[];
+  // Opens Privy's wallet picker. Resolves the connected Solana address, or null if the user backs out.
+  connect: (description: string) => Promise<string | null>;
+  // Sign only (never send) a server-prepared transaction with that wallet; base64 in, base64 out.
+  sign: (address: string, base64: string) => Promise<string>;
+  disconnect: (address: string) => Promise<void>;
+}
+
 export interface SessionState {
   ready: boolean;
   session: Session | null;
   wallet: WalletAccess;
+  external: ExternalWalletAccess;
   signIn: () => void;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -38,29 +46,42 @@ export interface SessionState {
   linkError?: string;
   // Privy is signed in but the adspaces session couldn't load (API down), as opposed to signed out.
   loadError: boolean;
+  // Loads Privy now. Signed-in areas call it on mount; public pages load it only when needed.
+  requestAuth: () => void;
 }
 
-const noWallet: WalletAccess = {
+const notLoaded = async () => {
+  throw new Error("sign in first");
+};
+
+export const noWallet: WalletAccess = {
   delegated: false,
   mfaEnabled: false,
   enableGasless: async () => {},
   reconnectGasless: async () => {},
   setupMfa: () => {},
-  signTransaction: async () => {
-    throw new Error("sign in first");
-  },
+  signTransaction: notLoaded,
+};
+
+export const noExternal: ExternalWalletAccess = {
+  addresses: [],
+  connect: async () => null,
+  sign: notLoaded,
+  disconnect: async () => {},
 };
 
 const guest: SessionState = {
   ready: true,
   session: null,
   wallet: noWallet,
+  external: noExternal,
   signIn: () => {},
   signOut: async () => {},
   refresh: async () => {},
   linkEmail: async () => false,
   updateEmail: () => {},
   loadError: false,
+  requestAuth: () => {},
 };
 
 const SessionContext = createContext<SessionState>(guest);
@@ -69,173 +90,75 @@ export function useSession(): SessionState {
   return useContext(SessionContext);
 }
 
-async function exchangeSession(): Promise<Session> {
-  const accessToken = await getAccessToken();
-  if (!accessToken) throw new ApiError("sign in again", 401);
-  const identityToken = (await getIdentityToken().catch(() => null)) ?? undefined;
-  return api.auth.exchange(accessToken, identityToken);
+// Asks for Privy as soon as a signed-in area mounts, so it doesn't wait for a hint or a click.
+export function useRequireAuth() {
+  const { requestAuth } = useSession();
+  useEffect(() => requestAuth(), [requestAuth]);
 }
 
-// Reuse the v2 cookie session when present; otherwise trade the Privy tokens for one.
-// Re-exchange when Privy holds an email the session hasn't seen (linked in another tab).
-async function loadSession(privyEmail: string | undefined): Promise<Session> {
+// What the Privy bridge reports up; the provider adds requestAuth.
+export type BridgedSession = Omit<SessionState, "requestAuth">;
+
+export interface PrivyBridgeProps {
+  onChange: (state: BridgedSession) => void;
+  // Set when someone pressed sign in before Privy had loaded; the bridge opens login once ready.
+  loginRequested: boolean;
+  onLoginHandled: () => void;
+}
+
+// Privy (and the Solana wallet stack it brings) is large, so it is not part of any page's first load.
+// It is loaded after hydration only when it can matter: a signed-in area mounts, someone presses
+// sign in, or this browser holds a previous Privy session (so the top bar can show the account).
+// Rendered beside the page, not around it, so loading it never remounts what's on screen.
+const PrivyBridge = dynamic<PrivyBridgeProps>(() => import("@/lib/privy-bridge"), { ssr: false });
+
+// Privy keeps its tokens in localStorage under "privy:" keys; any of them means a session may exist.
+function hasPrivyHint(): boolean {
   try {
-    const existing = await api.auth.me();
-    if (!privyEmail || (existing.emailVerified && existing.email === privyEmail)) return existing;
-  } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 401) throw error;
-  }
-  return exchangeSession();
-}
-
-function PrivySession({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, login, logout, user } = usePrivy();
-  const queryClient = useQueryClient();
-  const { addSigners, removeSigners } = useSigners();
-  const { wallets } = useWallets();
-  const { signTransaction: privySignTransaction } = useSignTransaction();
-  const { refreshUser } = useUser();
-  const { showMfaEnrollmentModal } = useMfaEnrollment();
-
-  const embedded = user?.linkedAccounts.find(
-    (account) =>
-      account.type === "wallet" && "chainType" in account && account.chainType === "solana" && "walletClientType" in account && account.walletClientType === "privy",
-  ) as { address: string; delegated?: boolean } | undefined;
-  const walletAddress = embedded?.address;
-  const delegated = Boolean(embedded?.delegated);
-  const mfaEnabled = (user?.mfaMethods?.length ?? 0) > 0;
-
-  // The signer carries a Privy policy: it may only sign adspaces program instructions (plus creating
-  // token accounts), never plain USDC transfers. Withdrawals therefore always need the user's own signature.
-  const enableGasless = useCallback(async () => {
-    const signerId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_ID;
-    const policyId = process.env.NEXT_PUBLIC_PRIVY_SIGNER_POLICY_ID;
-    if (!walletAddress) throw new Error("your wallet is still being created; try again in a moment");
-    if (!signerId) throw new Error("gasless transactions are not configured");
-    await addSigners({ address: walletAddress, signers: [{ signerId, policyIds: policyId ? [policyId] : [] }] });
-    await refreshUser();
-  }, [addSigners, walletAddress, refreshUser]);
-
-  const reconnectGasless = useCallback(async () => {
-    if (!walletAddress) throw new Error("your wallet is still being created; try again in a moment");
-    await removeSigners({ address: walletAddress });
-    await enableGasless();
-  }, [removeSigners, walletAddress, enableGasless]);
-
-  const signTransaction = useCallback(
-    async (base64: string) => {
-      const target = wallets.find((item) => item.address === walletAddress);
-      if (!target) throw new Error("your wallet isn't ready yet; try again in a moment");
-      const { signedTransaction } = await privySignTransaction({
-        transaction: Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)),
-        wallet: target,
-        chain: `solana:${ADSPACES_CLUSTER === "mainnet-beta" ? "mainnet" : ADSPACES_CLUSTER}` as never,
-        // Our own confirm window already shows amount and destination; skip Privy's generic one.
-        // Privy still asks for the user's two-factor code before signing.
-        options: { uiOptions: { showWalletUIs: false } },
-      });
-      return btoa(String.fromCharCode(...signedTransaction));
-    },
-    [wallets, walletAddress, privySignTransaction],
-  );
-
-  const wallet = useMemo<WalletAccess>(
-    () => ({ delegated, mfaEnabled, enableGasless, reconnectGasless, setupMfa: showMfaEnrollmentModal, signTransaction }),
-    [delegated, mfaEnabled, enableGasless, reconnectGasless, showMfaEnrollmentModal, signTransaction],
-  );
-
-  const privyEmail = user?.email?.address;
-  const query = useQuery({
-    queryKey: queryKeys.session,
-    queryFn: () => loadSession(privyEmail),
-    enabled: ready && authenticated,
-    staleTime: 5 * 60_000,
-  });
-
-  useEffect(() => {
-    setCsrfToken(query.data?.csrfToken);
-  }, [query.data?.csrfToken]);
-
-  const signOut = useCallback(async () => {
-    await api.auth.logout().catch(() => undefined);
-    setCsrfToken(undefined);
-    queryClient.clear();
-    await logout();
-  }, [logout, queryClient]);
-
-  const refresh = useCallback(async () => {
-    await queryClient.invalidateQueries({ queryKey: queryKeys.session });
-  }, [queryClient]);
-
-  const [linkError, setLinkError] = useState<string>();
-  const resync = useCallback(async () => {
-    queryClient.setQueryData(queryKeys.session, await exchangeSession());
-  }, [queryClient]);
-  // Settles the promise handed out by linkEmail once Privy's flow ends either way.
-  const pendingLink = useRef<((linked: boolean) => void) | null>(null);
-  const settleLink = useCallback((linked: boolean) => {
-    pendingLink.current?.(linked);
-    pendingLink.current = null;
-  }, []);
-  const resyncAndSettle = useCallback(async () => {
-    try {
-      await resync();
-      settleLink(true);
-    } catch {
-      setLinkError("couldn't verify that email; try again");
-      settleLink(false);
+    for (let index = 0; index < window.localStorage.length; index += 1) {
+      if (window.localStorage.key(index)?.startsWith("privy:")) return true;
     }
-  }, [resync, settleLink]);
-  const { linkEmail: privyLinkEmail } = useLinkAccount({
-    onSuccess: () => {
-      setLinkError(undefined);
-      void resyncAndSettle();
-    },
-    onError: (code) => {
-      // Already linked in Privy: the session just needs to pull it in.
-      if (code === "cannot_link_more_of_type") return void resyncAndSettle();
-      if (code !== "exited_link_flow") setLinkError("couldn't verify that email; try again");
-      settleLink(false);
-    },
-  });
-  const linkEmail = useCallback(() => {
-    settleLink(false);
-    return new Promise<boolean>((resolve) => {
-      pendingLink.current = resolve;
-      privyLinkEmail();
-    });
-  }, [privyLinkEmail, settleLink]);
-
-  const { updateEmail } = useUpdateAccount({
-    onSuccess: () => {
-      setLinkError(undefined);
-      void resync();
-    },
-    onError: (code) => {
-      if (code !== "exited_update_flow" && code !== "exited_link_flow") setLinkError("couldn't update your email; try again");
-    },
-  });
-
-  const value = useMemo<SessionState>(
-    () => ({
-      ready: ready && (!authenticated || !query.isPending),
-      session: authenticated ? (query.data ?? null) : null,
-      wallet,
-      signIn: () => login(),
-      signOut,
-      refresh,
-      linkEmail,
-      updateEmail,
-      linkError,
-      loadError: authenticated && query.isError,
-    }),
-    [ready, authenticated, query.isPending, query.isError, query.data, wallet, login, signOut, refresh, linkEmail, updateEmail, linkError],
-  );
-
-  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
+  } catch {
+    // Storage blocked (private mode, policies): Privy can't have a stored session either.
+  }
+  return false;
 }
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
   if (!PRIVY_APP_ID) return <SessionContext.Provider value={guest}>{children}</SessionContext.Provider>;
-  return <PrivySession>{children}</PrivySession>;
+  return <LazyPrivySession>{children}</LazyPrivySession>;
+}
+
+const noSubscription = () => () => {};
+const hintSnapshot = () => (hasPrivyHint() ? "signed-in" : "guest");
+// The server can't see localStorage; until hydration the session counts as unknown (not ready).
+const serverHintSnapshot = () => "unknown";
+
+function LazyPrivySession({ children }: { children: React.ReactNode }) {
+  const hint = useSyncExternalStore(noSubscription, hintSnapshot, serverHintSnapshot);
+  const checked = hint !== "unknown";
+  const [requested, setRequested] = useState(false);
+  const load = requested || hint === "signed-in";
+  const [loginRequested, setLoginRequested] = useState(false);
+  const [bridged, setBridged] = useState<BridgedSession | null>(null);
+
+  const requestAuth = useCallback(() => setRequested(true), []);
+  const signIn = useCallback(() => {
+    setLoginRequested(true);
+    setRequested(true);
+  }, []);
+  const onLoginHandled = useCallback(() => setLoginRequested(false), []);
+
+  const value = useMemo<SessionState>(() => {
+    if (bridged) return { ...bridged, requestAuth };
+    // Loading Privy: not ready yet. Not loading: a guest, with sign in loading Privy on demand.
+    return { ...guest, ready: checked && !load, signIn, requestAuth };
+  }, [bridged, checked, load, signIn, requestAuth]);
+
+  return (
+    <SessionContext.Provider value={value}>
+      {children}
+      {load && <PrivyBridge onChange={setBridged} loginRequested={loginRequested} onLoginHandled={onLoginHandled} />}
+    </SessionContext.Provider>
+  );
 }

@@ -4,6 +4,7 @@ import type { Db } from "../db/client.js";
 import {
   bids,
   chainTxs,
+  disputeEvidence,
   disputes,
   listingPhotos,
   listingPosts,
@@ -252,6 +253,7 @@ export async function spotDetail(
   actor: { id: string; isReviewer: boolean },
   spotId: string,
   disputeTimeoutSeconds: number,
+  readDisputeDeadlines?: DisputeDeadlineSource["readDeadlines"],
 ) {
   const [row] = await db
     .select({
@@ -286,6 +288,22 @@ export async function spotDetail(
   ]);
 
   const reviewUntil = payoutAvailableAt(listing);
+  // Images the sponsor attached when raising the dispute, in the order they chose.
+  const evidence = dispute
+    ? await db
+        .select({ id: mediaAssets.id, url: mediaAssets.url, width: mediaAssets.width, height: mediaAssets.height })
+        .from(disputeEvidence)
+        .innerJoin(mediaAssets, eq(mediaAssets.id, disputeEvidence.assetId))
+        .where(eq(disputeEvidence.disputeId, dispute.id))
+        .orderBy(asc(disputeEvidence.position))
+    : [];
+  const [timeoutAt] = dispute
+    ? await disputeDeadlines(
+        // Only an open dispute still has its on-chain record.
+        [{ openedAt: dispute.openedAt, spotAddress: dispute.state === "open" ? spot.chainAddress : null }],
+        { readDeadlines: readDisputeDeadlines, timeoutSeconds: disputeTimeoutSeconds },
+      )
+    : [];
   return {
     role,
     spot: {
@@ -311,6 +329,10 @@ export async function spotDetail(
       deliveryDueAt: listing.deliveryDueAt,
       reviewWindowSeconds: listing.reviewWindowSeconds,
       chainAddress: listing.chainAddress,
+      // The fee policy snapshotted on-chain at publish; null before approval.
+      feeBps: listing.feeBps,
+      upliftFeeBps: listing.upliftFeeBps,
+      maxFeeBps: listing.maxFeeBps,
       photos,
     },
     seller,
@@ -324,7 +346,8 @@ export async function spotDetail(
           closedAt: dispute.closedAt,
           sellerShareBps: dispute.sellerShareBps,
           decision: dispute.decision,
-          timeoutAt: new Date(dispute.openedAt.getTime() + disputeTimeoutSeconds * 1000),
+          timeoutAt,
+          evidence,
         }
       : null,
     settlement: settlement ?? null,
@@ -399,8 +422,36 @@ export async function activityFeed(db: Db, userId: string, options: ActivityOpti
     .limit(limit);
 }
 
+export interface DisputeDeadlineSource {
+  // On-chain deadlines per spot address (opened_at + the timeout captured when the dispute was raised).
+  readDeadlines?: (spotAddresses: string[]) => Promise<Array<Date | null>>;
+  // Current config timeout; the fallback when the chain can't be read.
+  timeoutSeconds: number;
+}
+
+// When each open dispute refunds the sponsor in full if nobody resolves it. Prefers the chain, which
+// holds the timeout captured at raise; falls back to the DB open time plus the current config timeout.
+async function disputeDeadlines(
+  rows: Array<{ openedAt: Date; spotAddress: string | null }>,
+  source: DisputeDeadlineSource,
+): Promise<Date[]> {
+  const addresses = rows.map((row) => row.spotAddress).filter((address): address is string => Boolean(address));
+  const onChain = new Map<string, Date | null>();
+  if (source.readDeadlines && addresses.length) {
+    try {
+      const deadlines = await source.readDeadlines(addresses);
+      addresses.forEach((address, index) => onChain.set(address, deadlines[index] ?? null));
+    } catch (error) {
+      console.error("reading dispute deadlines failed:", error instanceof Error ? error.message : error);
+    }
+  }
+  return rows.map(
+    (row) => (row.spotAddress ? onChain.get(row.spotAddress) : null) ?? new Date(row.openedAt.getTime() + source.timeoutSeconds * 1000),
+  );
+}
+
 // Counts and work lists for the reviewer queue tabs.
-export async function reviewSummary(db: Db, now = new Date()) {
+export async function reviewSummary(db: Db, now = new Date(), deadlines: DisputeDeadlineSource = { timeoutSeconds: 3 * DAY_MS / 1000 }) {
   const buyer = alias(users, "buyer");
   const [inReview, openDisputes, delivered, failedTxs] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(listings).where(eq(listings.state, "in_review")),
@@ -409,6 +460,7 @@ export async function reviewSummary(db: Db, now = new Date()) {
         dispute: disputes,
         spotId: spots.id,
         spotIndex: spots.index,
+        spotAddress: spots.chainAddress,
         amount: spots.amount,
         listingId: listings.id,
         listingTitle: listings.title,
@@ -437,6 +489,14 @@ export async function reviewSummary(db: Db, now = new Date()) {
   const payoutsReady = delivered
     .filter((row) => now >= payoutAvailableAt(row.listing))
     .map((row) => ({ spotId: row.spotId, spotIndex: row.spotIndex, amount: row.amount, listingId: row.listing.id, listingTitle: row.listing.title }));
+  // Soonest timeout first: a 2-of-3 multisig approval takes time, and a timed-out dispute refunds in full.
+  const timeouts = await disputeDeadlines(
+    openDisputes.map((row) => ({ openedAt: row.dispute.openedAt, spotAddress: row.spotAddress })),
+    deadlines,
+  );
+  const disputesByDeadline = openDisputes
+    .map(({ spotAddress: _spotAddress, ...row }, index) => ({ ...row, timeoutAt: timeouts[index] }))
+    .sort((a, b) => a.timeoutAt.getTime() - b.timeoutAt.getTime());
   return {
     counts: {
       listingsInReview: inReview[0]?.count ?? 0,
@@ -444,7 +504,7 @@ export async function reviewSummary(db: Db, now = new Date()) {
       payoutsReady: payoutsReady.length,
       failedTxs: failedTxs.length,
     },
-    disputes: openDisputes,
+    disputes: disputesByDeadline,
     payoutsReady,
     failedTxs,
   };

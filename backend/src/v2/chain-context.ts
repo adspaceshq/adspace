@@ -36,6 +36,8 @@ export interface ChainContext {
   // Lamports per account in input order, null for accounts that don't exist.
   readLamports: (addresses: PublicKey[]) => Promise<Array<number | null>>;
   readDisputeTimeoutSeconds: () => Promise<number>;
+  // When each spot's dispute times out: opened_at plus the timeout captured at raise. Null without a dispute account.
+  readDisputeDeadlines: (spotAddresses: string[]) => Promise<Array<Date | null>>;
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
   readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
@@ -193,6 +195,17 @@ export function createChainContext(options: {
         if (Array.isArray(hash) && Buffer.from(hash as number[]).toString("hex") === decisionHash) return { signature, event: event! };
       }
       return null;
+    },
+
+    // The program snapshots the timeout on each DisputeRecord, so later config changes don't move it.
+    async readDisputeDeadlines(spotAddresses) {
+      const out: Array<Date | null> = [];
+      for (let start = 0; start < spotAddresses.length; start += 100) {
+        const keys = spotAddresses.slice(start, start + 100).map((address) => pdas(program.programId).dispute(new PublicKey(address)));
+        const records = await program.account.disputeRecord.fetchMultiple(keys);
+        out.push(...records.map((record) => (record ? new Date((record.openedAt.toNumber() + record.timeoutSeconds.toNumber()) * 1000) : null)));
+      }
+      return out;
     },
 
     async readDisputeTimeoutSeconds() {

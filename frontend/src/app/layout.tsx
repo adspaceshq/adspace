@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
-import PrivyAppProvider from "@/components/PrivyAppProvider";
 import ToastProvider from "@/components/ToastProvider";
 import { QueryProvider } from "@/lib/query";
 import { SessionProvider } from "@/lib/session";
@@ -25,15 +24,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`h-full ${inter.variable} ${mono.variable}`}>
       <body className="flex min-h-full flex-col">
-        <PrivyAppProvider>
-          <QueryProvider>
-            <SessionProvider>
-              <ToastProvider>
-                {children}
-              </ToastProvider>
-            </SessionProvider>
-          </QueryProvider>
-        </PrivyAppProvider>
+        {/* Privy is not here: SessionProvider loads it on demand so no page ships it in its first load. */}
+        <QueryProvider>
+          <SessionProvider>
+            <ToastProvider>{children}</ToastProvider>
+          </SessionProvider>
+        </QueryProvider>
       </body>
     </html>
   );

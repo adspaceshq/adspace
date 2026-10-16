@@ -23,6 +23,11 @@ import { userErrorMessage } from "@/lib/errors";
 
 type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; disputesResolved?: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
 
+const formatDays = (seconds: number) => {
+  const days = seconds / 86_400;
+  return days >= 1 ? `${days.toLocaleString(undefined, { maximumFractionDigits: 2 })} day${days === 1 ? "" : "s"}` : `${Math.round(seconds / 3600)} hours`;
+};
+
 // Reviewers see protocol state; only admins can change it.
 export function OpsPanel() {
   const { session } = useSession();
@@ -34,6 +39,8 @@ export function OpsPanel() {
   const [days, setDays] = useState("");
   const [report, setReport] = useState<Report>();
   const [resumeProposal, setResumeProposal] = useState<SquadsPending>();
+  const [confirmTimeout, setConfirmTimeout] = useState<number | null>(null);
+  const [timeoutProposal, setTimeoutProposal] = useState<{ pending: SquadsPending; seconds: number }>();
   // Kept here: the guardian card unmounts once the refetched status says paused.
   const [guardianSignature, setGuardianSignature] = useState<string>();
 
@@ -48,8 +55,10 @@ export function OpsPanel() {
   });
   const timeout = useMutation({
     mutationFn: (seconds: number) => api.admin.setDisputeTimeout(seconds),
-    onSuccess: () => {
+    onSuccess: (result, seconds) => {
       setDays("");
+      setConfirmTimeout(null);
+      if (result.pending) setTimeoutProposal({ pending: result.pending, seconds });
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminStatus });
     },
   });
@@ -85,7 +94,7 @@ export function OpsPanel() {
           <Stat label="protocol" value={paused ? "paused" : "running"} hint={paused ? "new listings and purchases blocked" : undefined} />
         </Card>
         <Card className="p-4">
-          <Stat label="dispute timeout" value={`${(data.disputeTimeoutSeconds / 86_400).toLocaleString(undefined, { maximumFractionDigits: 2 })} days`} />
+          <Stat label="dispute timeout" value={formatDays(data.disputeTimeoutSeconds)} hint="for new disputes" />
         </Card>
         <Card className="p-4">
           <Stat label="fee floor" value={`${data.feeBps / 100}%`} />
@@ -142,14 +151,31 @@ export function OpsPanel() {
           </Card>
           <Card className="flex flex-col gap-3 p-5">
             <p className="text-body font-semibold">dispute timeout</p>
-            <p className="text-small text-muted">unresolved disputes refund the sponsor after this long. applies to open disputes too.</p>
+            <p className="text-small text-muted">
+              unresolved disputes refund the sponsor in full after this long. each dispute keeps the timeout it was raised with, so a change only applies to
+              disputes raised after it.
+            </p>
             <div className="flex items-end gap-2">
               <Input label="days" inputMode="decimal" placeholder="3" value={days} onChange={(event) => setDays(event.target.value)} />
-              <Button variant="secondary" loading={timeout.isPending} disabled={!Number(days)} onClick={() => timeout.mutate(Math.round(Number(days) * 86_400))}>
-                update
+              <Button
+                variant="secondary"
+                className="max-sm:h-11"
+                loading={timeout.isPending}
+                disabled={!(Number(days) > 0)}
+                onClick={() => {
+                  timeout.reset();
+                  setConfirmTimeout(Math.round(Number(days) * 86_400));
+                }}
+              >
+                {viaMultisig ? "propose" : "update"}
               </Button>
             </div>
-            {timeout.isError && <p className="text-small text-danger">{userErrorMessage(timeout.error)}</p>}
+            {timeoutProposal && (
+              <SquadsPendingNote index={timeoutProposal.pending.transactionIndex} url={timeoutProposal.pending.url}>
+                the timeout becomes {formatDays(timeoutProposal.seconds)} once multisig members approve and execute it.
+              </SquadsPendingNote>
+            )}
+            {timeout.isError && confirmTimeout === null && <p className="text-small text-danger">{userErrorMessage(timeout.error)}</p>}
           </Card>
         </div>
       ) : (
@@ -188,6 +214,30 @@ export function OpsPanel() {
           </div>
         )}
       </Card>
+
+      <Modal
+        open={confirmTimeout !== null}
+        onClose={() => setConfirmTimeout(null)}
+        title={viaMultisig ? "propose a new dispute timeout?" : "change the dispute timeout?"}
+        description={`from ${formatDays(data.disputeTimeoutSeconds)} to ${confirmTimeout === null ? "" : formatDays(confirmTimeout)}.`}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirmTimeout(null)}>
+              cancel
+            </Button>
+            <Button loading={timeout.isPending} onClick={() => confirmTimeout !== null && timeout.mutate(confirmTimeout)}>
+              {viaMultisig ? "propose to the multisig" : "change timeout"}
+            </Button>
+          </>
+        }
+      >
+        <ul className="flex flex-col gap-1 rounded-card bg-canvas p-3 text-small text-muted">
+          <li>applies only to disputes raised after the change; open disputes keep their current deadline</li>
+          {viaMultisig && <li>opens a Squads proposal for set_dispute_timeout. nothing changes until multisig members approve and execute it</li>}
+          <li>allowed range: 1 hour to 30 days</li>
+        </ul>
+        {timeout.isError && <p className="mt-2 text-small text-danger">{userErrorMessage(timeout.error)}</p>}
+      </Modal>
 
       <Modal
         open={confirmPause}

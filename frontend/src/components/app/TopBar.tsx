@@ -24,7 +24,7 @@ export function TopBar({ inSidebar = false }: { inSidebar?: boolean }) {
     <header className="sticky top-0 z-40 border-b border-line bg-canvas/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:px-6 md:gap-6">
         {!inSidebar && <MobileMenu signedIn={Boolean(session)} />}
-        <Link href="/browse" className="flex items-center gap-2" aria-label="adspaces home">
+        <Link href="/browse" className="flex min-h-11 items-center gap-2" aria-label="adspaces home">
           <Logo size={28} />
           <span className="text-lead font-semibold tracking-tight">adspaces</span>
         </Link>
@@ -35,7 +35,7 @@ export function TopBar({ inSidebar = false }: { inSidebar?: boolean }) {
               href={link.href}
               aria-current={pathname.startsWith(link.href) ? "page" : undefined}
               className={cx(
-                "rounded-control px-3 py-2 text-body font-medium transition-colors",
+                "flex min-h-11 items-center rounded-control px-3 text-body font-medium transition-colors",
                 pathname.startsWith(link.href) ? "text-ink" : "text-muted hover:text-ink",
               )}
             >
