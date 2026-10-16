@@ -4,7 +4,8 @@ import Logo from "@/components/Logo";
 const year = new Date().getFullYear();
 
 // Full footer for public pages; same content as the landing, without its curtain-reveal effect.
-export function SiteFooter() {
+// `bottomInset`: room under the last row for a fixed mobile bar (bottom tabs or the purchase bar).
+export function SiteFooter({ bottomInset = false }: { bottomInset?: boolean }) {
   return (
     <footer className="border-t border-line bg-ink text-white">
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-4">
@@ -43,7 +44,7 @@ export function SiteFooter() {
         />
       </div>
       <div className="border-t border-white/10">
-        <p className="mx-auto max-w-7xl px-4 py-5 text-caption text-white/50 sm:px-6">© {year} adspaces</p>
+        <p className={`mx-auto max-w-7xl px-4 py-5 text-caption text-white/50 sm:px-6${bottomInset ? " pb-28" : ""}`}>© {year} adspaces</p>
       </div>
     </footer>
   );

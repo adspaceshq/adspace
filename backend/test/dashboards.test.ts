@@ -57,7 +57,8 @@ test("creator: payout ready and earnings after settlement", async () => {
   await db.insert(settlements).values({ spotId: spot.id, kind: "payout", gross: 100n * USDC, fee: 5n * USDC, sellerNet: 95n * USDC, buyerRefund: 0n, chainTxId: tx.id });
   dashboard = await creatorDashboard(db, seller.user.id);
   assert.equal(dashboard.stats.earned, 95n * USDC);
-  assert.deepEqual(dashboard.needsYou.map((item) => item.type), ["close_listing"]);
+  // Every spot is finished, but closing the listing is admin-only, so nothing is left for the creator.
+  assert.deepEqual(dashboard.needsYou, []);
 });
 
 test("sponsor: proof review window, missed delivery, outbid, and dispute timeout", async () => {

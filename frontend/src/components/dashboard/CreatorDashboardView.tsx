@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Plus, Store, Trash2 } from "lucide-react";
 import { api } from "@/lib/api/v2";
@@ -22,6 +22,7 @@ import { ActivityFeed } from "./ActivityFeed";
 import { DashboardHeader } from "./DashboardHeader";
 import { EarningsChart } from "./EarningsChart";
 import { NeedsYouList } from "./NeedsYouList";
+import { SubmittedBanner } from "./SubmittedBanner";
 
 type CreatorListing = CreatorDashboard["listings"][number];
 
@@ -145,6 +146,9 @@ export function CreatorDashboardView() {
   return (
     <div className="flex flex-col gap-8">
       <DashboardHeader active="creator" />
+      <Suspense fallback={null}>
+        <SubmittedBanner />
+      </Suspense>
       {query.isPending ? (
         <SkeletonGroup label="loading dashboard">
           <div className="flex flex-col gap-4">

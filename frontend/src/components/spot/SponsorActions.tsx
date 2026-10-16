@@ -9,6 +9,7 @@ import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { useTx } from "@/lib/use-tx";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Countdown } from "@/components/ui/Countdown";
 import { Textarea } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
@@ -49,6 +50,7 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
   const { spot, dispute, deadlines, settlement, seller } = detail;
   const refresh = useRefreshSpot(spot.id);
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const refund = useTx(() => api.spots.refund(spot.id, false));
   const withdraw = useTx(() => api.spots.withdrawDispute(spot.id));
   const timeout = useTx(() => api.spots.timeoutDispute(spot.id));
@@ -120,9 +122,22 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
             get my refund
           </Button>
         )}
-        <Button variant="secondary" onClick={() => void run(withdraw)} loading={withdraw.busy}>
+        <Button variant="secondary" onClick={() => setConfirmWithdraw(true)} loading={withdraw.busy}>
           withdraw dispute
         </Button>
+        <ConfirmModal
+          open={confirmWithdraw}
+          onClose={() => setConfirmWithdraw(false)}
+          onConfirm={() => void run(withdraw)}
+          title="withdraw your dispute?"
+          description={
+            spot.proofSubmittedAt
+              ? `the dispute closes now and @${seller.handle} is paid from escrow when your review window ends. withdrawing can't be undone.`
+              : "the dispute closes now. no proof was posted, so you can still take a full refund. withdrawing can't be undone."
+          }
+          confirmLabel="withdraw dispute"
+          cancelLabel="keep dispute"
+        />
         <TxStatus state={timeout.state} action="refund" onRetry={timeout.retry} />
         <TxStatus state={withdraw.state} action="withdraw dispute" onRetry={withdraw.retry} />
       </>

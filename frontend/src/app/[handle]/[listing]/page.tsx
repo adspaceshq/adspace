@@ -39,7 +39,7 @@ export default async function ListingPage({ params }: { params: Params }) {
     permanentRedirect(listingHref(listing.seller.handle, listing.slug));
   }
   return (
-    <AppShell>
+    <AppShell mobileTabs={false}>
       <ListingView initial={listing} />
     </AppShell>
   );

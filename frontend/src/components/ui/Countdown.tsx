@@ -18,11 +18,14 @@ export function formatRemaining(ms: number): string {
 export function Countdown({
   to,
   prefix,
+  endedLabel = "ended",
   urgentWithinMs = 24 * 60 * 60 * 1000,
   className,
 }: {
   to: string | Date;
   prefix?: string;
+  // Shown on its own once the time is up, so "closes in" never reads "closes in ended".
+  endedLabel?: string;
   urgentWithinMs?: number;
   className?: string;
 }) {
@@ -49,8 +52,7 @@ export function Countdown({
         className,
       )}
     >
-      {prefix ? `${prefix} ` : ""}
-      {formatRemaining(remaining)}
+      {remaining <= 0 ? endedLabel : `${prefix ? `${prefix} ` : ""}${formatRemaining(remaining)}`}
     </time>
   );
 }
