@@ -382,6 +382,10 @@ export interface SpotDetail {
     deliveryDueAt: IsoDate;
     reviewWindowSeconds: number;
     chainAddress: string | null;
+    // Fee policy snapshotted on-chain at publish; null before approval.
+    feeBps: number | null;
+    upliftFeeBps: number | null;
+    maxFeeBps: number | null;
     photos: ListingPhoto[];
   };
   seller: { id: string; handle: string; displayName: string; avatarUrl: string | null; verified: boolean };
@@ -394,7 +398,10 @@ export interface SpotDetail {
     closedAt: IsoDate | null;
     sellerShareBps: number | null;
     decision: string | null;
+    // Full refund to the sponsor if nobody resolves it by then (the timeout captured when it was raised).
     timeoutAt: IsoDate;
+    // Images the sponsor attached when raising the dispute.
+    evidence: Array<{ id: string; url: string; width: number | null; height: number | null }>;
   } | null;
   settlement: Settlement | null;
   deadlines: { deliveryDueAt: IsoDate; reviewUntil: IsoDate };
@@ -446,12 +453,29 @@ export interface ReviewSummary {
     listingTitle: string;
     sellerHandle: string;
     buyerHandle: string;
+    // When the dispute refunds the sponsor in full if not resolved. The list is sorted by it.
+    timeoutAt: IsoDate;
   }>;
   payoutsReady: Array<{ spotId: string; spotIndex: number; amount: BaseUnits | null; listingId: string; listingTitle: string }>;
   failedTxs: Array<{ id: string; op: string; error: string | null; signature: string | null; updatedAt: IsoDate; spotId: string | null }>;
 }
 
 export type ReviewQueueItem = Omit<PublicListing, "spots"> & { spots: Spot[] };
+
+// The creator's record on other listings, for the reviewer decision screen.
+export interface SellerHistory {
+  listingsSubmitted: number;
+  listingsLive: number;
+  listingsRejected: number;
+  spotsSold: number;
+  spotsPaidOut: number;
+  spotsRefunded: number;
+  disputes: number;
+  openDisputes: number;
+  onTimeRate: number | null;
+}
+
+export type ReviewListingDetail = ReviewQueueItem & { sellerHistory: SellerHistory };
 
 export interface ProfilePage {
   id: string;

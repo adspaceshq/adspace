@@ -40,12 +40,6 @@ export interface AdminDeps {
 export const MIN_DISPUTE_TIMEOUT_SECONDS = 60 * 60;
 export const MAX_DISPUTE_TIMEOUT_SECONDS = 30 * 24 * 60 * 60;
 
-function assertAuthority(deps: AdminDeps, status: ProtocolStatus) {
-  if (!status.authority.equals(deps.authority.publicKey)) {
-    throw new AdminError("the server key is not the program's config authority", 503);
-  }
-}
-
 export async function setPaused(
   deps: AdminDeps,
   adminId: string,
@@ -78,37 +72,60 @@ export async function setPaused(
 
 // Only the config authority can resume, so with the multisig in charge the server opens a Squads proposal.
 async function proposeResume(deps: AdminDeps, adminId: string, status: ProtocolStatus) {
+  const vault = multisigAuthority(deps, status, "resuming");
+  const instruction = await deps.program.methods
+    .pauseProtocol(false)
+    .accountsStrict({ authority: vault, config: pdas(deps.program.programId).config() })
+    .instruction();
+  return { status, ...(await proposeToMultisig(deps, adminId, instruction, "adspaces: resume protocol", "squads-resume")) };
+}
+
+// The Squads vault must be the config authority, or the proposal could never execute.
+function multisigAuthority(deps: AdminDeps, status: ProtocolStatus, action: string): PublicKey {
   const { squads } = deps;
-  if (!squads) throw new AdminError("resuming needs the multisig; set SQUADS_MULTISIG", 409);
+  if (!squads) throw new AdminError(`${action} needs the multisig; set SQUADS_MULTISIG`, 409);
   if (!squads.vault.equals(status.authority)) {
     throw new AdminError(`the config authority ${status.authority.toBase58()} is not the SQUADS_MULTISIG vault ${squads.vault.toBase58()}`, 409);
   }
-  const instruction = await deps.program.methods
-    .pauseProtocol(false)
-    .accountsStrict({ authority: status.authority, config: pdas(deps.program.programId).config() })
-    .instruction();
-  const proposal = await squads.propose([instruction], "adspaces: resume protocol");
+  return status.authority;
+}
+
+// Opens a Squads proposal for one config-authority instruction; members approve and execute it in the Squads app.
+async function proposeToMultisig(deps: AdminDeps, adminId: string, instruction: TransactionInstruction, memo: string, keyPrefix: string) {
+  const squads = deps.squads!;
+  const proposal = await squads.propose([instruction], memo);
   const tx = await deps.runTx({
     op: "squads_proposal",
-    idempotencyKey: `squads-resume:${proposal.transactionIndex}:${randomUUID()}`,
+    idempotencyKey: `${keyPrefix}:${proposal.transactionIndex}:${randomUUID()}`,
     actorId: adminId,
     instructions: proposal.instructions,
     feePayer: deps.authority,
     signers: cosigners(deps.authority, squads.proposer),
   });
-  return { status, signature: tx.signature, pending: squadsPending(proposal) };
+  return { signature: tx.signature, pending: squadsPending(proposal) };
 }
 
-export async function setDisputeTimeout(deps: AdminDeps, adminId: string, seconds: number) {
+// The program captures the timeout on each dispute when it is raised, so a change only applies to
+// disputes raised afterwards. With the multisig as config authority the change becomes a Squads proposal.
+export async function setDisputeTimeout(
+  deps: AdminDeps,
+  adminId: string,
+  seconds: number,
+): Promise<{ status: ProtocolStatus; signature: string | null; pending?: SquadsPending }> {
   if (!Number.isInteger(seconds) || seconds < MIN_DISPUTE_TIMEOUT_SECONDS || seconds > MAX_DISPUTE_TIMEOUT_SECONDS) {
     throw new AdminError("dispute timeout must be between 1 hour and 30 days");
   }
   const status = await deps.readProtocolStatus();
-  assertAuthority(deps, status);
   if (status.disputeTimeoutSeconds === seconds) return { status, signature: null };
+  const config = pdas(deps.program.programId).config();
+  if (!status.authority.equals(deps.authority.publicKey)) {
+    const vault = multisigAuthority(deps, status, "changing the dispute timeout");
+    const instruction = await deps.program.methods.setDisputeTimeout(new anchor.BN(seconds)).accountsStrict({ authority: vault, config }).instruction();
+    return { status, ...(await proposeToMultisig(deps, adminId, instruction, "adspaces: set dispute timeout", "squads-dispute-timeout")) };
+  }
   const instruction = await deps.program.methods
     .setDisputeTimeout(new anchor.BN(seconds))
-    .accountsStrict({ authority: deps.authority.publicKey, config: pdas(deps.program.programId).config() })
+    .accountsStrict({ authority: deps.authority.publicKey, config })
     .instruction();
   const tx = await deps.runTx({
     op: "set_dispute_timeout",

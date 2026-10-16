@@ -16,7 +16,11 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { Tabs } from "@/components/ui/Tabs";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
-import { ResolveDisputeModal } from "./ResolveDisputeModal";
+import { DISPUTE_URGENT_MS, ResolveDisputeModal } from "./ResolveDisputeModal";
+import { Badge } from "@/components/ui/Badge";
+import { Countdown } from "@/components/ui/Countdown";
+import { useNow } from "@/lib/use-now";
+import { cx } from "@/lib/cx";
 import { SquadsPendingNote } from "./SquadsPendingNote";
 import { Address } from "@/components/ui/Address";
 import { UserLink } from "@/components/ui/UserLink";
@@ -95,44 +99,7 @@ function ListingsTab() {
 }
 
 function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings">; data: ReviewSummary }) {
-  const [resolving, setResolving] = useState<ReviewSummary["disputes"][number] | null>(null);
-  if (tab === "disputes") {
-    if (data.disputes.length === 0) return <EmptyState icon={CheckCircle2} title="no open disputes" />;
-    return (
-      <>
-        <ul className="flex flex-col gap-2">
-          {data.disputes.map((item) => (
-            <li key={item.dispute.id} className="flex flex-col gap-2 rounded-card border border-line bg-surface p-4 shadow-card">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-body font-semibold">
-                  {item.listingTitle} · spot {item.spotIndex + 1}
-                </p>
-                <Money value={item.amount} className="text-body font-semibold" />
-              </div>
-              <p className="text-small text-muted">
-                <UserLink handle={item.buyerHandle} /> disputes <UserLink handle={item.sellerHandle} /> · opened {new Date(item.dispute.openedAt).toLocaleString()}
-              </p>
-              <blockquote className="rounded-control bg-canvas px-3 py-2 text-body">&ldquo;{item.dispute.reason}&rdquo;</blockquote>
-              {item.dispute.squadsTransactionIndex !== null && (
-                <SquadsPendingNote index={item.dispute.squadsTransactionIndex}>
-                  proposed: creator gets {(item.dispute.proposedSellerShareBps ?? 0) / 100}%. resolve again only if the multisig rejects it.
-                </SquadsPendingNote>
-              )}
-              <div className="flex gap-2">
-                <Link href={`/dashboard/spots/${item.spotId}`} className="rounded-control border border-line px-3 py-1.5 text-small font-medium hover:border-line-strong">
-                  view proof & messages
-                </Link>
-                <Button size="sm" onClick={() => setResolving(item)}>
-                  resolve
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-        {resolving && <ResolveDisputeModal item={resolving} onClose={() => setResolving(null)} />}
-      </>
-    );
-  }
+  if (tab === "disputes") return <DisputesTab disputes={data.disputes} />;
   if (tab === "payouts") {
     if (data.payoutsReady.length === 0) return <EmptyState icon={CheckCircle2} title="no payouts waiting" description="delivered spots appear here once their review window closes." />;
     return (
@@ -176,5 +143,74 @@ function PayoutRow({ item }: { item: ReviewSummary["payoutsReady"][number] }) {
       </div>
       <TxStatus state={tx.state} action="payout" onRetry={tx.retry} />
     </li>
+  );
+}
+
+// Sorted by the server, soonest timeout first. A timed-out dispute refunds the sponsor in full, and a
+// multisig decision needs 2 of 3 members to approve and execute, so the deadline leads each row.
+function DisputesTab({ disputes }: { disputes: ReviewSummary["disputes"] }) {
+  const [resolving, setResolving] = useState<ReviewSummary["disputes"][number] | null>(null);
+  const now = useNow(60_000);
+  // Reviewers can read the status; it says whether a decision is direct or a Squads proposal.
+  const status = useQuery({ queryKey: queryKeys.adminStatus, queryFn: () => api.admin.status() });
+  const viaMultisig = status.data ? !status.data.serverIsAuthority : false;
+  if (disputes.length === 0) return <EmptyState icon={CheckCircle2} title="no open disputes" />;
+  return (
+    <>
+      <ul className="flex flex-col gap-2">
+        {disputes.map((item) => {
+          const left = new Date(item.timeoutAt).getTime() - now;
+          const urgent = left < DISPUTE_URGENT_MS;
+          return (
+            <li
+              key={item.dispute.id}
+              className={cx("flex flex-col gap-2 rounded-card border bg-surface p-4 shadow-card", urgent ? "border-warning/60 ring-1 ring-warning/30" : "border-line")}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-body font-semibold">
+                  {item.listingTitle} · spot {item.spotIndex + 1}
+                </p>
+                <Money value={item.amount} className="text-body font-semibold" />
+              </div>
+              <p className="flex flex-wrap items-center gap-2 text-small">
+                <Badge tone={left <= 0 ? "danger" : urgent ? "warning" : "neutral"} dot={urgent}>
+                  {left <= 0 ? "timed out" : <Countdown to={item.timeoutAt} prefix="times out in" urgentWithinMs={0} />}
+                </Badge>
+                <span className="text-muted">
+                  {left <= 0
+                    ? "the sponsor can take a full refund now."
+                    : urgent
+                      ? viaMultisig
+                        ? "under a day left for the multisig to approve and execute."
+                        : "under a day left to decide."
+                      : `full refund to the sponsor if unresolved by ${new Date(item.timeoutAt).toLocaleString()}.`}
+                </span>
+              </p>
+              <p className="text-small text-muted">
+                <UserLink handle={item.buyerHandle} /> disputes <UserLink handle={item.sellerHandle} /> · opened {new Date(item.dispute.openedAt).toLocaleString()}
+              </p>
+              <blockquote className="rounded-control bg-canvas px-3 py-2 text-body">&ldquo;{item.dispute.reason}&rdquo;</blockquote>
+              {item.dispute.squadsTransactionIndex !== null && (
+                <SquadsPendingNote index={item.dispute.squadsTransactionIndex}>
+                  proposed: creator gets {(item.dispute.proposedSellerShareBps ?? 0) / 100}%. propose again only if the multisig rejects it.
+                </SquadsPendingNote>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href={`/dashboard/spots/${item.spotId}`}
+                  className="inline-flex h-11 items-center rounded-control border border-line px-3 text-small font-medium hover:border-line-strong sm:h-8"
+                >
+                  view spot & messages
+                </Link>
+                <Button size="sm" onClick={() => setResolving(item)}>
+                  {viaMultisig ? "propose to the multisig" : "resolve"}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      {resolving && <ResolveDisputeModal item={resolving} viaMultisig={viaMultisig} onClose={() => setResolving(null)} />}
+    </>
   );
 }

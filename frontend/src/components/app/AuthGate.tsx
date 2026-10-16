@@ -3,7 +3,7 @@
 import { CloudOff, Lock, MailCheck, ShieldAlert, UserRoundPen } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "@/lib/session";
+import { useRequireAuth, useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
@@ -22,6 +22,8 @@ export function AuthGate({
   reason?: string;
   setup?: boolean;
 }) {
+  // Signed-in areas load Privy right away instead of waiting for a hint or a click.
+  useRequireAuth();
   const { ready, session, signIn, loadError, refresh } = useSession();
   const pathname = usePathname();
   const setupHref = `/onboarding?next=${encodeURIComponent(pathname)}`;

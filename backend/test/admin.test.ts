@@ -117,6 +117,26 @@ test("with the multisig as config authority, resuming opens a Squads proposal", 
   assert.ok(sent[0].instructions.every((ix) => ix.programId.equals(multisig.PROGRAM_ID)));
 });
 
+test("with the multisig as config authority, a dispute timeout change opens a Squads proposal", async () => {
+  const { user } = await seedUser(db, "admin");
+  status = { ...status, authority: vaultKey };
+  await assert.rejects(setDisputeTimeout(deps(), user.id, 2 * 24 * 60 * 60), /changing the dispute timeout needs the multisig/);
+  const result = await setDisputeTimeout({ ...deps(), squads }, user.id, 2 * 24 * 60 * 60);
+  assert.equal(result.pending?.transactionIndex, 9);
+  // Unchanged until the multisig executes it.
+  assert.equal(result.status.disputeTimeoutSeconds, 3 * 24 * 60 * 60);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].op, "squads_proposal");
+  assert.ok(sent[0].instructions.every((ix) => ix.programId.equals(multisig.PROGRAM_ID)));
+});
+
+test("a dispute timeout proposal refuses a multisig that isn't the config authority", async () => {
+  const { user } = await seedUser(db, "admin");
+  status = { ...status, authority: Keypair.generate().publicKey };
+  await assert.rejects(setDisputeTimeout({ ...deps(), squads }, user.id, 2 * 24 * 60 * 60), /is not the SQUADS_MULTISIG vault/);
+  assert.equal(sent.length, 0);
+});
+
 // ---------- emergency pause by the guardian's own wallet ----------
 
 const guardianKey = Keypair.generate();

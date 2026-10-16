@@ -37,11 +37,11 @@ export function NotificationBell() {
         onClick={() => setOpen((value) => !value)}
         aria-label={unread ? `notifications, ${unread} unread` : "notifications"}
         aria-expanded={open}
-        className="relative cursor-pointer rounded-full p-2 text-muted hover:bg-ink/5 hover:text-ink"
+        className="relative flex size-11 cursor-pointer items-center justify-center rounded-full text-muted hover:bg-ink/5 hover:text-ink"
       >
         <Bell className="size-5" />
         {unread > 0 && (
-          <span className="absolute right-0.5 top-0.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-white">
+          <span className="absolute right-1.5 top-1.5 flex min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-semibold leading-4 text-white">
             {unread > 99 ? "99+" : unread}
           </span>
         )}

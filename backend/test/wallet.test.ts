@@ -130,3 +130,15 @@ test("withdrawals never signed expire and release the daily limit", async () => 
   assert.equal(row.state, "failed");
   await prepareWithdrawal(deps(), user.id, signer.publicKey, destination(), 90n * USDC);
 });
+
+test("withdrawal history pages back by creation time", async () => {
+  const { user } = await seedUser(db);
+  const base = Date.now() - 10 * 60_000;
+  for (let i = 0; i < 3; i += 1) {
+    await db.insert(withdrawals).values({ userId: user.id, amount: BigInt(i + 1) * USDC, destination: "dest", state: "confirmed", createdAt: new Date(base + i * 60_000) });
+  }
+  const first = await listWithdrawals(db, user.id, 2);
+  assert.deepEqual(first.map((item) => item.amount), [3n * USDC, 2n * USDC]);
+  const next = await listWithdrawals(db, user.id, 2, first[1].createdAt);
+  assert.deepEqual(next.map((item) => item.amount), [1n * USDC]);
+});

@@ -3,7 +3,7 @@ import { after, before, test } from "node:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Db } from "../src/db/client.js";
-import { bids, chainTxs, disputes, listingPhotos, mediaAssets, settlements, spotEvents, spots } from "../src/db/schema.js";
+import { bids, chainTxs, disputeEvidence, disputes, listingPhotos, mediaAssets, settlements, spotEvents, spots } from "../src/db/schema.js";
 import { activityFeed, creatorDashboard, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../src/services/dashboards.js";
 import { createTestDb } from "./helpers/db.js";
 import { seedListing, seedUser, USDC } from "./helpers/seed.js";
@@ -185,4 +185,44 @@ test("activity feed pages by cursor and filters by role", async () => {
   assert.deepEqual(next.map((event) => event.type), ["event_0"]);
   assert.equal((await activityFeed(db, seller.user.id, { role: "sponsor" })).length, 0);
   assert.equal((await activityFeed(db, seller.user.id, { role: "creator" })).length, 3);
+});
+
+test("review summary takes each dispute's deadline from the chain and sorts soonest first", async () => {
+  const late = await seedListing(db, { deadline: new Date(Date.now() - 48 * HOUR), deliveryDueAt: new Date(Date.now() - HOUR), funded: true });
+  const soon = await seedListing(db, { deadline: new Date(Date.now() - 48 * HOUR), deliveryDueAt: new Date(Date.now() - HOUR), funded: true });
+  await db.insert(disputes).values({ spotId: late.spot.id, buyerId: late.buyer!.user.id, reason: "never delivered at all" });
+  await db.insert(disputes).values({ spotId: soon.spot.id, buyerId: soon.buyer!.user.id, reason: "never delivered at all" });
+  const soonAt = new Date(Date.now() + HOUR);
+  const summary = await reviewSummary(db, new Date(), {
+    timeoutSeconds: TIMEOUT,
+    // Only one spot has a readable record; the other falls back to opened_at + the config timeout.
+    readDeadlines: async (addresses) => addresses.map((address) => (address === soon.spot.chainAddress ? soonAt : null)),
+  });
+  const ours = summary.disputes.filter((item) => item.spotId === late.spot.id || item.spotId === soon.spot.id);
+  assert.deepEqual(ours.map((item) => item.spotId), [soon.spot.id, late.spot.id]);
+  assert.equal(ours[0].timeoutAt.getTime(), soonAt.getTime());
+  assert.equal(ours[1].timeoutAt.getTime() - ours[1].dispute.openedAt.getTime(), TIMEOUT * 1000);
+  assert.ok(!("spotAddress" in ours[0]));
+  const sorted = summary.disputes.map((item) => item.timeoutAt.getTime());
+  assert.deepEqual(sorted, [...sorted].sort((a, b) => a - b));
+});
+
+test("spot detail carries the sponsor's evidence and the listing's fee snapshot", async () => {
+  const { buyer, spot } = await seedListing(db, { deadline: new Date(Date.now() - 48 * HOUR), deliveryDueAt: new Date(Date.now() - HOUR), funded: true });
+  const [dispute] = await db.insert(disputes).values({ spotId: spot.id, buyerId: buyer!.user.id, reason: "the photo shows no logo" }).returning();
+  const assets = await db
+    .insert(mediaAssets)
+    .values([1, 2].map((n) => ({ ownerId: buyer!.user.id, kind: "evidence" as const, url: `https://res.cloudinary.com/x/evidence/${n}.jpg`, bytes: 10 })))
+    .returning();
+  await db.insert(disputeEvidence).values([
+    { disputeId: dispute.id, assetId: assets[1].id, position: 0 },
+    { disputeId: dispute.id, assetId: assets[0].id, position: 1 },
+  ]);
+  const deadline = new Date(Date.now() + 5 * HOUR);
+  const reviewer = await seedUser(db, "reviewer");
+  const detail = await spotDetail(db, { id: reviewer.user.id, isReviewer: true }, spot.id, TIMEOUT, async () => [deadline]);
+  assert.equal(detail.role, "reviewer");
+  assert.deepEqual(detail.dispute?.evidence.map((item) => item.url), [assets[1].url, assets[0].url]);
+  assert.equal(detail.dispute?.timeoutAt.getTime(), deadline.getTime());
+  assert.deepEqual([detail.listing.feeBps, detail.listing.upliftFeeBps, detail.listing.maxFeeBps], [500, 0, 500]);
 });

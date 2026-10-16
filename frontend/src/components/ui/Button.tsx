@@ -34,7 +34,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       disabled={disabled || loading}
       aria-busy={loading || undefined}
       className={cx(
-        "inline-flex cursor-pointer items-center justify-center gap-2 rounded-control font-medium transition-colors",
+        // Touch screens get a 44px minimum target whatever the size.
+        "inline-flex cursor-pointer items-center justify-center gap-2 rounded-control font-medium transition-colors pointer-coarse:min-h-11",
         "disabled:cursor-not-allowed disabled:opacity-50",
         variants[variant],
         sizes[size],

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_FEES, bpsToPercentText, effectiveMaxFeeBps, feeFor, feePolicyError, isPercentDraft, listingFeePolicy, parsePercentToBps } from "./fees";
+import { DEFAULT_FEES, bpsToPercentText, disputeSplit, effectiveMaxFeeBps, feeFor, feePolicyError, isPercentDraft, listingFeePolicy, parsePercentToBps } from "./fees";
 
 describe("fees", () => {
   it("accepts the defaults and enforces the program's rules", () => {
@@ -56,5 +56,22 @@ describe("listingFeePolicy", () => {
   it("reads the snapshot, or nothing before review", () => {
     expect(listingFeePolicy({ feeBps: 250, upliftFeeBps: 2000, maxFeeBps: 1000 })).toEqual(DEFAULT_FEES.auction);
     expect(listingFeePolicy({ feeBps: null, upliftFeeBps: null, maxFeeBps: null })).toBeNull();
+  });
+
+  it("splits a dispute like resolve_dispute: the fee scales with the creator's share, rounding down", () => {
+    expect(disputeSplit("fixed", DEFAULT_FEES.fixed, 100_000_001n, 100_000_001n, 3333)).toEqual({
+      creatorGross: 33_330_000n,
+      fee: 1_666_500n,
+      creatorNet: 31_663_500n,
+      buyerRefund: 66_670_001n,
+    });
+    expect(disputeSplit("auction", DEFAULT_FEES.auction, 50_000_000n, 200_000_000n, 5000)).toEqual({
+      creatorGross: 100_000_000n,
+      fee: 10_000_000n,
+      creatorNet: 90_000_000n,
+      buyerRefund: 100_000_000n,
+    });
+    const none = disputeSplit("fixed", DEFAULT_FEES.fixed, 10n, 10_000_000n, 0);
+    expect([none.fee, none.creatorNet, none.buyerRefund]).toEqual([0n, 0n, 10_000_000n]);
   });
 });

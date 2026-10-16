@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { PublicKey, TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { chainTxs, users, withdrawals } from "../db/schema.js";
@@ -165,12 +165,13 @@ export async function expireUnsignedWithdrawals(db: Db, now = new Date(), maxAge
 }
 
 // Includes the Solana signature (from the chain tx log) so the UI can link to the explorer.
-export async function listWithdrawals(db: Db, userId: string, limit = 50) {
+// `before` pages back: only withdrawals created before that time.
+export async function listWithdrawals(db: Db, userId: string, limit = 50, before?: Date) {
   const rows = await db
     .select({ withdrawal: withdrawals, signature: chainTxs.signature })
     .from(withdrawals)
     .leftJoin(chainTxs, eq(chainTxs.id, withdrawals.chainTxId))
-    .where(eq(withdrawals.userId, userId))
+    .where(and(eq(withdrawals.userId, userId), before ? lt(withdrawals.createdAt, before) : undefined))
     .orderBy(desc(withdrawals.createdAt))
     .limit(limit);
   return rows.map((row) => ({ ...row.withdrawal, signature: row.signature }));

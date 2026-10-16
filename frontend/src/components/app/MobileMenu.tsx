@@ -52,7 +52,7 @@ export function MobileMenu({ signedIn }: { signedIn: boolean }) {
         aria-expanded={open}
         aria-controls={panelId}
         aria-label={open ? "close menu" : "open menu"}
-        className="flex size-10 cursor-pointer items-center justify-center rounded-control text-ink hover:bg-ink/5"
+        className="flex size-11 cursor-pointer items-center justify-center rounded-control text-ink hover:bg-ink/5"
       >
         {open ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
       </button>

@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { Db } from "../src/db/client.js";
-import { listingPhotos, listings, mediaAssets } from "../src/db/schema.js";
-import { getPublishedListing, listPublished, parseBrowseFilters } from "../src/services/listing-queries.js";
+import { chainTxs, disputes, listingPhotos, listings, mediaAssets, settlements, spots } from "../src/db/schema.js";
+import { getPublishedListing, listPublished, parseBrowseFilters, reviewListingDetail } from "../src/services/listing-queries.js";
 import { createTestDb } from "./helpers/db.js";
 import { seedListing } from "./helpers/seed.js";
 
@@ -70,4 +71,34 @@ test("open spots name no sponsor", async () => {
   const { listing } = await seedListing(db, { deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR) });
   const detail = await getPublishedListing(db, listing.slug);
   assert.equal(detail?.spots[0].sponsor, null);
+});
+
+test("review listing detail returns any state with the seller's track record", async () => {
+  const past = await seedListing(db, { deadline: new Date(Date.now() - 200 * HOUR), deliveryDueAt: new Date(Date.now() - 100 * HOUR), funded: true });
+  const sellerId = past.seller.user.id;
+  const [tx] = await db.insert(chainTxs).values({ op: "withdraw_seller", idempotencyKey: `t:${randomUUID()}`, status: "confirmed", signature: `sig-${randomUUID()}`, confirmedAt: new Date() }).returning();
+  await db.update(spots).set({ state: "settled", proofSubmittedAt: new Date(Date.now() - 150 * HOUR) }).where(eq(spots.id, past.spot.id));
+  await db.insert(settlements).values({ spotId: past.spot.id, kind: "payout", gross: 100n, fee: 5n, sellerNet: 95n, buyerRefund: 0n, chainTxId: tx.id });
+  await db.insert(disputes).values({ spotId: past.spot.id, buyerId: past.buyer!.user.id, reason: "late but delivered", state: "withdrawn" });
+  const [current] = await db
+    .insert(listings)
+    .values({ ...past.listing, id: undefined, slug: `review-${randomUUID()}`, state: "in_review", chainAddress: null, createdAt: undefined, updatedAt: undefined })
+    .returning();
+
+  const detail = await reviewListingDetail(db, current.id);
+  assert.equal(detail?.state, "in_review");
+  assert.equal(detail?.seller.id, sellerId);
+  assert.deepEqual(detail?.sellerHistory, {
+    listingsSubmitted: 1,
+    listingsLive: 1,
+    listingsRejected: 0,
+    spotsSold: 1,
+    spotsPaidOut: 1,
+    spotsRefunded: 0,
+    disputes: 1,
+    openDisputes: 0,
+    onTimeRate: 1,
+  });
+  assert.equal(await reviewListingDetail(db, "not-a-uuid"), undefined);
+  assert.equal(await reviewListingDetail(db, randomUUID()), undefined);
 });

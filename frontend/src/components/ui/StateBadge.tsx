@@ -25,6 +25,8 @@ const spotCopy: Record<SpotState, Record<Perspective, string> & { tone: BadgeTon
   cancelled: { creator: "closed", sponsor: "closed", public: "closed", tone: "neutral" },
 };
 
+export const listingStateLabel = (state: ListingState) => listingCopy[state].label;
+
 export function ListingStateBadge({ state }: { state: ListingState }) {
   const { label, tone } = listingCopy[state];
   return (
