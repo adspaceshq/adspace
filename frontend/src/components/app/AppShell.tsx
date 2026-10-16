@@ -1,5 +1,6 @@
-import { AppSidebar, BottomTabs } from "./AppNav";
-import { CompactFooter } from "./SiteFooter";
+import { AppSidebar, BottomTabs, SignedInBottomTabs } from "./AppNav";
+import { DevnetBanner } from "./DevnetBanner";
+import { CompactFooter, SiteFooter } from "./SiteFooter";
 import { TopBar } from "./TopBar";
 
 // The window scrolls (one standard browser scrollbar). The header sticks to the top, the compact
@@ -7,14 +8,23 @@ import { TopBar } from "./TopBar";
 // page content moves.
 // "public": browse, listings, profiles — no sidebar.
 // "app": signed-in work areas — sidebar on desktop, bottom tabs on mobile.
-export function AppShell({ children, variant = "public" }: { children: React.ReactNode; variant?: "public" | "app" }) {
+// Public pages on small screens get a menu in the top bar, bottom tabs when signed in, and the full
+// footer (with the legal links). `mobileTabs={false}` for pages with their own bottom bar (listing).
+export function AppShell({ children, variant = "public", mobileTabs = true }: { children: React.ReactNode; variant?: "public" | "app"; mobileTabs?: boolean }) {
   return (
     <div className="flex min-h-dvh flex-col bg-canvas">
+      <DevnetBanner />
       <TopBar inSidebar={variant === "app"} />
       {variant === "public" ? (
-        <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 pb-28 sm:px-6 lg:py-10 lg:pb-24">
-          {children}
-        </main>
+        <>
+          <main id="main" className="mx-auto w-full max-w-7xl flex-1 px-4 py-8 sm:px-6 lg:py-10 lg:pb-24">
+            {children}
+          </main>
+          <div className="lg:hidden">
+            <SiteFooter bottomInset />
+          </div>
+          {mobileTabs && <SignedInBottomTabs />}
+        </>
       ) : (
         <div className="mx-auto flex w-full max-w-7xl flex-1 gap-8 px-4 sm:px-6">
           <AppSidebar />

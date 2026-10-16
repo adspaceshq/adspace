@@ -108,6 +108,12 @@ const tabs: NavItem[] = [
   { href: "/wallet", label: "wallet", icon: Wallet },
 ];
 
+// Public pages: the same tabs, but only for someone signed in (guests use the top bar menu).
+export function SignedInBottomTabs() {
+  const { session } = useSession();
+  return session ? <BottomTabs /> : null;
+}
+
 export function BottomTabs() {
   const pathname = usePathname();
   return (
