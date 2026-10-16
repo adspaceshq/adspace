@@ -494,6 +494,8 @@ export function createV2Router(options: {
       feePayer: context.reviewer,
       rentPayer: context.rentPayer,
       resolver: context.reviewer,
+      readConfigAuthority: async () => (await context.readProtocolStatus()).authority,
+      squads: context.squads,
       runTx: context.runTx,
       readListingSnapshot: context.readListingSnapshot,
       readVaultBalance: context.readVaultBalance,
@@ -654,12 +656,27 @@ export function createV2Router(options: {
     requireReviewer,
     handle(async (_req, res) => {
       const context = requireChain();
-      send(res, await reconcile({ db, signatureOutcomes: context.signatureOutcomes, readSpotStatus: context.readSpotStatus }));
+      send(
+        res,
+        await reconcile({
+          db,
+          signatureOutcomes: context.signatureOutcomes,
+          readSpotStatus: context.readSpotStatus,
+          findDisputeResolution: context.findDisputeResolution,
+        }),
+      );
     }),
   );
   const adminDeps = (): AdminDeps => {
     const context = requireChain();
-    return { db, program: context.program, authority: context.reviewer, runTx: context.runTx, readProtocolStatus: context.readProtocolStatus };
+    return {
+      db,
+      program: context.program,
+      authority: context.reviewer,
+      squads: context.squads,
+      runTx: context.runTx,
+      readProtocolStatus: context.readProtocolStatus,
+    };
   };
   router.get("/admin/team", requireUser, requireAdmin, handle(async (_req, res) => send(res, await listStaff(db, admins))));
   router.post(
@@ -677,8 +694,17 @@ export function createV2Router(options: {
     requireUser,
     handle(async (req, res) => {
       if (!roleIn(res)) return void send(res, { error: "reviewers only" }, 403);
-      const status = await requireChain().readProtocolStatus();
-      send(res, { ...status, authority: status.authority.toBase58(), treasury: status.treasury.toBase58() });
+      const context = requireChain();
+      const status = await context.readProtocolStatus();
+      send(res, {
+        ...status,
+        authority: status.authority.toBase58(),
+        treasury: status.treasury.toBase58(),
+        pauseGuardian: status.pauseGuardian?.toBase58() ?? null,
+        // Whether the server key can act as the config authority itself, or proposes to the multisig.
+        serverIsAuthority: status.authority.equals(context.reviewer.publicKey),
+        squadsMultisig: context.squads?.multisig.toBase58() ?? null,
+      });
     }),
   );
   router.post(
@@ -688,7 +714,7 @@ export function createV2Router(options: {
     handle(async (req, res) => {
       if (typeof req.body?.paused !== "boolean") throw new BadRequest("paused must be true or false");
       const result = await setPaused(adminDeps(), me(req).id, req.body.paused);
-      send(res, { paused: result.status.paused, signature: result.signature });
+      send(res, { paused: result.status.paused, signature: result.signature, pending: result.pending ?? null });
     }),
   );
   router.post(

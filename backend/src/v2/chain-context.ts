@@ -5,11 +5,13 @@ import type { Db } from "../db/client.js";
 import { associatedTokenAddress, createProgram, pdas, type AdspacesProgram } from "../chain/program.js";
 import { prepareChainTx, runChainTx, submitPreparedChainTx, type ChainTxRequest, type ChainTxResult, type PreparedChainTx } from "../chain/runner.js";
 import { keypairSigner, privyWalletSigner, type TxSigner } from "../chain/signers.js";
+import { createSquadsProposer, type SquadsProposer } from "../chain/squads.js";
 import { loadKeypair } from "../keypair.js";
 import type { SessionUser } from "../types.js";
 import type { ListingSnapshot } from "../services/settlement.js";
 import type { ChainSpotStatus, SignatureOutcome } from "../services/reconciler.js";
 import type { ProtocolStatus } from "../services/admin.js";
+import type { DisputeResolution } from "../services/disputes.js";
 
 export interface ChainContext {
   connection: Connection;
@@ -18,6 +20,8 @@ export interface ChainContext {
   reviewer: TxSigner;
   // Pays all account rent and receives it back; recorded on-chain per listing. Today the reviewer key.
   rentPayer: TxSigner;
+  // Set with SQUADS_MULTISIG: the reviewer key proposes (Initiate only) what the multisig vault must sign.
+  squads?: SquadsProposer;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   prepareTx: (request: Omit<ChainTxRequest, "signers">) => Promise<PreparedChainTx>;
   submitTx: (chainTxId: string, signedBase64: string) => Promise<ChainTxResult>;
@@ -36,6 +40,7 @@ export interface ChainContext {
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
   readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
   readProtocolStatus: () => Promise<ProtocolStatus>;
+  findDisputeResolution: (spotAddress: string, decisionHash: string) => Promise<DisputeResolution | null>;
 }
 
 const httpError = (message: string, status: number) => Object.assign(new Error(message), { status });
@@ -47,10 +52,12 @@ export function createChainContext(options: {
   mint: string;
   reviewerKeypairPath: string;
   privyAuthorizationKey?: string;
+  squadsMultisig?: string;
 }): ChainContext {
   const connection = new Connection(options.rpcUrl, "confirmed");
   const program = createProgram(connection);
   const reviewer = keypairSigner(loadKeypair(options.reviewerKeypairPath));
+  const readTxEvent = txEventReader(connection, program);
 
   return {
     connection,
@@ -58,6 +65,7 @@ export function createChainContext(options: {
     mint: new PublicKey(options.mint),
     reviewer,
     rentPayer: reviewer,
+    squads: options.squadsMultisig ? createSquadsProposer(connection, new PublicKey(options.squadsMultisig), reviewer) : undefined,
     runTx: (request) => runChainTx(options.db, connection, request),
     prepareTx: (request) => prepareChainTx(options.db, connection, request),
     submitTx: (chainTxId, signed) => submitPreparedChainTx(options.db, connection, chainTxId, signed),
@@ -104,7 +112,7 @@ export function createChainContext(options: {
       };
     },
 
-    readTxEvent: txEventReader(connection, program),
+    readTxEvent,
 
     async readVaultBalance(vault) {
       const { value } = await connection.getTokenAccountBalance(vault, "confirmed");
@@ -158,14 +166,33 @@ export function createChainContext(options: {
     },
 
     async readProtocolStatus() {
-      const config = await program.account.config.fetch(pdas(program.programId).config());
+      const configKey = pdas(program.programId).config();
+      const [config, guardian] = await Promise.all([
+        program.account.config.fetch(configKey),
+        program.account.pauseGuardian.fetchNullable(pdas(program.programId).pauseGuardian(configKey)),
+      ]);
       return {
         authority: config.authority,
         treasury: config.treasury,
         feeBps: config.feeBps,
         paused: config.paused,
         disputeTimeoutSeconds: config.disputeTimeoutSeconds.toNumber(),
+        // The default key means the guardian was disabled.
+        pauseGuardian: guardian && !guardian.guardian.equals(PublicKey.default) ? guardian.guardian : null,
       };
+    },
+
+    // The dispute PDA is reused when a dispute is raised again, so match the decision hash we proposed.
+    async findDisputeResolution(spotAddress, decisionHash) {
+      const dispute = pdas(program.programId).dispute(new PublicKey(spotAddress));
+      const signatures = await connection.getSignaturesForAddress(dispute, { limit: 25 }, "confirmed");
+      for (const { signature, err } of signatures) {
+        if (err) continue;
+        const event = await readTxEvent(signature, "DisputeResolved");
+        const hash = event ? (event.decisionHash ?? event.decision_hash) : undefined;
+        if (Array.isArray(hash) && Buffer.from(hash as number[]).toString("hex") === decisionHash) return { signature, event: event! };
+      }
+      return null;
     },
 
     async readDisputeTimeoutSeconds() {
