@@ -17,6 +17,12 @@ export function cosigners(feePayer: TxSigner, ...signers: TxSigner[]): TxSigner[
   return out;
 }
 
+// A key whose owner signs outside the server, e.g. the pause guardian's own wallet in the admin panel.
+// Signing is a no-op: a prepared transaction leaves this key's signature for that wallet to add.
+export function externalSigner(publicKey: PublicKey): TxSigner {
+  return { publicKey, sign: async (transaction) => transaction };
+}
+
 export function keypairSigner(keypair: Keypair): TxSigner {
   return {
     publicKey: keypair.publicKey,

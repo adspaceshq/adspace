@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import request from "supertest";
-import { Connection, Keypair, type PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, Transaction, type PublicKey } from "@solana/web3.js";
 import { createProgram } from "../src/chain/program.js";
-import type { ChainTxRequest } from "../src/chain/runner.js";
+import { prepareChainTx, submitPreparedChainTx, type ChainTxRequest } from "../src/chain/runner.js";
 import { keypairSigner } from "../src/chain/signers.js";
 import { createApp } from "../src/index.js";
 import { AppAuthRepository } from "../src/repositories/app-auth.js";
@@ -228,4 +228,65 @@ test("rent reclaim is admin-only and the creator close routes are gone", async (
   const closedListing = await adminPost(`/api/v2/admin/listings/${expired.listing.id}/close`);
   assert.equal(closedListing.status, 200);
   assert.equal(closedListing.body.listing.state, "closed");
+});
+
+test("guardian pause prepare and submit are admin-only and send what the guardian signed", async () => {
+  const guardian = Keypair.generate();
+  let paused = false;
+  const sentRaw: Buffer[] = [];
+  const connection = {
+    getLatestBlockhash: async () => ({ blockhash: Keypair.generate().publicKey.toBase58(), lastValidBlockHeight: 1000 }),
+    getBlockHeight: async () => 10,
+    sendRawTransaction: async (raw: Buffer) => {
+      sentRaw.push(raw);
+      paused = true;
+      return "sig";
+    },
+    confirmTransaction: async () => ({ value: { err: null } }),
+  } as unknown as Connection;
+  const status = () => ({
+    authority: Keypair.generate().publicKey,
+    treasury: Keypair.generate().publicKey,
+    feeBps: 250,
+    paused,
+    disputeTimeoutSeconds: 3 * 24 * 60 * 60,
+    pauseGuardian: guardian.publicKey,
+  });
+  const chain = {
+    program: createProgram(connection),
+    readProtocolStatus: async () => status(),
+    prepareTx: (request: Parameters<ChainContext["prepareTx"]>[0]) => prepareChainTx(db, connection, request),
+    submitTx: (chainTxId: string, signed: string) => submitPreparedChainTx(db, connection, chainTxId, signed),
+  } as unknown as ChainContext;
+  const guardianApp = createApp({
+    v2Router: createV2Router({
+      db,
+      chain,
+      reviewers: ["did:privy:guardian_reviewer"],
+      admins: ["did:privy:guardian_admin"],
+      termsVersion: "test",
+      metadataBaseUrl: "https://adspaces.test",
+    }),
+  });
+  const post = (who: { cookie: string; csrf: string }, path: string, body: object) =>
+    request(guardianApp).post(`/api/v2/admin/guardian-pause/${path}`).set("Cookie", who.cookie).set("X-CSRF-Token", who.csrf).send(body);
+
+  for (const handle of ["guardian_reviewer", "guardian_user"]) {
+    const who = await signIn(handle);
+    assert.equal((await post(who, "prepare", { wallet: guardian.publicKey.toBase58() })).status, 403);
+    assert.equal((await post(who, "submit", { chainTxId: "00000000-0000-0000-0000-000000000000", transaction: "AA==" })).status, 403);
+  }
+
+  const admin = await signIn("guardian_admin");
+  assert.equal((await post(admin, "prepare", { wallet: Keypair.generate().publicKey.toBase58() })).status, 409);
+  assert.equal((await post(admin, "prepare", {})).status, 400);
+  const prepared = await post(admin, "prepare", { wallet: guardian.publicKey.toBase58() });
+  assert.equal(prepared.status, 201);
+  const tx = Transaction.from(Buffer.from(prepared.body.transaction, "base64"));
+  tx.partialSign(guardian);
+  const submitted = await post(admin, "submit", { chainTxId: prepared.body.chainTxId, transaction: tx.serialize().toString("base64") });
+  assert.equal(submitted.status, 200);
+  assert.equal(submitted.body.paused, true);
+  assert.equal(typeof submitted.body.signature, "string");
+  assert.equal(sentRaw.length, 1);
 });
