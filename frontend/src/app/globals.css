@@ -9,8 +9,10 @@
 
   --color-ink: #020817;
   --color-ink-soft: #0a1730;
-  --color-muted: #64748b;
-  --color-subtle: #94a3b8;
+  /* Text greys meet WCAG AA (4.5:1) on canvas, surface and the soft tints: muted 5.6:1 on canvas,
+     subtle 4.8:1 on canvas. Keep subtle for secondary text; never go lighter for text. */
+  --color-muted: #576274;
+  --color-subtle: #606c80;
   --color-canvas: #f4f4f4;
   --color-surface: #ffffff;
   --color-line: #e7e5e0;
@@ -21,7 +23,8 @@
   --color-accent-soft: #e9edfe;
   --color-accent-ring: #c3cdfd;
 
-  --color-success: #15803d;
+  /* Darkened from #15803d so success text clears 4.5:1 on success-soft. */
+  --color-success: #147a3a;
   --color-success-soft: #e7f6ec;
   --color-warning: #b45309;
   --color-warning-soft: #fdf3e2;
