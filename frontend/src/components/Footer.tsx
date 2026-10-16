@@ -115,6 +115,15 @@ export default function Footer() {
                 <Link href="/terms" className="transition-colors hover:text-white">
                   terms
                 </Link>
+                <Link href="/privacy" className="transition-colors hover:text-white">
+                  privacy
+                </Link>
+                <Link href="/fees" className="transition-colors hover:text-white">
+                  fees
+                </Link>
+                <Link href="/content-policy" className="transition-colors hover:text-white">
+                  content policy
+                </Link>
               </div>
             </div>
 
@@ -270,13 +279,13 @@ export default function Footer() {
           {/* Bottom Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 text-[13px] text-white/40">
             <div className="flex items-center gap-4">
-              <span>© {new Date().getFullYear()} Adspaces Inc.</span>
+              <span>© {new Date().getFullYear()} adspaces</span>
               <span className="hidden sm:inline">·</span>
               <a
-                href="mailto:adspacesfun@gmail.com"
+                href="mailto:support@adspaces.fun"
                 className="transition-colors hover:text-white/80"
               >
-                adspacesfun@gmail.com
+                support@adspaces.fun
               </a>
             </div>
 
