@@ -34,6 +34,7 @@ import { PublishPanel } from "./PublishPanel";
 import { XHandleLink } from "@/components/ui/UserLink";
 import { useToast } from "@/components/ToastProvider";
 import { isNotFound, userErrorMessage } from "@/lib/errors";
+import { proofWindow } from "@/lib/listing-rules";
 
 const reviewEnds = (listing: OwnedListing) => new Date(listing.deliveryDueAt).getTime() + listing.reviewWindowSeconds * 1000;
 
@@ -230,7 +231,7 @@ function ViewPublicLink({ slug }: { slug: string }) {
 }
 
 function spotNote(listing: OwnedListing, spot: Spot, now: number) {
-  if (spot.state === "funded" && now < new Date(listing.deadline).getTime()) return "paid · deliver after claims close";
+  if (spot.state === "funded" && proofWindow(listing, now) === "not_yet") return "paid · proof opens after artwork close";
   if (spot.state === "funded") return "paid · proof due";
   if (spot.state === "delivered" && now < reviewEnds(listing)) return "delivered · sponsor reviewing";
   if (spot.state === "delivered") return "ready to get paid";
@@ -290,7 +291,8 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
       toast.success(success);
     }
   };
-  const proofWindow = spot.state === "funded" && now >= new Date(listing.deadline).getTime() && now < new Date(listing.deliveryDueAt).getTime();
+  const proofStage = proofWindow(listing, now);
+  const canSubmitProof = spot.state === "funded" && proofStage === "open";
   const payable = spot.state === "delivered" && now >= reviewEnds(listing);
   // Refunding the leader of a live auction would end their bid with no way back in, so it waits for the close.
   const liveAuction = listing.mode === "auction" && now < new Date(listing.deadline).getTime();
@@ -329,16 +331,17 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
       {spot.state === "open" && listing.state === "published" && <p className="text-small text-muted">not sold yet.</p>}
       {spot.state === "funded" && (
         <>
-          {proofWindow ? (
+          {canSubmitProof ? (
             <Button onClick={() => setProofOpen(true)}>submit proof of delivery</Button>
-          ) : now < new Date(listing.deadline).getTime() ? (
+          ) : proofStage === "not_yet" ? (
             <p className="text-small text-muted">
-              place the brand after claims close. proof opens in <Countdown to={listing.deadline} className="font-medium text-ink" />.
+              place the brand once the artwork is final. proof opens at {new Date(listing.artworkDueAt).toLocaleString()} (in{" "}
+              <Countdown to={listing.artworkDueAt} className="font-medium text-ink" />).
             </p>
           ) : (
             <p className="text-small text-danger">the delivery deadline passed without proof. the sponsor can now take a refund.</p>
           )}
-          {proofWindow && (
+          {canSubmitProof && (
             <p className="text-small text-muted">
               due in <Countdown to={listing.deliveryDueAt} className="font-medium text-ink" />. post an update with the brand in place, then tag it as proof.
             </p>

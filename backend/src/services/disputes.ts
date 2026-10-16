@@ -8,6 +8,7 @@ import { calculateDisputeSplit } from "../domain/fees.js";
 import { nextSpotState } from "../domain/spot-state.js";
 import { associatedTokenAddress, pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
+import { ChainError } from "../chain/errors.js";
 import { cosigners, type TxSigner } from "../chain/signers.js";
 import { squadsPending, type SquadsProposer } from "../chain/squads.js";
 import type { ChainSpotStatus } from "./reconciler.js";
@@ -39,8 +40,53 @@ export interface DisputeDeps {
   // Reads the program's event from the confirmed tx; amounts recorded are what actually moved.
   readTxEvent?: TxEventReader;
   readDisputeTimeoutSeconds: () => Promise<number>;
+  // The spot's on-chain DisputeRecord: who paid its rent (and gets it back) and when it times out.
+  // Null when there is no record. Without a reader, the payer recorded at raise and the config timeout are used.
+  readDisputeRecord?: (spot: PublicKey) => Promise<ChainDisputeRecord | null>;
+  // Fallback when the platform can't co-sign a dispute: the buyer's wallet pays the rent and fee itself.
+  // The program allows that only once proof exists. Off unless enabled (BUYER_PAID_DISPUTES).
+  buyerPaidDisputes?: boolean;
+  // Lamports per account, null when missing; checks the buyer can cover the dispute rent first.
+  readLamports?: (addresses: PublicKey[]) => Promise<Array<number | null>>;
   listingBaseUrl: string;
   now?: () => Date;
+}
+
+export interface ChainDisputeRecord {
+  rentPayer: PublicKey;
+  timesOutAt: Date;
+}
+
+// Rent for a DisputeRecord (8 + 628 bytes), and that plus a margin for the network fee when the buyer pays.
+export const DISPUTE_RENT_LAMPORTS = 5_261_760;
+export const BUYER_DISPUTE_MIN_LAMPORTS = DISPUTE_RENT_LAMPORTS + 10_000;
+// Multisig members need time to approve and execute, and resolve_dispute fails once the timeout passes.
+export const SQUADS_RESOLVE_MIN_LEAD_MS = 6 * 60 * 60 * 1000;
+
+const sol = (lamports: number) => (lamports / 1_000_000_000).toFixed(4);
+
+function formatRemaining(ms: number) {
+  const minutes = Math.max(0, Math.floor(ms / 60_000));
+  const hours = Math.floor(minutes / 60);
+  return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
+}
+
+// Where the dispute's rent goes back to and when it times out: the chain record when readable, else
+// the payer recorded at raise (the platform for disputes raised before buyer-paid rent existed).
+async function disputeOnChain(deps: DisputeDeps, spotKey: PublicKey, dispute: { id: string; spotId: string; openedAt: Date }) {
+  const record = deps.readDisputeRecord ? await deps.readDisputeRecord(spotKey) : undefined;
+  if (record === null) throw new DisputeError("the dispute is no longer open on-chain; reconciling");
+  if (record) return record;
+  const raised = await deps.db
+    .select({ data: spotEvents.data })
+    .from(spotEvents)
+    .where(and(eq(spotEvents.spotId, dispute.spotId), eq(spotEvents.type, "dispute_raised")));
+  const recorded = raised
+    .map((row) => row.data as { disputeId?: string; rentPayer?: string } | null)
+    .find((data) => data?.disputeId === dispute.id);
+  const rentPayer = recorded?.rentPayer ? new PublicKey(recorded.rentPayer) : deps.rentPayer.publicKey;
+  const timesOutAt = new Date(dispute.openedAt.getTime() + (await deps.readDisputeTimeoutSeconds()) * 1000);
+  return { rentPayer, timesOutAt };
 }
 
 const URI_MAX_BYTES = 200;
@@ -73,6 +119,13 @@ function listingUri(base: string, handle: string, slug: string, fragment: string
 }
 
 const sha256 = (value: string) => createHash("sha256").update(value).digest();
+
+// The platform could not pay for a dispute: its key failed to sign, or it ran out of SOL (preflight
+// fails, so nothing landed). Any other failure, including the buyer's wallet, is reported as is.
+function platformCannotPay(error: unknown, signFailure: unknown) {
+  if (signFailure !== undefined) return true;
+  return error instanceof ChainError && /not enough SOL/i.test(error.message);
+}
 
 // Buyer disputes after the delivery deadline: anytime if no proof arrived,
 // or within the review window if the creator submitted proof.
@@ -108,31 +161,76 @@ export async function raiseDispute(
   const spotKey = new PublicKey(spot.chainAddress!);
   const disputeKey = pdas(deps.program.programId).dispute(spotKey);
 
-  const instruction = await deps.program.methods
-    .raiseDispute(Array.from(hash), uri)
-    .accountsStrict({
-      buyer: buyer.publicKey,
-      config: pdas(deps.program.programId).config(),
-      // The platform pays the dispute's rent, so buyers never need SOL.
-      rentPayer: deps.rentPayer.publicKey,
-      listing: new PublicKey(listing.chainAddress!),
-      spot: spotKey,
-      dispute: disputeKey,
-      systemProgram: SystemProgram.programId,
-    })
-    .instruction();
+  const raiseInstruction = (rentPayer: PublicKey) =>
+    deps.program.methods
+      .raiseDispute(Array.from(hash), uri)
+      .accountsStrict({
+        buyer: buyer.publicKey,
+        config: pdas(deps.program.programId).config(),
+        rentPayer,
+        listing: new PublicKey(listing.chainAddress!),
+        spot: spotKey,
+        dispute: disputeKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
   // A dispute can be withdrawn and raised again, so the key includes the attempt count.
   const previous = await deps.db.select({ id: disputes.id }).from(disputes).where(eq(disputes.spotId, spot.id));
-  const tx = await deps.runTx({
-    op: "raise_dispute",
-    idempotencyKey: `dispute:${spot.id}:${previous.length + 1}`,
-    listingId: listing.id,
-    spotId: spot.id,
-    actorId: buyerId,
-    instructions: [instruction],
-    feePayer: deps.feePayer,
-    signers: cosigners(deps.feePayer, buyer, deps.rentPayer),
+  const idempotencyKey = `dispute:${spot.id}:${previous.length + 1}`;
+
+  // Normal path: the platform pays the dispute's rent and co-signs, so buyers never need SOL.
+  // Platform keys are wrapped so a failure to sign is told apart from the buyer's wallet failing.
+  let platformFailure: unknown;
+  const watched = (signer: TxSigner): TxSigner => ({
+    publicKey: signer.publicKey,
+    sign: async (transaction) => {
+      try {
+        return await signer.sign(transaction);
+      } catch (error) {
+        platformFailure = error;
+        throw error;
+      }
+    },
   });
+  const feePayer = watched(deps.feePayer);
+  let rentPayer = deps.rentPayer.publicKey;
+  let tx: ChainTxResult;
+  try {
+    tx = await deps.runTx({
+      op: "raise_dispute",
+      idempotencyKey,
+      listingId: listing.id,
+      spotId: spot.id,
+      actorId: buyerId,
+      instructions: [await raiseInstruction(deps.rentPayer.publicKey)],
+      feePayer,
+      signers: cosigners(feePayer, buyer, watched(deps.rentPayer)),
+    });
+  } catch (error) {
+    if (!platformCannotPay(error, platformFailure)) throw error;
+    // Fallback: the buyer's wallet pays the fee and the dispute's rent, which the program allows
+    // once proof exists, so the platform being unable to sign can't block a dispute.
+    if (!deps.buyerPaidDisputes || !spot.proofSubmittedAt) {
+      throw new DisputeError("disputes can't be opened right now; please try again later", 503);
+    }
+    const [lamports] = deps.readLamports ? await deps.readLamports([buyer.publicKey]) : [null];
+    if ((lamports ?? 0) < BUYER_DISPUTE_MIN_LAMPORTS) {
+      throw new DisputeError(
+        `the platform can't cover this dispute right now. you can open it yourself with ${sol(BUYER_DISPUTE_MIN_LAMPORTS)} SOL in your wallet (it comes back when the dispute closes); you have ${sol(lamports ?? 0)} SOL`,
+        409,
+      );
+    }
+    rentPayer = buyer.publicKey;
+    tx = await deps.runTx({
+      op: "raise_dispute",
+      idempotencyKey: `${idempotencyKey}:buyer-paid`,
+      listingId: listing.id,
+      spotId: spot.id,
+      actorId: buyerId,
+      instructions: [await raiseInstruction(buyer.publicKey)],
+      feePayer: buyer,
+    });
+  }
 
   return deps.db.transaction(async (trx) => {
     const to = nextSpotState(spot.state, "dispute_raised");
@@ -153,9 +251,10 @@ export async function raiseDispute(
       type: "dispute_raised",
       actorId: buyerId,
       chainTxId: tx.chainTxId,
-      data: { disputeId: dispute.id },
+      // Who paid the dispute's rent: it goes back there on withdraw, resolve or timeout.
+      data: { disputeId: dispute.id, rentPayer: rentPayer.toBase58() },
     });
-    return { spot: updated, dispute, signature: tx.signature };
+    return { spot: updated, dispute, signature: tx.signature, buyerPaidRent: rentPayer.equals(buyer.publicKey) };
   });
 }
 
@@ -165,11 +264,13 @@ export async function withdrawDispute(deps: DisputeDeps, buyerId: string, buyer:
   const dispute = await openDispute(deps.db, spotId);
   if (dispute.buyerId !== buyerId) throw new DisputeError("only the sponsor can withdraw this dispute", 403);
   const spotKey = new PublicKey(spot.chainAddress!);
+  const { rentPayer } = await disputeOnChain(deps, spotKey, dispute);
   const instruction = await deps.program.methods
     .withdrawDispute()
     .accountsStrict({
       buyer: buyer.publicKey,
-      rentPayer: deps.rentPayer.publicKey,
+      // The rent goes back to whoever paid it: the platform, or the buyer on the fallback path.
+      rentPayer,
       listing: new PublicKey(listing.chainAddress!),
       spot: spotKey,
       dispute: pdas(deps.program.programId).dispute(spotKey),
@@ -320,6 +421,17 @@ export async function resolveDispute(
   const vault = new PublicKey(spot.vaultAddress!);
   const seller = new PublicKey(listing.sellerWallet!);
   const buyer = new PublicKey(spot.buyerWallet!);
+  // The program refuses resolve_dispute from the timeout on; only the full refund remains then.
+  const { rentPayer: disputeRentPayer, timesOutAt } = await disputeOnChain(deps, spotKey, dispute);
+  const remainingMs = timesOutAt.getTime() - now.getTime();
+  if (remainingMs <= 0) {
+    throw new DisputeError("this dispute has timed out and can no longer be resolved; refund the sponsor in full instead");
+  }
+  if (squads && remainingMs < SQUADS_RESOLVE_MIN_LEAD_MS) {
+    throw new DisputeError(
+      `only ${formatRemaining(remainingMs)} left before this dispute times out at ${timesOutAt.toISOString()}; a multisig proposal needs at least ${SQUADS_RESOLVE_MIN_LEAD_MS / 3_600_000} hours to be approved and executed, so let it time out (full refund to the sponsor)`,
+    );
+  }
   const snapshot = await deps.readListingSnapshot(listingKey);
   const balance = await deps.readVaultBalance(vault);
   if (balance <= 0n) throw new DisputeError("vault is empty; reconciling");
@@ -340,6 +452,7 @@ export async function resolveDispute(
     .accountsStrict({
       resolver: authority,
       rentPayer: deps.rentPayer.publicKey,
+      disputeRentPayer,
       config: addresses.config(),
       listing: listingKey,
       spot: spotKey,
@@ -398,7 +511,7 @@ export async function resolveDispute(
       .where(and(eq(disputes.id, dispute.id), eq(disputes.state, "open")))
       .returning();
     if (!updated) throw new DisputeError("dispute changed while proposing; reconciling", 500);
-    return { spot, dispute: updated, pending, signature: tx.signature };
+    return { spot, dispute: updated, pending, signature: tx.signature, timesOutAt };
   }
 
   const tx = await deps.runTx({
@@ -500,12 +613,12 @@ export async function timeoutDispute(deps: DisputeDeps, spotId: string, triggere
   const now = deps.now?.() ?? new Date();
   const { spot, listing } = await loadSpot(deps.db, spotId);
   const dispute = await openDispute(deps.db, spotId);
-  const timeoutSeconds = await deps.readDisputeTimeoutSeconds();
-  const timesOutAt = new Date(dispute.openedAt.getTime() + timeoutSeconds * 1000);
-  if (now < timesOutAt) throw new DisputeError(`auto-refund opens ${timesOutAt.toISOString()}`);
-
   const listingKey = new PublicKey(listing.chainAddress!);
   const spotKey = new PublicKey(spot.chainAddress!);
+  // The chain snapshots the timeout at raise, so later config changes don't move it.
+  const { rentPayer: disputeRentPayer, timesOutAt } = await disputeOnChain(deps, spotKey, dispute);
+  if (now < timesOutAt) throw new DisputeError(`auto-refund opens ${timesOutAt.toISOString()}`);
+
   const vault = new PublicKey(spot.vaultAddress!);
   const buyer = new PublicKey(spot.buyerWallet!);
   const balance = await deps.readVaultBalance(vault);
@@ -520,6 +633,7 @@ export async function timeoutDispute(deps: DisputeDeps, spotId: string, triggere
       .accountsStrict({
         caller: deps.feePayer.publicKey,
         rentPayer: deps.rentPayer.publicKey,
+        disputeRentPayer,
         config: addresses.config(),
         listing: listingKey,
         spot: spotKey,

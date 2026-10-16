@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client.js";
 import { disputes, listingPhotos, listings, mediaAssets, settlements, spots, users } from "../db/schema.js";
+import { ADMIN_APPROVAL_AFTER_DAYS, needsAdminApproval } from "./listing-lifecycle.js";
 
 type ListingRow = typeof listings.$inferSelect;
 type SpotRow = typeof spots.$inferSelect;
@@ -175,8 +176,14 @@ export async function reviewQueue(db: Db) {
     .where(eq(listings.state, "in_review"))
     .orderBy(asc(listings.updatedAt));
   const hydrated = await hydrate(db, rows.map((row) => row.listing));
-  return hydrated.map((listing, index) => ({ ...listing, seller: publicSeller(rows[index].seller) }));
+  return hydrated.map((listing, index) => ({ ...listing, seller: publicSeller(rows[index].seller), ...approvalRule(listing.deliveryDueAt) }));
 }
+
+// Delivery more than ADMIN_APPROVAL_AFTER_DAYS out can only be approved by an admin.
+const approvalRule = (deliveryDueAt: Date, now = new Date()) => ({
+  needsAdminApproval: needsAdminApproval(deliveryDueAt, now),
+  adminApprovalAfterDays: ADMIN_APPROVAL_AFTER_DAYS,
+});
 
 // A creator's track record for reviewers, excluding the listing under review: how many listings they
 // submitted and got live, and what happened to the spots sponsors paid for.
@@ -232,7 +239,12 @@ export async function reviewListingDetail(db: Db, listingId: string) {
   const [row] = await db.select({ listing: listings, seller: sellerColumns }).from(listings).innerJoin(users, eq(users.id, listings.sellerId)).where(eq(listings.id, listingId));
   if (!row) return undefined;
   const [listing] = await hydrate(db, [row.listing]);
-  return { ...listing, seller: publicSeller(row.seller), sellerHistory: await sellerHistory(db, row.listing.sellerId, row.listing.id) };
+  return {
+    ...listing,
+    seller: publicSeller(row.seller),
+    sellerHistory: await sellerHistory(db, row.listing.sellerId, row.listing.id),
+    ...approvalRule(listing.deliveryDueAt),
+  };
 }
 
 const SPONSORED = ["funded", "delivered", "disputed", "settled"];

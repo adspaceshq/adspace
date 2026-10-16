@@ -7,6 +7,7 @@ import { nextSpotState } from "../domain/spot-state.js";
 import { pdas, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import { cosigners, type TxSigner } from "../chain/signers.js";
+import { formatUtc } from "./notifications.js";
 
 export class ProofError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -38,7 +39,8 @@ export function proofHash(spotId: string, posts: Array<{ id: string; url: string
 }
 
 // The creator tags posts as delivery proof for a spot; their hash is recorded on-chain.
-// The program accepts proof only between the listing deadline and the delivery deadline.
+// The program accepts proof only from artwork close (when the sponsor's artwork is final) until the
+// delivery deadline; anti-snipe extensions never move the deadline past artwork close.
 export async function submitSpotProof(deps: ProofDeps, sellerId: string, seller: TxSigner, spotId: string, postIds: string[]) {
   const now = deps.now?.() ?? new Date();
   const ids = [...new Set(postIds)];
@@ -54,7 +56,7 @@ export async function submitSpotProof(deps: ProofDeps, sellerId: string, seller:
   const { spot, listing } = row;
   if (listing.sellerId !== sellerId) throw new ProofError("only the creator can submit proof", 403);
   if (spot.state !== "funded") throw new ProofError("this spot isn't waiting for delivery", 409);
-  if (now < listing.deadline) throw new ProofError("proof opens after the listing closes", 409);
+  if (now < listing.artworkDueAt) throw new ProofError(`proof opens at ${formatUtc(listing.artworkDueAt)}, when the artwork window closes`, 409);
   if (now >= listing.deliveryDueAt) throw new ProofError("the delivery deadline has passed", 409);
   if (!listing.chainAddress || !spot.chainAddress) throw new ProofError("spot is not published on-chain", 409);
   if (listing.sellerWallet !== seller.publicKey.toBase58()) throw new ProofError("submit proof with your listing wallet", 409);

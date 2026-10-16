@@ -114,6 +114,64 @@ test("drafts validate schedule, spots and auction rules", async () => {
   assert.equal(listing.deliveryDueAt.getTime(), listing.artworkDueAt.getTime() + 7 * DAY);
 });
 
+test("drafts mirror the program's schedule and increment bounds", async () => {
+  const seller = await createUser();
+  const deadline = new Date(NOW.getTime() + 3 * DAY);
+  // Delivery at most 365 days out (hard, on-chain).
+  await assert.rejects(
+    createDraft(db, seller.id, draftInput({ deadline, deliveryDueAt: new Date(NOW.getTime() + 366 * DAY) }), NOW),
+    /within 365 days/,
+  );
+  await createDraft(db, seller.id, draftInput({ deadline, deliveryDueAt: new Date(NOW.getTime() + 365 * DAY) }), NOW);
+  // At least an hour between artwork close and delivery.
+  const artworkDueAt = new Date(deadline.getTime() + DAY);
+  await assert.rejects(
+    createDraft(db, seller.id, draftInput({ deadline, artworkDueAt, deliveryDueAt: new Date(artworkDueAt.getTime() + 59 * 60 * 1000) }), NOW),
+    /at least 1 hour/,
+  );
+  await createDraft(db, seller.id, draftInput({ deadline, artworkDueAt, deliveryDueAt: new Date(artworkDueAt.getTime() + 60 * 60 * 1000) }), NOW);
+  // Bid step at most 1,000,000 USDC.
+  await assert.rejects(
+    createDraft(db, seller.id, draftInput({ mode: "auction", minIncrement: 1_000_000n * USDC + 1n }), NOW),
+    /at most 1,000,000 USDC/,
+  );
+  await createDraft(db, seller.id, draftInput({ mode: "auction", minIncrement: 1_000_000n * USDC }), NOW);
+});
+
+test("delivery more than 90 days out needs an admin to approve; up to 90 a reviewer can", async () => {
+  const seller = await createUser();
+  const reviewer = await createUser();
+  const submitted = async (deliveryDays: number) => {
+    const { listing } = await createDraft(
+      db,
+      seller.id,
+      draftInput({ photoAssetIds: [await photoFor(seller.id)], deliveryDueAt: new Date(NOW.getTime() + deliveryDays * DAY) }),
+      NOW,
+    );
+    await submitForReview(db, seller.id, listing.id);
+    return listing;
+  };
+  const long = await submitted(200);
+  await assert.rejects(reviewListing(db, reviewer.id, long.id, approve, FLOOR, NOW), (error: ListingError) => {
+    assert.equal(error.status, 403);
+    assert.match(error.message, /listings longer than 90 days need an admin to approve/);
+    return true;
+  });
+  // An admin can approve it.
+  const approved = await reviewListing(db, reviewer.id, long.id, approve, FLOOR, NOW, { isAdmin: true });
+  assert.equal(approved.state, "approved");
+  // Shortening delivery to within 90 days lets a reviewer approve.
+  const shortened = await submitted(200);
+  const ok = await reviewListing(db, reviewer.id, shortened.id, { ...approve, deliveryDueAt: new Date(NOW.getTime() + 90 * DAY) }, FLOOR, NOW);
+  assert.equal(ok.state, "approved");
+  // Nobody, admin included, can approve beyond the on-chain 365-day horizon.
+  const tooLong = await submitted(300);
+  await assert.rejects(
+    reviewListing(db, reviewer.id, tooLong.id, { ...approve, deliveryDueAt: new Date(NOW.getTime() + 400 * DAY) }, FLOOR, NOW, { isAdmin: true }),
+    /within 365 days/,
+  );
+});
+
 test("fee policy mirrors the program rules", () => {
   assert.throws(() => validateFeePolicy("fixed", { feeBps: 200, upliftFeeBps: 0, maxFeeBps: 200 }, FLOOR), /floor/);
   assert.throws(() => validateFeePolicy("fixed", { feeBps: 500, upliftFeeBps: 100, maxFeeBps: 500 }, FLOOR), /flat/);
@@ -153,6 +211,13 @@ async function approvedListing() {
   await reviewListing(db, reviewer.id, listing.id, approve, FLOOR, NOW);
   return { seller, listing, sellerSigner: keypairSigner(Keypair.generate()) };
 }
+
+test("publishing refuses a rent payer that isn't the review authority before any chain call", async () => {
+  const { seller, listing, sellerSigner } = await approvedListing();
+  const other = keypairSigner(Keypair.generate());
+  await assert.rejects(acceptTermsAndPublish({ ...publishDeps(), rentPayer: other }, seller.id, listing.id, sellerSigner), /review authority/);
+  assert.equal(sent.length, 0);
+});
 
 test("publishing creates the listing and every spot on-chain", async () => {
   const { seller, listing, sellerSigner } = await approvedListing();

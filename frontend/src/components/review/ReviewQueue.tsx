@@ -82,7 +82,10 @@ function ListingsTab() {
               <span className="size-16 shrink-0 rounded-control bg-ink/5" />
             )}
             <div className="min-w-0 flex-1">
-              <p className="truncate text-body font-semibold">{listing.title}</p>
+              <p className="flex items-center gap-2 text-body font-semibold">
+                <span className="truncate">{listing.title}</span>
+                {listing.needsAdminApproval && <Badge tone="warning">admin approval · over {listing.adminApprovalAfterDays ?? 90} days</Badge>}
+              </p>
               <p className="flex items-center gap-1.5 truncate text-small text-muted">
                 <SellerAvatar seller={listing.seller} size={16} />
                 <UserLink handle={listing.seller.handle} nested /> · {listing.spots.length} spots · {listing.mode}

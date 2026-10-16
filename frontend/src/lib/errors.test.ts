@@ -36,6 +36,17 @@ describe('userErrorMessage', () => {
     expect(userErrorMessage(new Error('That service is unavailable'))).not.toMatch(/environment/)
   })
 
+  it('maps the new program errors (6049-6052) and keeps the proof and approval rules readable', () => {
+    expect(userErrorMessage(new ApiError("Only the review authority can pay a listing's rent.", 409))).toMatch(/platform setup problem/)
+    expect(userErrorMessage(new ApiError('Artwork window is still open; proof is accepted from artwork close.', 409))).toMatch(/proof opens when the artwork window closes/)
+    expect(userErrorMessage(new ApiError('Dispute timeout has passed; only the timeout refund remains.', 409))).toMatch(/timed out, so it can't be resolved/)
+    expect(userErrorMessage(new ApiError('The current top bidder cannot outbid itself.', 409))).toBe("you're already the top bidder.")
+    expect(userErrorMessage(new ApiError("you're already the top bidder", 409))).toBe("you're already the top bidder.")
+    expect(userErrorMessage(new ApiError('only 5h 2m left before this dispute times out at 2026-10-20T10:00:00.000Z; a multisig proposal needs at least 6 hours to be approved and executed, so let it time out (full refund to the sponsor)', 409))).toMatch(/too little time is left/)
+    expect(userErrorMessage(new ApiError('proof opens at oct 16, 21:37 utc, when the artwork window closes', 409))).toBe('proof opens at oct 16, 21:37 utc, when the artwork window closes')
+    expect(userErrorMessage(new ApiError('listings longer than 90 days need an admin to approve', 403))).toBe('listings longer than 90 days need an admin to approve')
+  })
+
   it('uses status defaults where the server text is missing or internal', () => {
     expect(userErrorMessage(new ApiError('sign in required', 401))).toBe('sign in again to continue.')
     expect(userErrorMessage(new ApiError('something went wrong', 500))).toBe(SERVER_MESSAGE)

@@ -21,7 +21,7 @@ export async function seedUser(db: Db, prefix = "user") {
 // A published listing with one spot; `funded` gives the spot a buyer.
 export async function seedListing(
   db: Db,
-  options: { deadline: Date; deliveryDueAt: Date; mode?: "fixed" | "auction"; funded?: boolean },
+  options: { deadline: Date; deliveryDueAt: Date; artworkDueAt?: Date; mode?: "fixed" | "auction"; funded?: boolean },
 ) {
   const seller = await seedUser(db, "seller");
   const mode = options.mode ?? "fixed";
@@ -35,7 +35,7 @@ export async function seedListing(
       mode,
       state: "published",
       deadline: options.deadline,
-      artworkDueAt: options.deadline,
+      artworkDueAt: options.artworkDueAt ?? options.deadline,
       deliveryDueAt: options.deliveryDueAt,
       minIncrement: mode === "auction" ? 10n * USDC : 0n,
       feeBps: mode === "auction" ? 250 : 500,

@@ -11,6 +11,21 @@ import { notify } from "./notifications.js";
 
 // Smallest auction bid step, in USDC base units (6 decimals); mirrors the program's MIN_BID_INCREMENT.
 export const MIN_BID_INCREMENT = 10_000n;
+// Largest bid step (1,000,000 USDC); mirrors the program's MAX_BID_INCREMENT.
+export const MAX_BID_INCREMENT = 1_000_000_000_000n;
+// The program refuses delivery deadlines further out than this (MAX_LISTING_HORIZON_SECONDS).
+export const MAX_LISTING_HORIZON_DAYS = 365;
+// Creators get at least this long between artwork close and delivery (MIN_PROOF_WINDOW_SECONDS).
+export const MIN_PROOF_WINDOW_MS = 60 * 60 * 1000;
+// Product rule: any reviewer can approve delivery up to this many days ahead; beyond it (up to the
+// on-chain horizon) only an admin can.
+export const ADMIN_APPROVAL_AFTER_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Whether approving a listing with this delivery date needs an admin rather than a reviewer.
+export function needsAdminApproval(deliveryDueAt: Date, now = new Date()): boolean {
+  return deliveryDueAt.getTime() > now.getTime() + ADMIN_APPROVAL_AFTER_DAYS * DAY_MS;
+}
 
 export class ListingError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -77,10 +92,17 @@ export function validateFeePolicy(mode: "fixed" | "auction", fees: FeePolicy, co
   }
 }
 
+// Mirrors the program's create_listing checks, so a listing that passes here can be published.
 function validateSchedule(deadline: Date, artworkDueAt: Date, deliveryDueAt: Date, now: Date): void {
   if (deadline <= now) throw new ListingError("deadline must be in the future");
   if (artworkDueAt < deadline) throw new ListingError("artwork due date can't be before the deadline");
   if (deliveryDueAt <= artworkDueAt) throw new ListingError("delivery date must be after the artwork due date");
+  if (deliveryDueAt.getTime() - artworkDueAt.getTime() < MIN_PROOF_WINDOW_MS) {
+    throw new ListingError("leave at least 1 hour between the artwork due date and delivery");
+  }
+  if (deliveryDueAt.getTime() > now.getTime() + MAX_LISTING_HORIZON_DAYS * DAY_MS) {
+    throw new ListingError(`delivery must be within ${MAX_LISTING_HORIZON_DAYS} days`);
+  }
 }
 
 function slugify(title: string): string {
@@ -145,6 +167,7 @@ function normalizeDraft(input: DraftInput, now: Date) {
   if (input.mode === "auction" && !doubleUp && minIncrement < MIN_BID_INCREMENT) {
     throw new ListingError("the minimum bid increment is 0.01 USDC");
   }
+  if (minIncrement > MAX_BID_INCREMENT) throw new ListingError("the minimum bid increment can be at most 1,000,000 USDC");
   const photoIds = [...new Set(input.photoAssetIds ?? [])];
   if (photoIds.length > MAX_PHOTOS) throw new ListingError(`add at most ${MAX_PHOTOS} photos`);
   const spotRows = input.spots.map((spot, index) => {
@@ -271,6 +294,8 @@ export async function reviewListing(
   decision: ReviewDecision,
   configFloorBps: number,
   now = new Date(),
+  // Admins can approve delivery more than ADMIN_APPROVAL_AFTER_DAYS out; reviewers can't.
+  reviewer: { isAdmin?: boolean } = {},
 ) {
   const [listing] = await db.select().from(listings).where(eq(listings.id, listingId));
   if (!listing) throw new ListingError("listing not found", 404);
@@ -287,6 +312,9 @@ export async function reviewListing(
     }
     const deliveryDueAt = decision.deliveryDueAt ?? listing.deliveryDueAt;
     validateSchedule(listing.deadline, listing.artworkDueAt, deliveryDueAt, now);
+    if (needsAdminApproval(deliveryDueAt, now) && !reviewer.isAdmin) {
+      throw new ListingError(`listings longer than ${ADMIN_APPROVAL_AFTER_DAYS} days need an admin to approve`, 403);
+    }
     changes = {
       ...base,
       state: "approved",
@@ -352,6 +380,10 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
     throw new ListingError("this listing isn't approved yet", 409);
   }
   if (listing.deadline <= now) throw new ListingError("the deadline has passed; ask for a new review", 409);
+  // create_listing requires the rent payer to be the review authority (the reviewer key).
+  if (!deps.rentPayer.publicKey.equals(deps.reviewer.publicKey)) {
+    throw new ListingError("the listing rent payer must be the review authority key", 500);
+  }
   if (listing.sellerWallet && listing.sellerWallet !== seller.publicKey.toBase58()) {
     throw new ListingError("publish with the wallet you started with", 409);
   }
