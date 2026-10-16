@@ -4,16 +4,17 @@ import PrivyAppProvider from "@/components/PrivyAppProvider";
 import ToastProvider from "@/components/ToastProvider";
 import { QueryProvider } from "@/lib/query";
 import { SessionProvider } from "@/lib/session";
+import { CLUSTER_TITLE_SUFFIX } from "@/lib/chain-config";
 import "./globals.css";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://adspaces.fun";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: "adspaces (devnet) — sell ad space on anything", template: "%s · adspaces (devnet)" },
+  title: { default: `adspaces${CLUSTER_TITLE_SUFFIX} — sell ad space on anything`, template: `%s · adspaces${CLUSTER_TITLE_SUFFIX}` },
   description: "Sell ad space on anything people see. Sponsors pay in USDC, held in escrow until delivery.",
   icons: { icon: "/logo.svg" },
-  openGraph: { type: "website", siteName: "adspaces (devnet)", url: "/" },
+  openGraph: { type: "website", siteName: `adspaces${CLUSTER_TITLE_SUFFIX}`, url: "/" },
   twitter: { card: "summary_large_image", site: "@adspacesfun" },
 };
 

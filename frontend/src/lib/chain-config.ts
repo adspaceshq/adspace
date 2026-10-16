@@ -19,3 +19,9 @@ export function explorerAddressUrl(address: string): string {
   const base = `https://explorer.solana.com/address/${address}`
   return ADSPACES_CLUSTER === 'mainnet-beta' ? base : `${base}?cluster=${encodeURIComponent(ADSPACES_CLUSTER)}`
 }
+
+/** True on any cluster where USDC is test money (devnet, testnet, localnet); false on mainnet. */
+export const IS_TEST_CLUSTER = ADSPACES_CLUSTER !== 'mainnet-beta'
+
+/** " (devnet)" on test clusters, "" on mainnet; appended to page titles. */
+export const CLUSTER_TITLE_SUFFIX = IS_TEST_CLUSTER ? ` (${ADSPACES_CLUSTER})` : ''
