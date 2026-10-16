@@ -4,9 +4,22 @@ import { PrivyProvider } from '@privy-io/react-auth';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 import { PRIVY_APP_ID } from '@/lib/privy';
 
-const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL;
-const websocketUrl = process.env.NEXT_PUBLIC_SOLANA_WEBSOCKET_URL
-  ?? rpcUrl?.replace(/^http/, 'ws');
+// The browser never talks to our paid RPC (audit F-14). The server builds, submits and confirms every
+// transaction; the browser only signs headlessly (showWalletUIs: false), which makes no RPC calls.
+// Privy still wants an endpoint per chain for its optional wallet screens, so it gets the public cluster
+// ones. The paid key stays server-side in SOLANA_RPC_URL; never put an RPC URL in a NEXT_PUBLIC_ variable.
+const solanaRpcs = {
+  'solana:devnet': {
+    rpc: createSolanaRpc('https://api.devnet.solana.com'),
+    rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.devnet.solana.com'),
+    blockExplorerUrl: 'https://explorer.solana.com?cluster=devnet',
+  },
+  'solana:mainnet': {
+    rpc: createSolanaRpc('https://api.mainnet-beta.solana.com'),
+    rpcSubscriptions: createSolanaRpcSubscriptions('wss://api.mainnet-beta.solana.com'),
+    blockExplorerUrl: 'https://explorer.solana.com',
+  },
+};
 
 export default function PrivyAppProvider({ children }: { children: React.ReactNode }) {
   if (!PRIVY_APP_ID) {
@@ -18,8 +31,6 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
     }
     return <>{children}</>;
   }
-  if (!rpcUrl || !websocketUrl) throw new Error('Solana RPC and websocket configuration are required');
-
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
@@ -36,15 +47,7 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
           ethereum: { createOnLogin: 'off' },
           solana: { createOnLogin: 'all-users' },
         },
-        solana: {
-          rpcs: {
-            'solana:devnet': {
-              rpc: createSolanaRpc(rpcUrl),
-              rpcSubscriptions: createSolanaRpcSubscriptions(websocketUrl),
-              blockExplorerUrl: 'https://explorer.solana.com?cluster=devnet',
-            },
-          },
-        },
+        solana: { rpcs: solanaRpcs },
       }}
     >
       {children}
