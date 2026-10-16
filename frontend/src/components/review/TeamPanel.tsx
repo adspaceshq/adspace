@@ -11,6 +11,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { UserLink } from "@/components/ui/UserLink";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
+import { userErrorMessage } from "@/lib/errors";
 
 // Admin-only: grant or remove reviewer/admin access. Roles are stored by account id, so a handle
 // typed here is only a lookup. Members need a linked X account and a verified email.
@@ -72,7 +73,7 @@ export function TeamPanel() {
           <UserPlus className="size-4" aria-hidden /> add
         </Button>
       </form>
-      {add.isError && <p className="text-small text-danger">{add.error.message}</p>}
+      {add.isError && <p className="text-small text-danger">{userErrorMessage(add.error)}</p>}
 
       {team.isPending ? (
         <Skeleton className="h-24 w-full" />
@@ -123,7 +124,7 @@ export function TeamPanel() {
           </>
         }
       >
-        {remove.isError ? <p className="text-small text-danger">{remove.error.message}</p> : <p className="text-small text-muted">reviews and decisions they already made stay on record.</p>}
+        {remove.isError ? <p className="text-small text-danger">{userErrorMessage(remove.error)}</p> : <p className="text-small text-muted">reviews and decisions they already made stay on record.</p>}
       </Modal>
     </Card>
   );

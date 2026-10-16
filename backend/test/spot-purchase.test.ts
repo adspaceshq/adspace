@@ -7,7 +7,7 @@ import { createProgram } from "../src/chain/program.js";
 import type { ChainTxRequest } from "../src/chain/runner.js";
 import { keypairSigner } from "../src/chain/signers.js";
 import type { Db } from "../src/db/client.js";
-import { bids, chainTxs, listings, spotEvents, spots, users } from "../src/db/schema.js";
+import { bids, chainTxs, listings, spotEvents, spots, termsAcceptances, users } from "../src/db/schema.js";
 import { claimSpot, minimumBid, placeBid, PurchaseError, type PurchaseDeps } from "../src/services/spot-purchase.js";
 import { createTestDb } from "./helpers/db.js";
 
@@ -241,4 +241,31 @@ test("a higher bid replaces the spot's brand with the new leader's", async () =>
   const [stored] = await db.select().from(spots).where(eq(spots.id, spot.id));
   assert.equal(stored.brand?.name, "Bobco");
   assert.equal(stored.brand?.link, "https://bob.example");
+});
+
+test("claims and bids record the sponsor's terms acceptance, one row per purchase", async () => {
+  const fixed = await createSpot("fixed");
+  const buyer = await createUser(`buyer_${randomUUID().slice(0, 8)}`);
+  await claimSpot(deps(), fixed.spot.id, { ...buyer.purchaser, termsVersion: "v1" }, BRAND);
+  const claimRows = await db.select().from(termsAcceptances).where(eq(termsAcceptances.spotId, fixed.spot.id));
+  assert.deepEqual(
+    claimRows.map((row) => [row.userId, row.context, row.termsVersion]),
+    [[buyer.user.id, "claim", "v1"]],
+  );
+  assert.equal(claimRows[0].acceptedAt.getTime(), NOW.getTime());
+
+  // Each bidder keeps their own row even after being outbid (the spot row only holds the leader).
+  const auction = await createSpot("auction");
+  const alice = await createUser(`alice_${randomUUID().slice(0, 8)}`);
+  const bob = await createUser(`bob_${randomUUID().slice(0, 8)}`);
+  await placeBid(deps(), auction.spot.id, { ...alice.purchaser, termsVersion: "v1" }, 100n * USDC, BRAND);
+  await placeBid(deps(), auction.spot.id, { ...bob.purchaser, termsVersion: "v1" }, 110n * USDC, BRAND);
+  const bidRows = await db.select().from(termsAcceptances).where(eq(termsAcceptances.spotId, auction.spot.id));
+  assert.deepEqual(bidRows.map((row) => row.userId).sort(), [alice.user.id, bob.user.id].sort());
+  assert.ok(bidRows.every((row) => row.context === "bid"));
+
+  // Refused before the chain: no consent row either.
+  const late = await createUser(`late_${randomUUID().slice(0, 8)}`);
+  await assert.rejects(placeBid(deps(), auction.spot.id, { ...late.purchaser, termsVersion: "v1" }, 1n * USDC, BRAND), /at least/);
+  assert.equal((await db.select().from(termsAcceptances).where(eq(termsAcceptances.userId, late.user.id))).length, 0);
 });

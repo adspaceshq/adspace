@@ -21,6 +21,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { SpotPhotos } from "@/components/ui/SpotPhotos";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
+import { userErrorMessage } from "@/lib/errors";
 
 const toLocal = (iso: string) => {
   const date = new Date(iso);
@@ -74,7 +75,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
       ]);
       router.push("/review");
     },
-    onError: (cause) => setError(cause.message),
+    onError: (cause) => setError(userErrorMessage(cause)),
   });
 
   const ownListing = session?.id === listing.sellerId;

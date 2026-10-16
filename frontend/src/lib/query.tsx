@@ -25,6 +25,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
 // Central query keys so mutations invalidate the right views.
 export const queryKeys = {
   session: ["session"] as const,
+  status: ["status"] as const,
   listings: (filters: Record<string, unknown> = {}) => ["listings", filters] as const,
   listing: (slug: string) => ["listing", slug] as const,
   posts: (listingId: string) => ["posts", listingId] as const,

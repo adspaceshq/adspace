@@ -5,11 +5,14 @@ import { api } from "@/lib/api/v2";
 import type { WatchItem } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
+import { userErrorMessage } from "@/lib/errors";
+import { useToast } from "@/components/ToastProvider";
 
 // One cached list drives every save button; toggles update it optimistically.
 export function useWatchlist() {
   const { session } = useSession();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const query = useQuery({ queryKey: queryKeys.watchlist, queryFn: () => api.me.watchlist(), enabled: Boolean(session?.onboarding), staleTime: 60_000 });
   const ids = new Set((query.data ?? []).map((item) => item.listing.id));
 
@@ -21,7 +24,11 @@ export function useWatchlist() {
       if (!watching) queryClient.setQueryData<WatchItem[]>(queryKeys.watchlist, (items) => items?.filter((item) => item.listing.id !== listingId));
       return { previous };
     },
-    onError: (_error, _input, context) => queryClient.setQueryData(queryKeys.watchlist, context?.previous),
+    onError: (error, { watching }, context) => {
+      queryClient.setQueryData(queryKeys.watchlist, context?.previous);
+      toast.error(watching ? "couldn't save that listing" : "couldn't remove that listing", userErrorMessage(error));
+    },
+    onSuccess: (_data, { watching }) => toast.success(watching ? "saved to your watchlist" : "removed from your watchlist"),
     onSettled: () => queryClient.invalidateQueries({ queryKey: queryKeys.watchlist }),
   });
 

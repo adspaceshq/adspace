@@ -1,5 +1,6 @@
 import { AppSidebar, BottomTabs, SignedInBottomTabs } from "./AppNav";
 import { DevnetBanner } from "./DevnetBanner";
+import { PausedBanner } from "./PausedBanner";
 import { CompactFooter, SiteFooter } from "./SiteFooter";
 import { TopBar } from "./TopBar";
 
@@ -14,6 +15,7 @@ export function AppShell({ children, variant = "public", mobileTabs = true }: { 
   return (
     <div className="flex min-h-dvh flex-col bg-canvas">
       <DevnetBanner />
+      <PausedBanner />
       <TopBar inSidebar={variant === "app"} />
       {variant === "public" ? (
         <>

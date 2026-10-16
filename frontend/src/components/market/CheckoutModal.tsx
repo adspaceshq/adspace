@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { ArrowDownToLine, CheckCircle2, MailCheck, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { PublicListing, PublicSpot, SponsorBrand } from "@/lib/api/types";
 import { minimumNextBid } from "@/lib/bids";
@@ -12,6 +12,8 @@ import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { useUsdcBalance } from "@/lib/use-balance";
 import { useTx } from "@/lib/use-tx";
+import { usePaused } from "@/lib/use-status";
+import { TERMS_VERSION } from "@/lib/terms";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, NewTabLink } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Field";
@@ -20,6 +22,8 @@ import { Money } from "@/components/ui/Money";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { DevnetBanner } from "@/components/app/DevnetBanner";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
+import { PausedBanner } from "@/components/app/PausedBanner";
+import { DepositDetails } from "@/components/wallet/DepositDetails";
 import { LogoUpload } from "./LogoUpload";
 import { UserLink } from "@/components/ui/UserLink";
 
@@ -34,10 +38,10 @@ export function CheckoutModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const { session, wallet } = useSession();
+  const { session, wallet, linkEmail, linkError } = useSession();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const balance = useUsdcBalance(session?.walletAddress);
+  const paused = usePaused();
   const auction = listing.mode === "auction";
   const minimum = auction ? minimumNextBid(listing, spot) : BigInt(spot.price);
 
@@ -45,13 +49,13 @@ export function CheckoutModal({
   const [brand, setBrand] = useState<SponsorBrand>({ name: sponsor?.brandName ?? "", link: sponsor?.website ?? "", handle: "" });
   const [amountText, setAmountText] = useState(toInputValue(minimum));
   const [errors, setErrors] = useState<Record<string, string>>({});
-  // True while Privy's gasless approval popup is open; our dialog steps aside so it can be used.
+  // True while a Privy popup (gasless approval, email code) is open; our dialog steps aside so it can be used.
   const [approving, setApproving] = useState(false);
-  // Sponsors agree to the terms and content policy before each claim or bid (frontend-only for now).
+  // Sponsors agree to the terms and content policy before each claim or bid; the server records the version.
   const [agreed, setAgreed] = useState(false);
 
   const tx = useTx(async (payload: { brand: SponsorBrand; amount: string }) =>
-    auction ? api.spots.bid(spot.id, payload.amount, payload.brand) : api.spots.claim(spot.id, payload.brand),
+    auction ? api.spots.bid(spot.id, payload.amount, payload.brand, TERMS_VERSION) : api.spots.claim(spot.id, payload.brand, TERMS_VERSION),
   );
 
   let amount: bigint | null = null;
@@ -60,9 +64,22 @@ export function CheckoutModal({
   } catch {
     amount = null;
   }
+  // Polls quickly while the sponsor is short, so a top-up shows up without leaving checkout.
+  const balance = useUsdcBalance(session?.walletAddress, { needed: amount });
   const insufficient = balance.data !== undefined && amount !== null && BigInt(balance.data) < amount;
   const done = tx.state.phase === "confirmed";
-  const needsGasless = !wallet.delegated && !done;
+  // Outbid, proof and dispute emails go to a verified address, so it's step one of checkout.
+  const needsEmail = !session?.emailVerified && !done;
+  const needsGasless = !needsEmail && !wallet.delegated && !done;
+
+  const verifyEmail = async () => {
+    setApproving(true);
+    try {
+      await linkEmail();
+    } finally {
+      setApproving(false);
+    }
+  };
 
   const submit = async () => {
     const next: Record<string, string> = {};
@@ -113,7 +130,7 @@ export function CheckoutModal({
       title={title}
       description={done ? undefined : `${listing.title} · @${listing.seller.handle}`}
       footer={
-        needsGasless ? undefined : done ? (
+        needsEmail || needsGasless ? undefined : done ? (
           <>
             <Button variant="secondary" onClick={onClose}>
               close
@@ -125,14 +142,34 @@ export function CheckoutModal({
             <Button variant="ghost" onClick={onClose} disabled={tx.busy}>
               cancel
             </Button>
-            <Button onClick={() => void submit()} loading={tx.busy} disabled={insufficient || !agreed}>
+            <Button onClick={() => void submit()} loading={tx.busy} disabled={insufficient || !agreed || paused}>
               {auction ? `bid ${amount !== null ? formatUsd(amount) : ""}` : `claim for ${formatUsd(spot.price)}`}
             </Button>
           </>
         )
       }
     >
-      {needsGasless ? (
+      {needsEmail ? (
+        <div className="flex flex-col items-center gap-4 py-2 text-center">
+          <span className="flex size-12 items-center justify-center rounded-full bg-accent-soft text-accent">
+            <MailCheck className="size-6" aria-hidden />
+          </span>
+          <div className="flex max-w-sm flex-col gap-1.5">
+            <p className="text-lead font-semibold">first, verify your email</p>
+            <p className="text-body text-muted">
+              we email you when {auction ? "you're outbid, " : ""}proof is posted and if anything needs you. we send a one-time code; no password.
+            </p>
+          </div>
+          <Button onClick={() => void verifyEmail()} loading={approving}>
+            send me a code
+          </Button>
+          {linkError && (
+            <p role="alert" className="text-small text-danger">
+              {linkError}
+            </p>
+          )}
+        </div>
+      ) : needsGasless ? (
         <GaslessPrompt action={auction ? "bid" : "claim spots"} onBusyChange={setApproving} />
       ) : done ? (
         <div className="flex flex-col items-center gap-3 py-4 text-center">
@@ -201,7 +238,18 @@ export function CheckoutModal({
             <div className="flex justify-between">
               <dt className="text-muted">your balance</dt>
               <dd className={insufficient ? "font-medium text-danger" : undefined}>
-                {balance.data === undefined ? "…" : <Money value={balance.data} />}
+                {balance.isError && balance.data === undefined ? (
+                  <span className="text-muted">
+                    couldn&apos;t load ·{" "}
+                    <button type="button" onClick={() => void balance.refetch()} className="cursor-pointer font-medium text-accent hover:underline">
+                      retry
+                    </button>
+                  </span>
+                ) : balance.data === undefined ? (
+                  "…"
+                ) : (
+                  <Money value={balance.data} />
+                )}
               </dd>
             </div>
             <div className="mt-1 flex gap-2 border-t border-line pt-3 text-small text-muted">
@@ -215,16 +263,24 @@ export function CheckoutModal({
           </dl>
 
           <DevnetBanner variant="inline" />
+          <PausedBanner variant="inline" />
 
           <Checkbox checked={agreed} onChange={setAgreed} disabled={tx.busy}>
             i agree to the <NewTabLink href="/terms">terms</NewTabLink> and{" "}
             <NewTabLink href="/content-policy">content policy</NewTabLink>
           </Checkbox>
 
-          {insufficient && (
-            <p role="alert" className="text-small text-danger">
-              add at least {formatUsd(amount! - BigInt(balance.data!))} USDC to your wallet to continue.
-            </p>
+          {insufficient && session?.walletAddress && (
+            <section aria-labelledby="top-up" className="flex flex-col gap-3 rounded-card border border-danger/30 p-4">
+              <p id="top-up" role="alert" className="flex items-center gap-2 text-body font-semibold">
+                <ArrowDownToLine className="size-4 text-danger" aria-hidden />
+                add {formatUsd(amount! - BigInt(balance.data!))} USDC to continue
+              </p>
+              <DepositDetails address={session.walletAddress} />
+              <p className="text-small text-muted" aria-live="polite">
+                we&apos;ll update your balance here as soon as it lands. your form stays as it is.
+              </p>
+            </section>
           )}
           <TxStatus state={tx.state} action={auction ? "bid" : "claim"} onRetry={tx.retry} />
         </div>

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { eq } from "drizzle-orm";
 import { AppAuthRepository } from "../src/repositories/app-auth.js";
+import { termsAcceptances } from "../src/db/schema.js";
 import type { Db } from "../src/db/client.js";
 import { createTestDb } from "./helpers/db.js";
 
@@ -73,10 +75,12 @@ test("onboarding needs a verified email, is validated and sets the user's intent
   await assert.rejects(repo.saveOnboarding(session.user.id, sponsor), /verify your email/);
   const verified = await repo.createSession({ ...xIdentity, email: "alice@example.com" });
   assert.equal(verified.session.user.emailVerified, true);
-  await assert.rejects(repo.saveOnboarding(session.user.id, { accountType: "creator", creator: { socials: {} } }));
-  const saved = await repo.saveOnboarding(session.user.id, sponsor);
+  const terms = { accepted: "v1", current: "v1" };
+  await assert.rejects(repo.saveOnboarding(session.user.id, { accountType: "creator", creator: { socials: {} } }, terms));
+  const saved = await repo.saveOnboarding(session.user.id, sponsor, terms);
   assert.equal(saved.accountType, "sponsor");
   assert.deepEqual(await repo.getOnboarding(session.user.id), saved);
+  // Later edits (settings) don't ask for the terms again.
   const both = await repo.saveOnboarding(session.user.id, { ...sponsor, accountType: "both", creator: { socials: { x: "@alice" } } });
   assert.equal(both.accountType, "both");
   assert.equal(both.creator?.socials.x, "@alice");
@@ -96,4 +100,17 @@ test("profile edits survive sign-in and handles are validated and unique", async
   await assert.rejects(repo.updateProfile(other.session.user.id, { handle: "a b" }), /letters/);
   const x = await repo.createSession(xIdentity);
   await assert.rejects(repo.updateProfile(x.session.user.id, { handle: "renamed" }), /X username/);
+});
+
+test("finishing onboarding needs the current terms version and records it once", async () => {
+  const { session } = await repo.createSession({ did: "did:privy:terms01", handle: "user-terms01", email: "terms01@example.com", hasX: false });
+  const sponsor = { accountType: "sponsor", sponsor: { brandName: "Acme", category: "crypto" } };
+  await assert.rejects(repo.saveOnboarding(session.user.id, sponsor), (error: Error & { status?: number }) => error.status === 400 && /agree to the terms/.test(error.message));
+  await assert.rejects(repo.saveOnboarding(session.user.id, sponsor, { accepted: "v0", current: "v1" }), (error: Error & { status?: number }) => error.status === 409 && /terms have changed/.test(error.message));
+  assert.equal(await repo.getOnboarding(session.user.id), null);
+
+  await repo.saveOnboarding(session.user.id, sponsor, { accepted: "v1", current: "v1" });
+  await repo.saveOnboarding(session.user.id, { ...sponsor, sponsor: { brandName: "Acme 2", category: "crypto" } }, { accepted: undefined, current: "v1" });
+  const rows = await db.select().from(termsAcceptances).where(eq(termsAcceptances.userId, session.user.id));
+  assert.deepEqual(rows.map((row) => [row.context, row.termsVersion, row.spotId]), [["onboarding", "v1", null]]);
 });

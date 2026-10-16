@@ -11,13 +11,14 @@ import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { Stat } from "@/components/ui/Stat";
+import { userErrorMessage } from "@/lib/errors";
 
 type Target = { kind: "spot" | "listing"; id: string; label: string };
 type LogEntry = Target & { signature?: string; error?: string };
 
 const sol = (lamports: number) => `${(lamports / 1e9).toFixed(4)} SOL`;
 const spotLabel = (spot: RentReport["spots"][number]) => `${spot.listingTitle} · spot ${spot.index + 1}`;
-const errorMessage = (error: unknown) => (error instanceof Error ? error.message : "close failed");
+const errorMessage = (error: unknown) => userErrorMessage(error, "close failed");
 
 // Admin-only: the platform paid rent for every listing and spot account, so admins close unsold
 // spots past their deadline and finished listings to get it back.
@@ -92,7 +93,7 @@ export function RentPanel() {
       {rent.isPending ? (
         <Skeleton className="h-24 w-full" />
       ) : rent.isError ? (
-        <p className="text-small text-danger">{rent.error.message}</p>
+        <p className="text-small text-danger">{userErrorMessage(rent.error)}</p>
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-3">

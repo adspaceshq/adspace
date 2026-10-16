@@ -37,6 +37,17 @@ async function signIn(handle: string) {
   return { cookie: `adspaces_v2_session=${token}`, csrf: session.csrfToken, id: session.user.id };
 }
 
+async function signInVerified(handle: string) {
+  const { token, session } = await auth.createSession({
+    did: `did:privy:${handle}`,
+    xUserId: `x-${handle}`,
+    handle: `@${handle}`,
+    email: `${handle}@example.com`,
+    hasX: true,
+  });
+  return { cookie: `adspaces_v2_session=${token}`, csrf: session.csrfToken, id: session.user.id };
+}
+
 const draft = {
   surface: "laptop",
   title: "Conference laptop lid",
@@ -94,12 +105,94 @@ test("only reviewers see the review queue", async () => {
 });
 
 test("on-chain actions report 503 when the chain is not configured", async () => {
-  const seller = await signIn("seller_four");
+  const buyer = await signInVerified("buyer_four");
   const response = await request(app)
     .post("/api/v2/spots/00000000-0000-0000-0000-000000000000/claim")
-    .set("Cookie", seller.cookie)
-    .set("X-CSRF-Token", seller.csrf);
+    .set("Cookie", buyer.cookie)
+    .set("X-CSRF-Token", buyer.csrf)
+    .send({ termsVersion: "test" });
   assert.equal(response.status, 503);
+});
+
+test("claims and bids need a verified email and the current terms version", async () => {
+  const path = (action: string) => `/api/v2/spots/00000000-0000-0000-0000-000000000000/${action}`;
+  const unverified = await signIn("unverified_buyer");
+  for (const action of ["claim", "bid"]) {
+    const response = await request(app).post(path(action)).set("Cookie", unverified.cookie).set("X-CSRF-Token", unverified.csrf).send({ termsVersion: "test" });
+    assert.equal(response.status, 403);
+    assert.match(response.body.error, /verify your email/);
+  }
+  const buyer = await signInVerified("verified_buyer");
+  const post = (action: string, body: object) => request(app).post(path(action)).set("Cookie", buyer.cookie).set("X-CSRF-Token", buyer.csrf).send(body);
+  for (const action of ["claim", "bid"]) {
+    const missing = await post(action, { amount: "10" });
+    assert.equal(missing.status, 400);
+    assert.match(missing.body.error, /agree to the terms/);
+    const stale = await post(action, { amount: "10", termsVersion: "old" });
+    assert.equal(stale.status, 409);
+    assert.match(stale.body.error, /terms have changed/);
+  }
+});
+
+test("finishing onboarding over the API needs the current terms version", async () => {
+  const user = await signInVerified("onboard_terms");
+  const put = (body: object) => request(app).put("/api/v2/me/onboarding").set("Cookie", user.cookie).set("X-CSRF-Token", user.csrf).send(body);
+  const sponsor = { accountType: "sponsor", sponsor: { brandName: "Acme", category: "crypto" } };
+  assert.equal((await put(sponsor)).status, 400);
+  assert.equal((await put({ ...sponsor, termsVersion: "old" })).status, 409);
+  const saved = await put({ ...sponsor, termsVersion: "test" });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.body.accountType, "sponsor");
+  // Edits afterwards (settings) don't send it.
+  assert.equal((await put({ ...sponsor, sponsor: { brandName: "Acme 2", category: "crypto" } })).status, 200);
+});
+
+test("public status reports the pause flag, cluster and terms version, cached briefly", async () => {
+  const plain = await request(app).get("/api/v2/status");
+  assert.equal(plain.status, 200);
+  assert.deepEqual(plain.body, { paused: false, cluster: "devnet", termsVersion: "test" });
+
+  let paused = true;
+  let reads = 0;
+  let failing = false;
+  const chain = {
+    readProtocolStatus: async () => {
+      reads += 1;
+      if (failing) throw new Error("rpc down");
+      return { paused };
+    },
+  } as unknown as ChainContext;
+  const build = (statusCacheMs: number) =>
+    createApp({ v2Router: createV2Router({ db, chain, reviewers: [], termsVersion: "v9", cluster: "mainnet-beta", metadataBaseUrl: "https://adspaces.test", statusCacheMs }) });
+
+  const cached = build(60_000);
+  const first = await request(cached).get("/api/v2/status");
+  assert.equal(first.status, 200);
+  assert.deepEqual(first.body, { paused: true, cluster: "mainnet-beta", termsVersion: "v9" });
+  assert.match(first.headers["cache-control"], /max-age=60/);
+  paused = false;
+  assert.equal((await request(cached).get("/api/v2/status")).body.paused, true);
+  assert.equal(reads, 1);
+
+  // A paused protocol refuses purchases before any chain work.
+  const buyer = await signInVerified("paused_buyer");
+  const claim = await request(cached)
+    .post("/api/v2/spots/00000000-0000-0000-0000-000000000000/claim")
+    .set("Cookie", buyer.cookie)
+    .set("X-CSRF-Token", buyer.csrf)
+    .send({ termsVersion: "v9" });
+  assert.equal(claim.status, 409);
+  assert.match(claim.body.error, /trading is paused/);
+
+  // Uncached: every request reads the chain, and an RPC failure serves the last known value.
+  const fresh = build(0);
+  assert.equal((await request(fresh).get("/api/v2/status")).body.paused, false);
+  failing = true;
+  const stale = await request(fresh).get("/api/v2/status");
+  assert.equal(stale.status, 200);
+  assert.equal(stale.body.paused, false);
+  // With nothing cached yet, the failure is a 503.
+  assert.equal((await request(build(0)).get("/api/v2/status")).status, 503);
 });
 
 test("protocol admin actions are refused for non-admins", async () => {

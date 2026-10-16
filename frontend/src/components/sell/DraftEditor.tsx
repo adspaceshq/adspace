@@ -5,6 +5,8 @@ import Link from "next/link";
 import { AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import { fromOwnedListing } from "@/lib/sell-draft";
+import { isNotFound, userErrorMessage } from "@/lib/errors";
+import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
 import { SellWizard } from "./SellWizard";
@@ -19,7 +21,20 @@ export function DraftEditor({ listingId }: { listingId: string }) {
     );
   }
   if (query.isError) {
-    return <EmptyState icon={AlertTriangle} title="draft not found" description={query.error.message} />;
+    return isNotFound(query.error) ? (
+      <EmptyState icon={AlertTriangle} title="draft not found" description="it may have been deleted, or it belongs to another account." />
+    ) : (
+      <EmptyState
+        icon={AlertTriangle}
+        title="couldn't load this draft"
+        description={userErrorMessage(query.error)}
+        action={
+          <Button variant="secondary" onClick={() => void query.refetch()}>
+            try again
+          </Button>
+        }
+      />
+    );
   }
   const listing = query.data;
   if (listing.state !== "draft" && listing.state !== "changes_requested") {

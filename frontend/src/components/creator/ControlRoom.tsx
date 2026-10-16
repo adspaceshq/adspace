@@ -32,6 +32,8 @@ import { PostComposer } from "./PostComposer";
 import { ProofPicker } from "./ProofPicker";
 import { PublishPanel } from "./PublishPanel";
 import { XHandleLink } from "@/components/ui/UserLink";
+import { useToast } from "@/components/ToastProvider";
+import { isNotFound, userErrorMessage } from "@/lib/errors";
 
 const reviewEnds = (listing: OwnedListing) => new Date(listing.deliveryDueAt).getTime() + listing.reviewWindowSeconds * 1000;
 
@@ -55,7 +57,22 @@ export function ControlRoom({ listingId }: { listingId: string }) {
       </SkeletonGroup>
     );
   }
-  if (query.isError) return <EmptyState icon={AlertTriangle} title="listing not found" description={query.error.message} />;
+  if (query.isError) {
+    return isNotFound(query.error) ? (
+      <EmptyState icon={AlertTriangle} title="listing not found" description="it may have been deleted, or it belongs to another account." />
+    ) : (
+      <EmptyState
+        icon={AlertTriangle}
+        title="couldn't load this listing"
+        description={userErrorMessage(query.error)}
+        action={
+          <Button variant="secondary" onClick={() => void query.refetch()}>
+            try again
+          </Button>
+        }
+      />
+    );
+  }
 
   const listing = query.data;
   const live = listing.state === "published" || listing.state === "closed";
@@ -265,8 +282,13 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
   const [confirmRefund, setConfirmRefund] = useState(false);
   const refund = useTx(() => api.spots.refund(spot.id, true));
   const payout = useTx(() => api.spots.payout(spot.id));
-  const run = async (tx: { execute: () => Promise<unknown> }) => {
-    if (await tx.execute()) await refresh();
+  const toast = useToast();
+  // On success the panel moves to the spot's next state and the inline status goes with it.
+  const run = async (tx: { execute: () => Promise<unknown> }, success: string) => {
+    if (await tx.execute()) {
+      await refresh();
+      toast.success(success);
+    }
   };
   const proofWindow = spot.state === "funded" && now >= new Date(listing.deadline).getTime() && now < new Date(listing.deliveryDueAt).getTime();
   const payable = spot.state === "delivered" && now >= reviewEnds(listing);
@@ -330,7 +352,7 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
           <ConfirmModal
             open={confirmRefund}
             onClose={() => setConfirmRefund(false)}
-            onConfirm={() => void run(refund)}
+            onConfirm={() => void run(refund, `refunded ${sponsorName}`)}
             title={`refund ${sponsorName}?`}
             description={`${formatUsd(gross)} goes back to ${sponsorName} from escrow and this sale is cancelled. the spot can't be sold again and this can't be undone.`}
             confirmLabel={`refund ${formatUsd(gross)}`}
@@ -341,7 +363,7 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
       {spot.state === "delivered" && (
         <>
           {payable ? (
-            <Button onClick={() => void run(payout)} loading={payout.busy}>
+            <Button onClick={() => void run(payout, "payout sent to your wallet")} loading={payout.busy}>
               {fee !== null ? (
                 <>
                   get paid <Money value={gross - fee} />

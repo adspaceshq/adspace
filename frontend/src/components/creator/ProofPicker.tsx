@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
+import { useToast } from "@/components/ToastProvider";
 
 // Creator tags posts as delivery proof for one spot; their hash goes on-chain.
 export function ProofPicker({
@@ -28,6 +29,9 @@ export function ProofPicker({
 }) {
   const { wallet } = useSession();
   const queryClient = useQueryClient();
+  const toast = useToast();
+  // True while Privy's gasless approval popup is open; the dialog steps aside so it can be clicked.
+  const [approving, setApproving] = useState(false);
   const posts = useQuery({ queryKey: queryKeys.posts(listingId), queryFn: () => api.listings.posts(listingId), enabled: open });
   const [picked, setPicked] = useState<string[]>([]);
   const tx = useTx((ids: string[]) => api.spots.submitProof(spotId, ids));
@@ -40,13 +44,15 @@ export function ProofPicker({
         queryClient.invalidateQueries({ queryKey: queryKeys.creatorDashboard }),
       ]);
       onClose();
+      toast.success(`proof submitted for spot ${spotIndex + 1}`, "the sponsor's review window has started.");
     }
   };
 
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      suspended={approving}
+      onClose={() => !approving && onClose()}
       title={`proof for spot ${spotIndex + 1}`}
       description="pick the posts that show this sponsor's brand in place. they can't be deleted afterwards."
       footer={
@@ -63,7 +69,7 @@ export function ProofPicker({
       }
     >
       {!wallet.delegated ? (
-        <GaslessPrompt action="submit proof" />
+        <GaslessPrompt action="submit proof" onBusyChange={setApproving} />
       ) : posts.isPending ? (
         <p className="text-small text-muted">loading posts…</p>
       ) : (posts.data ?? []).length === 0 ? (
