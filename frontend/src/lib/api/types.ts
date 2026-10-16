@@ -579,3 +579,10 @@ export interface RentReport {
   listings: RentListing[];
   reclaimableLamports: number;
 }
+
+// Public protocol status (GET /status): no session needed; the pause flag is cached server-side.
+export interface PublicStatus {
+  paused: boolean;
+  cluster: string;
+  termsVersion: string;
+}

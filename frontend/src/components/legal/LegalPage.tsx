@@ -3,8 +3,8 @@ import { AppShell, PageHeader } from "@/components/app/AppShell";
 
 /** Date the legal pages were last changed; bump with any wording change. */
 export const LEGAL_UPDATED = "2026-10-16";
-/** Mirrors TERMS_VERSION in backend/src/types.ts, which creators accept when publishing. */
-export const TERMS_VERSION = "v1";
+/** The terms version users accept (see lib/terms.ts, checked against the backend by a test). */
+export { TERMS_VERSION } from "@/lib/terms";
 export const SUPPORT_EMAIL = "support@adspaces.fun";
 
 const legalLinks = [
