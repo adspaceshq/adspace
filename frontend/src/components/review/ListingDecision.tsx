@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { AlertTriangle, ArrowLeft, BadgeCheck } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import type { ReviewDecision, ReviewQueueItem } from "@/lib/api/types";
+import type { ReviewDecision, ReviewListingDetail, SellerHistory } from "@/lib/api/types";
 import { DEFAULT_FEES, HIGH_FEE_BPS, bpsToPercentText, effectiveMaxFeeBps, feeFor, feePolicyError, isPercentDraft, parsePercentToBps, type FeePolicy } from "@/lib/fees";
 import { formatFollowers } from "@/lib/listing-display";
 import { formatUsd } from "@/lib/money";
@@ -21,7 +21,8 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { SpotPhotos } from "@/components/ui/SpotPhotos";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
-import { userErrorMessage } from "@/lib/errors";
+import { isNotFound, userErrorMessage } from "@/lib/errors";
+import { listingStateLabel } from "@/components/ui/StateBadge";
 
 const toLocal = (iso: string) => {
   const date = new Date(iso);
@@ -30,16 +31,25 @@ const toLocal = (iso: string) => {
 };
 
 export function ListingDecision({ listingId }: { listingId: string }) {
-  const queue = useQuery({ queryKey: queryKeys.reviewQueue, queryFn: () => api.review.queue() });
+  const query = useQuery({ queryKey: queryKeys.reviewListing(listingId), queryFn: () => api.review.listing(listingId) });
   const status = useQuery({ queryKey: queryKeys.adminStatus, queryFn: () => api.admin.status() });
-  if (queue.isPending) return <Skeleton className="h-96 w-full" />;
-  const listing = queue.data?.find((item) => item.id === listingId);
-  if (!listing) {
+  if (query.isPending) return <Skeleton className="h-96 w-full" />;
+  const listing = query.data;
+  if (!listing || listing.state !== "in_review") {
+    const missing = query.isError && isNotFound(query.error);
     return (
       <EmptyState
         icon={AlertTriangle}
-        title="not in the review queue"
-        description="it may already have been decided."
+        title={listing ? `already decided: ${listingStateLabel(listing.state)}` : missing ? "listing not found" : "couldn't load this listing"}
+        description={
+          listing
+            ? listing.reviewNote
+              ? `review note: ${listing.reviewNote}`
+              : "it's no longer waiting for review."
+            : missing
+              ? "check the link, or pick a listing from the queue."
+              : userErrorMessage(query.error)
+        }
         action={
           <Link href="/review" className="text-body font-medium text-accent hover:underline">
             back to the queue
@@ -51,7 +61,7 @@ export function ListingDecision({ listingId }: { listingId: string }) {
   return <DecisionForm listing={listing} floorBps={status.data?.feeBps ?? 250} />;
 }
 
-function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBps: number }) {
+function DecisionForm({ listing, floorBps }: { listing: ReviewListingDetail; floorBps: number }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { session } = useSession();
@@ -72,6 +82,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.reviewQueue }),
         queryClient.invalidateQueries({ queryKey: queryKeys.reviewSummary }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.reviewListing(listing.id) }),
       ]);
       router.push("/review");
     },
@@ -172,6 +183,8 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
               </p>
             </div>
           </div>
+
+          <SellerHistoryCard history={listing.sellerHistory} />
 
           {ownListing && (
             <div role="note" className="flex gap-3 rounded-panel border border-warning/40 bg-warning-soft p-4 text-small">
@@ -286,5 +299,36 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
         <p className="text-body text-muted">to let them fix it instead, use request changes.</p>
       </ConfirmModal>
     </div>
+  );
+}
+
+// The creator's record on their other listings (REVAMP §8 seller signals).
+function SellerHistoryCard({ history }: { history: SellerHistory }) {
+  if (history.listingsSubmitted === 0) {
+    return <p className="rounded-panel border border-line bg-surface p-4 text-small text-muted shadow-card">first listing from this creator.</p>;
+  }
+  const rows: Array<[string, string, boolean?]> = [
+    ["past listings", `${history.listingsSubmitted}${history.listingsRejected ? ` · ${history.listingsRejected} not approved` : ""}`],
+    ["went live", String(history.listingsLive)],
+    ["spots sold", String(history.spotsSold)],
+    ["completed (paid out)", String(history.spotsPaidOut)],
+    ["refunded", String(history.spotsRefunded), history.spotsRefunded > 0],
+    ["disputes", `${history.disputes}${history.openDisputes ? ` · ${history.openDisputes} open` : ""}`, history.disputes > 0],
+    ["on-time delivery", history.onTimeRate === null ? "nothing to grade yet" : `${Math.round(history.onTimeRate * 100)}%`, history.onTimeRate !== null && history.onTimeRate < 0.8],
+  ];
+  return (
+    <section aria-labelledby="seller-history" className="flex flex-col gap-2 rounded-panel border border-line bg-surface p-4 shadow-card">
+      <h2 id="seller-history" className="text-body font-semibold">
+        seller history
+      </h2>
+      <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 text-small">
+        {rows.map(([label, value, flag]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted">{label}</dt>
+            <dd className={flag ? "text-right font-medium text-warning" : "text-right font-medium"}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

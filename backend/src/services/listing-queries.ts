@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, gt, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { listingPhotos, listings, mediaAssets, spots, users } from "../db/schema.js";
+import { disputes, listingPhotos, listings, mediaAssets, settlements, spots, users } from "../db/schema.js";
 
 type ListingRow = typeof listings.$inferSelect;
 type SpotRow = typeof spots.$inferSelect;
@@ -176,6 +176,63 @@ export async function reviewQueue(db: Db) {
     .orderBy(asc(listings.updatedAt));
   const hydrated = await hydrate(db, rows.map((row) => row.listing));
   return hydrated.map((listing, index) => ({ ...listing, seller: publicSeller(rows[index].seller) }));
+}
+
+// A creator's track record for reviewers, excluding the listing under review: how many listings they
+// submitted and got live, and what happened to the spots sponsors paid for.
+export async function sellerHistory(db: Db, sellerId: string, excludeListingId: string, now = new Date()) {
+  const others = and(eq(listings.sellerId, sellerId), ne(listings.id, excludeListingId));
+  const [[listingCounts], [spotCounts], [disputeCounts]] = await Promise.all([
+    db
+      .select({
+        submitted: sql<number>`count(*) filter (where ${listings.state} <> 'draft')`,
+        live: sql<number>`count(*) filter (where ${inArray(listings.state, ["published", "closed"])})`,
+        rejected: sql<number>`count(*) filter (where ${listings.state} = 'rejected')`,
+      })
+      .from(listings)
+      .where(others),
+    db
+      .select({
+        sold: sql<number>`count(*) filter (where ${spots.buyerId} is not null and ${spots.state} <> 'open')`,
+        paidOut: sql<number>`count(*) filter (where ${settlements.kind} = 'payout')`,
+        refunded: sql<number>`count(*) filter (where ${inArray(settlements.kind, ["refund", "timeout_refund"])})`,
+        delivered: sql<number>`count(*) filter (where ${spots.proofSubmittedAt} is not null)`,
+        onTime: sql<number>`count(*) filter (where ${spots.proofSubmittedAt} <= ${listings.deliveryDueAt})`,
+        overdue: sql<number>`count(*) filter (where ${spots.state} = 'funded' and ${spots.proofSubmittedAt} is null and ${listings.deliveryDueAt} < ${now})`,
+      })
+      .from(spots)
+      .innerJoin(listings, eq(listings.id, spots.listingId))
+      .leftJoin(settlements, eq(settlements.spotId, spots.id))
+      .where(others),
+    db
+      .select({ total: sql<number>`count(*)`, open: sql<number>`count(*) filter (where ${disputes.state} = 'open')` })
+      .from(disputes)
+      .innerJoin(spots, eq(spots.id, disputes.spotId))
+      .innerJoin(listings, eq(listings.id, spots.listingId))
+      .where(others),
+  ]);
+  const graded = Number(spotCounts.delivered) + Number(spotCounts.overdue);
+  return {
+    listingsSubmitted: Number(listingCounts.submitted),
+    listingsLive: Number(listingCounts.live),
+    listingsRejected: Number(listingCounts.rejected),
+    spotsSold: Number(spotCounts.sold),
+    spotsPaidOut: Number(spotCounts.paidOut),
+    spotsRefunded: Number(spotCounts.refunded),
+    disputes: Number(disputeCounts.total),
+    openDisputes: Number(disputeCounts.open),
+    // Null until there's something to grade.
+    onTimeRate: graded > 0 ? Number(spotCounts.onTime) / graded : null,
+  };
+}
+
+// One listing for the reviewer decision screen, in any state, with the seller's track record.
+export async function reviewListingDetail(db: Db, listingId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(listingId)) return undefined;
+  const [row] = await db.select({ listing: listings, seller: sellerColumns }).from(listings).innerJoin(users, eq(users.id, listings.sellerId)).where(eq(listings.id, listingId));
+  if (!row) return undefined;
+  const [listing] = await hydrate(db, [row.listing]);
+  return { ...listing, seller: publicSeller(row.seller), sellerHistory: await sellerHistory(db, row.listing.sellerId, row.listing.id) };
 }
 
 const SPONSORED = ["funded", "delivered", "disputed", "settled"];
