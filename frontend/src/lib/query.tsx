@@ -42,6 +42,7 @@ export const queryKeys = {
   notifications: ["me", "notifications"] as const,
   notificationPrefs: ["me", "notification-prefs"] as const,
   reviewQueue: ["review", "queue"] as const,
+  reviewListing: (listingId: string) => ["review", "listing", listingId] as const,
   reviewSummary: ["review", "summary"] as const,
   adminStatus: ["admin", "status"] as const,
   adminRent: ["admin", "rent"] as const,

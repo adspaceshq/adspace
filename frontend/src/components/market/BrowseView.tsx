@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, Search, SearchX, Store } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import type { BrowseFilters, PricingMode, Surface } from "@/lib/api/types";
+import type { BrowseFilters, BrowsePage } from "@/lib/api/types";
+import { BROWSE_PAGE_SIZE, BROWSE_SORTS, BROWSE_SURFACES, readBrowseFilters } from "@/lib/browse-filters";
 import { SURFACE_LABELS } from "@/lib/listing-display";
 import { queryKeys } from "@/lib/query";
 import { cx } from "@/lib/cx";
@@ -14,31 +15,18 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListingCard, ListingCardSkeleton } from "./ListingCard";
 
-const PAGE_SIZE = 24;
-const SURFACES = Object.keys(SURFACE_LABELS) as Surface[];
-const SORTS: Array<{ value: NonNullable<BrowseFilters["sort"]>; label: string }> = [
-  { value: "closing", label: "closing soon" },
-  { value: "newest", label: "newest" },
-  { value: "price", label: "lowest price" },
-];
+const PAGE_SIZE = BROWSE_PAGE_SIZE;
+const SURFACES = BROWSE_SURFACES;
+const SORTS = BROWSE_SORTS;
 
-function readFilters(params: URLSearchParams): BrowseFilters {
-  const surface = params.get("surface") as Surface | null;
-  const mode = params.get("mode") as PricingMode | null;
-  const sort = params.get("sort") as BrowseFilters["sort"] | null;
-  return {
-    q: params.get("q") ?? undefined,
-    surface: surface && SURFACES.includes(surface) ? surface : undefined,
-    mode: mode === "fixed" || mode === "auction" ? mode : undefined,
-    sort: sort && SORTS.some((option) => option.value === sort) ? sort : "closing",
-  };
-}
+const sameFilters = (a: BrowseFilters, b: BrowseFilters) => a.q === b.q && a.surface === b.surface && a.mode === b.mode && a.sort === b.sort;
 
-export function BrowseView() {
+// `initialPage`: page 1 rendered on the server, for the filters it was fetched with.
+export function BrowseView({ initialPage }: { initialPage?: { filters: BrowseFilters; page: BrowsePage } }) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
-  const filters = readFilters(params);
+  const filters = readBrowseFilters(params);
   const [search, setSearch] = useState(filters.q ?? "");
 
   const setFilter = (key: string, value: string | undefined) => {
@@ -62,6 +50,10 @@ export function BrowseView() {
     queryFn: ({ pageParam }) => api.listings.published({ ...filters, limit: PAGE_SIZE, offset: pageParam }),
     initialPageParam: 0,
     getNextPageParam: (last, pages) => (last.hasMore ? pages.length * PAGE_SIZE : undefined),
+    // Used only while the URL still matches what the server rendered.
+    initialData: initialPage && sameFilters(initialPage.filters, filters) ? { pages: [initialPage.page], pageParams: [0] } : undefined,
+    // Server data is up to 30s old; refresh it in the background after hydration.
+    initialDataUpdatedAt: 0,
   });
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
   const filtered = Boolean(filters.q || filters.surface || filters.mode);

@@ -1,4 +1,4 @@
-import { PublicKey } from "@solana/web3.js";
+import { isAddress } from "@solana/kit";
 import type { Withdrawal } from "@/lib/api/types";
 import { toBaseUnits } from "@/lib/money";
 
@@ -24,12 +24,9 @@ export function validateWithdrawal(input: { destination: string; amount: string;
   const destination = input.destination.trim();
   if (!destination) errors.destination = "paste a Solana wallet address";
   else {
-    try {
-      new PublicKey(destination);
-      if (destination === input.ownAddress) errors.destination = "that's your adspaces wallet; send to a different one";
-    } catch {
-      errors.destination = "that isn't a valid Solana address";
-    }
+    // A base58 string that decodes to 32 bytes, as the program and the server expect.
+    if (!isAddress(destination)) errors.destination = "that isn't a valid Solana address";
+    else if (destination === input.ownAddress) errors.destination = "that's your adspaces wallet; send to a different one";
   }
   let amount: bigint;
   try {

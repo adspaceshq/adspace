@@ -37,7 +37,7 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
     };
   }, [open]);
 
-  const item = "flex items-center gap-2 rounded-control px-3 py-2 text-body text-ink hover:bg-ink/5";
+  const item = "flex min-h-11 items-center gap-2 rounded-control px-3 text-body text-ink hover:bg-ink/5 sm:min-h-9";
   const profileHref = `/${session.handle.startsWith("@") ? session.handle : `@${session.handle}`}`;
 
   return (
@@ -73,7 +73,7 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
           aria-haspopup="menu"
           aria-expanded={open}
           aria-label="account menu"
-          className="cursor-pointer rounded-full"
+          className="flex size-11 cursor-pointer items-center justify-center rounded-full"
         >
           <Avatar session={session} />
         </button>

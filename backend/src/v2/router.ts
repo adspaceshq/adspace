@@ -18,7 +18,7 @@ import {
   type DraftInput,
   type ReviewDecision,
 } from "../services/listing-lifecycle.js";
-import { getOwnedListing, getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewQueue, getSponsoredSpot } from "../services/listing-queries.js";
+import { getOwnedListing, getPublishedListing, listForSeller, listPublished, parseBrowseFilters, reviewListingDetail, reviewQueue, getSponsoredSpot } from "../services/listing-queries.js";
 import { parseAssetKind, registerMedia, signUpload } from "../services/media.js";
 import { claimSpot, placeBid } from "../services/spot-purchase.js";
 import { assertCurrentTerms } from "../services/terms.js";
@@ -387,6 +387,16 @@ export function createV2Router(options: {
   // ---------- review ----------
 
   router.get("/review/queue", requireUser, requireReviewer, handle(async (_req, res) => send(res, await reviewQueue(db))));
+  router.get(
+    "/review/listings/:id",
+    requireUser,
+    requireReviewer,
+    handle(async (req, res) => {
+      const listing = await reviewListingDetail(db, req.params.id);
+      if (!listing) return void send(res, { error: "listing not found" }, 404);
+      send(res, listing);
+    }),
+  );
   router.post(
     "/review/listings/:id",
     ...mutate,
@@ -634,7 +644,16 @@ export function createV2Router(options: {
       send(res, { usdc, wallet });
     }),
   );
-  router.get("/me/withdrawals", requireUser, handle(async (req, res) => send(res, await listWithdrawals(db, me(req).id))));
+  router.get(
+    "/me/withdrawals",
+    requireUser,
+    handle(async (req, res) => {
+      const query = req.query as Record<string, string | undefined>;
+      const before = query.before ? new Date(query.before) : undefined;
+      if (before && Number.isNaN(before.getTime())) throw new BadRequest("before must be a date");
+      send(res, await listWithdrawals(db, me(req).id, Math.min(Math.max(Number(query.limit) || 50, 1), 100), before));
+    }),
+  );
   const walletDeps = () => {
     const context = requireChain();
     return {
@@ -801,7 +820,7 @@ export function createV2Router(options: {
     requireAdmin,
     handle(async (req, res) => {
       const result = await setDisputeTimeout(adminDeps(), me(req).id, Number(req.body?.seconds));
-      send(res, { disputeTimeoutSeconds: result.status.disputeTimeoutSeconds, signature: result.signature });
+      send(res, { disputeTimeoutSeconds: result.status.disputeTimeoutSeconds, signature: result.signature, pending: result.pending ?? null });
     }),
   );
   // Rent reclaim: the platform paid every account's rent, so only admins close unsold spots and
@@ -884,11 +903,19 @@ export function createV2Router(options: {
     requireUser,
     handle(async (req, res) => {
       const timeout = chain ? await chain.readDisputeTimeoutSeconds() : 3 * 24 * 60 * 60;
-      send(res, await spotDetail(db, actor(req), req.params.id, timeout));
+      send(res, await spotDetail(db, actor(req), req.params.id, timeout, chain?.readDisputeDeadlines));
     }),
   );
   router.get("/spots/:id/timeline", requireUser, handle(async (req, res) => send(res, await spotTimeline(db, actor(req), req.params.id))));
-  router.get("/review/summary", requireUser, requireReviewer, handle(async (_req, res) => send(res, await reviewSummary(db))));
+  router.get(
+    "/review/summary",
+    requireUser,
+    requireReviewer,
+    handle(async (_req, res) => {
+      const timeoutSeconds = chain ? await chain.readDisputeTimeoutSeconds().catch(() => 3 * 24 * 60 * 60) : 3 * 24 * 60 * 60;
+      send(res, await reviewSummary(db, new Date(), { readDeadlines: chain?.readDisputeDeadlines, timeoutSeconds }));
+    }),
+  );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));
   router.post(
     "/spots/:id/messages",

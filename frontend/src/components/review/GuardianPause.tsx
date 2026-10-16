@@ -1,12 +1,10 @@
 "use client";
 
-import { useConnectWallet } from "@privy-io/react-auth";
-import { useSignTransaction, useWallets } from "@privy-io/react-auth/solana";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { PauseCircle, Wallet } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { PRIVY_APP_ID } from "@/lib/privy";
+import { useSession } from "@/lib/session";
 import { useTx } from "@/lib/use-tx";
 import { Address } from "@/components/ui/Address";
 import { Button } from "@/components/ui/Button";
@@ -15,11 +13,6 @@ import { TxStatus } from "@/components/ui/TxStatus";
 
 // Fallback for when no guardian wallet is at hand: signs guardian_pause from the adspaces-program repo.
 const GUARDIAN_PAUSE_COMMAND = "ADSPACES_GUARDIAN_WALLET=/path/to/guardian-keypair.json node scripts/pause-guardian-devnet.js pause --confirm";
-
-const SOLANA_CHAIN = `solana:${ADSPACES_CLUSTER === "mainnet-beta" ? "mainnet" : ADSPACES_CLUSTER}` as const;
-
-const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
-const fromBase64 = (base64: string) => Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
 
 // With the multisig as config authority, the pause guardian pauses with its own wallet. That wallet is
 // connected here and nowhere else, and only ever signs guardian_pause: the server builds the transaction,
@@ -42,43 +35,42 @@ function GuardianWallet({ guardian, onPaused }: { guardian: string; onPaused: (s
   const [connectError, setConnectError] = useState<string>();
   const [confirming, setConfirming] = useState(false);
   const [signing, setSigning] = useState(false);
-  const { wallets } = useWallets();
-  const { signTransaction } = useSignTransaction();
-  const { connectWallet } = useConnectWallet({
-    onSuccess: ({ wallet }) => {
-      if (wallet.type !== "solana") return;
-      setConnectError(undefined);
-      setAddress(wallet.address);
-    },
-    onError: (error) => {
-      // Closing the modal isn't an error worth showing.
-      if (!String(error).includes("exited")) setConnectError("couldn't connect that wallet. try again.");
-    },
-  });
+  const { external } = useSession();
   // Only the wallet connected from this panel; the embedded wallet is never picked here.
-  const wallet = address ? wallets.find((item) => item.address === address) : undefined;
+  const connected = Boolean(address && external.addresses.includes(address));
+  const wallet = useMemo(() => (connected && address ? { address } : undefined), [connected, address]);
   const isGuardian = wallet?.address === guardian;
+
+  const connect = async () => {
+    setConnectError(undefined);
+    try {
+      const connected = await external.connect("connect the pause guardian's wallet. it only signs the emergency pause.");
+      if (connected) setAddress(connected);
+    } catch (error) {
+      setConnectError(error instanceof Error ? error.message : "couldn't connect that wallet. try again.");
+    }
+  };
 
   const pause = useCallback(async () => {
     if (!wallet) throw new Error("connect the guardian wallet first");
     const prepared = await api.admin.prepareGuardianPause(wallet.address);
     // Our dialog steps aside so the wallet's own approval window is visible and clickable.
     setSigning(true);
-    let signed: Uint8Array;
+    let signed: string;
     try {
-      ({ signedTransaction: signed } = await signTransaction({ transaction: fromBase64(prepared.transaction), wallet, chain: SOLANA_CHAIN }));
+      signed = await external.sign(wallet.address, prepared.transaction);
     } finally {
       setSigning(false);
     }
-    const result = await api.admin.submitGuardianPause(prepared.chainTxId, toBase64(signed));
+    const result = await api.admin.submitGuardianPause(prepared.chainTxId, signed);
     onPaused(result.signature);
     return result;
-  }, [wallet, signTransaction, onPaused]);
+  }, [wallet, external, onPaused]);
   const tx = useTx(pause);
   const done = tx.state.phase === "confirmed";
 
   const disconnect = async () => {
-    await wallet?.disconnect().catch(() => undefined);
+    if (wallet) await external.disconnect(wallet.address);
     setAddress(undefined);
     tx.reset();
   };
@@ -93,13 +85,7 @@ function GuardianWallet({ guardian, onPaused }: { guardian: string; onPaused: (s
           <Button
             variant="secondary"
             className="self-start"
-            onClick={() =>
-              connectWallet({
-                walletChainType: "solana-only",
-                walletList: ["phantom", "detected_solana_wallets", "solflare", "backpack"],
-                description: "connect the pause guardian's wallet. it only signs the emergency pause.",
-              })
-            }
+            onClick={() => void connect()}
           >
             <Wallet className="size-4" aria-hidden /> connect guardian wallet
           </Button>
