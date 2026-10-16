@@ -33,7 +33,6 @@ export type NeedsYouItem = {
     | "changes_requested"
     | "dispute_open"
     | "payout_ready"
-    | "close_listing"
     | "review_proof"
     | "refund_available"
     | "outbid"
@@ -94,14 +93,8 @@ export async function creatorDashboard(db: Db, sellerId: string, now = new Date(
     const base = { listingId: listing.id, listingTitle: listing.title, listingSlug: listing.slug, sellerHandle: owner?.handle ?? "" };
     if (listing.state === "approved") needsYou.push({ ...base, type: "accept_terms", dueAt: listing.deadline });
     if (listing.state === "changes_requested") needsYou.push({ ...base, type: "changes_requested" });
+    // A finished listing needs nothing from the creator: closing it is admin-only (the rent panel).
     const listingSpots = ownedSpots.filter((spot) => spot.listingId === listing.id);
-    if (
-      listing.state === "published" &&
-      listing.deadline <= now &&
-      listingSpots.every((spot) => ["settled", "refunded", "cancelled"].includes(spot.state))
-    ) {
-      needsYou.push({ ...base, type: "close_listing" });
-    }
     for (const spot of listingSpots) {
       const item = { ...base, spotId: spot.id, spotIndex: spot.index };
       if (spot.state === "funded" && listing.deadline <= now && now < listing.deliveryDueAt) {

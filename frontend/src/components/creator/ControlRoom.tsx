@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { AlertTriangle, ArrowLeft, ExternalLink } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, ExternalLink, FilePen, XCircle } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { OwnedListing, Spot } from "@/lib/api/types";
 import { listingHref } from "@/lib/listing-display";
@@ -14,7 +14,11 @@ import { useSession } from "@/lib/session";
 import { useNow } from "@/lib/use-now";
 import { useTx } from "@/lib/use-tx";
 import { cx } from "@/lib/cx";
+import { feeFor, listingFeePolicy } from "@/lib/fees";
+import { formatUsd } from "@/lib/money";
+import { SUPPORT_EMAIL } from "@/components/legal/LegalPage";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
@@ -61,6 +65,10 @@ export function ControlRoom({ listingId }: { listingId: string }) {
     .filter((spot) => ["funded", "delivered", "disputed"].includes(spot.state))
     .reduce((sum, spot) => sum + BigInt(spot.amount ?? 0), 0n);
   const cover = listing.photos?.[0]?.url;
+  const finished =
+    listing.state === "published" &&
+    now >= new Date(listing.deadline).getTime() &&
+    listing.spots.every((spot) => ["settled", "refunded", "cancelled"].includes(spot.state));
 
   return (
     <div className="flex flex-col gap-6">
@@ -88,6 +96,13 @@ export function ControlRoom({ listingId }: { listingId: string }) {
       {(listing.state === "approved" || listing.state === "publishing") && <PublishPanel listing={listing} />}
       {listing.state === "in_review" && (
         <p className="rounded-card border border-line bg-surface px-4 py-3 text-body text-muted">in review. the adspaces team usually responds within a day.</p>
+      )}
+      {(listing.state === "draft" || listing.state === "changes_requested" || listing.state === "rejected") && <NotLiveState listing={listing} />}
+      {finished && (
+        <p className="flex items-center gap-2 rounded-card border border-line bg-surface px-4 py-3 text-body text-muted">
+          <CheckCircle2 className="size-4 shrink-0 text-success" aria-hidden />
+          every spot is finished. adspaces closes this listing; nothing else to do.
+        </p>
       )}
 
       {live && (
@@ -137,6 +152,53 @@ export function ControlRoom({ listingId }: { listingId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+const linkButton = "inline-flex h-10 items-center justify-center gap-1.5 self-start rounded-control px-4 text-body font-medium transition-colors";
+
+// Drafts, sent-back and rejected listings have no live view: say where things stand and what to do next.
+function NotLiveState({ listing }: { listing: OwnedListing }) {
+  const note = listing.reviewNote && (
+    <p className="rounded-control border border-line bg-canvas px-3 py-2 text-body">
+      <span className="text-small text-muted">note from the reviewer: </span>&ldquo;{listing.reviewNote}&rdquo;
+    </p>
+  );
+  if (listing.state === "rejected") {
+    return (
+      <section role="note" className="flex flex-col gap-3 rounded-panel border border-danger/30 bg-danger-soft/40 p-5">
+        <div className="flex items-center gap-2">
+          <XCircle className="size-5 text-danger" aria-hidden />
+          <h2 className="text-lead font-semibold">not approved</h2>
+        </div>
+        <p className="text-body text-muted">the adspaces team didn&apos;t approve this listing, so it can&apos;t be edited or published.</p>
+        {note}
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/sell" className={cx(linkButton, "bg-ink text-white hover:bg-ink-soft")}>
+            start a new listing
+          </Link>
+          <a href={`mailto:${SUPPORT_EMAIL}`} className="text-body font-medium text-accent hover:underline">
+            questions? contact support
+          </a>
+        </div>
+      </section>
+    );
+  }
+  const changes = listing.state === "changes_requested";
+  return (
+    <section role="note" className={cx("flex flex-col gap-3 rounded-panel border p-5", changes ? "border-warning/30 bg-warning-soft/60" : "border-line bg-surface")}>
+      <div className="flex items-center gap-2">
+        <FilePen className={cx("size-5", changes ? "text-warning" : "text-muted")} aria-hidden />
+        <h2 className="text-lead font-semibold">{changes ? "the reviewer asked for changes" : "this listing is a draft"}</h2>
+      </div>
+      <p className="text-body text-muted">
+        {changes ? "make the changes and submit it again. it goes back to the review queue." : "finish the details and submit it for review. sponsors can't see it yet."}
+      </p>
+      {note}
+      <Link href={`/sell/drafts/${listing.id}`} className={cx(linkButton, "bg-ink text-white hover:bg-ink-soft")}>
+        edit listing
+      </Link>
+    </section>
   );
 }
 
@@ -200,6 +262,7 @@ function useRefresh(listingId: string) {
 function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; now: number }) {
   const refresh = useRefresh(listing.id);
   const [proofOpen, setProofOpen] = useState(false);
+  const [confirmRefund, setConfirmRefund] = useState(false);
   const refund = useTx(() => api.spots.refund(spot.id, true));
   const payout = useTx(() => api.spots.payout(spot.id));
   const run = async (tx: { execute: () => Promise<unknown> }) => {
@@ -207,6 +270,12 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
   };
   const proofWindow = spot.state === "funded" && now >= new Date(listing.deadline).getTime() && now < new Date(listing.deliveryDueAt).getTime();
   const payable = spot.state === "delivered" && now >= reviewEnds(listing);
+  // Refunding the leader of a live auction would end their bid with no way back in, so it waits for the close.
+  const liveAuction = listing.mode === "auction" && now < new Date(listing.deadline).getTime();
+  const policy = listingFeePolicy(listing);
+  const gross = spot.amount ? BigInt(spot.amount) : 0n;
+  const fee = policy ? feeFor(listing.mode, policy, BigInt(spot.price), gross) : null;
+  const sponsorName = spot.brand?.name ?? "the sponsor";
 
   return (
     <section aria-labelledby="spot-panel" className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-5 shadow-card">
@@ -252,17 +321,37 @@ function SpotPanel({ listing, spot, now }: { listing: OwnedListing; spot: Spot; 
               due in <Countdown to={listing.deliveryDueAt} className="font-medium text-ink" />. post an update with the brand in place, then tag it as proof.
             </p>
           )}
-          <Button variant="ghost" onClick={() => void run(refund)} loading={refund.busy}>
-            refund the sponsor
-          </Button>
+          {!liveAuction && (
+            <Button variant="ghost" onClick={() => setConfirmRefund(true)} loading={refund.busy}>
+              refund the sponsor
+            </Button>
+          )}
           <TxStatus state={refund.state} action="refund" onRetry={refund.retry} />
+          <ConfirmModal
+            open={confirmRefund}
+            onClose={() => setConfirmRefund(false)}
+            onConfirm={() => void run(refund)}
+            title={`refund ${sponsorName}?`}
+            description={`${formatUsd(gross)} goes back to ${sponsorName} from escrow and this sale is cancelled. the spot can't be sold again and this can't be undone.`}
+            confirmLabel={`refund ${formatUsd(gross)}`}
+            cancelLabel="keep the sale"
+          />
         </>
       )}
       {spot.state === "delivered" && (
         <>
           {payable ? (
             <Button onClick={() => void run(payout)} loading={payout.busy}>
-              get paid <Money value={spot.amount} />
+              {fee !== null ? (
+                <>
+                  get paid <Money value={gross - fee} />
+                  <span className="font-normal opacity-70">(after {formatUsd(fee)} fee)</span>
+                </>
+              ) : (
+                <>
+                  get paid <Money value={spot.amount} />
+                </>
+              )}
             </Button>
           ) : (
             <p className="text-small text-muted">

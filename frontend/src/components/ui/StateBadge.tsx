@@ -20,7 +20,8 @@ const spotCopy: Record<SpotState, Record<Perspective, string> & { tone: BadgeTon
   delivered: { creator: "delivered · in review", sponsor: "delivered · review it", public: "taken", tone: "success" },
   disputed: { creator: "disputed", sponsor: "dispute open", public: "taken", tone: "warning" },
   settled: { creator: "paid out", sponsor: "complete", public: "taken", tone: "success" },
-  refunded: { creator: "refunded", sponsor: "refunded", public: "available", tone: "neutral" },
+  // A refunded spot can't be bought again (only open spots can), so the public never sees "available".
+  refunded: { creator: "refunded", sponsor: "refunded", public: "not available", tone: "neutral" },
   cancelled: { creator: "closed", sponsor: "closed", public: "closed", tone: "neutral" },
 };
 

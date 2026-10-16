@@ -224,7 +224,6 @@ export type NeedsYouType =
   | "changes_requested"
   | "dispute_open"
   | "payout_ready"
-  | "close_listing"
   | "review_proof"
   | "refund_available"
   | "outbid"

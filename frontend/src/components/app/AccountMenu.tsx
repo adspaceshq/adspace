@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { LayoutDashboard, LogOut, MoreHorizontal, Settings, ShieldCheck, User } from "lucide-react";
+import { Bookmark, LayoutDashboard, LogOut, MoreHorizontal, Settings, ShieldCheck, User } from "lucide-react";
 import type { Session } from "@/lib/api/types";
 import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { cx } from "@/lib/cx";
@@ -96,6 +96,9 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
           </Link>
           <Link role="menuitem" href={profileHref} className={item} onClick={() => setOpen(false)}>
             <User className="size-4 text-muted" aria-hidden /> public profile
+          </Link>
+          <Link role="menuitem" href="/watchlist" className={item} onClick={() => setOpen(false)}>
+            <Bookmark className="size-4 text-muted" aria-hidden /> saved
           </Link>
           {(session.isReviewer || session.isAdmin) && (
             <Link role="menuitem" href="/review" className={item} onClick={() => setOpen(false)}>
