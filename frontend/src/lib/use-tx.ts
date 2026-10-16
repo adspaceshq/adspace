@@ -5,7 +5,7 @@ import type { TxState } from "@/components/ui/TxStatus";
 import { userErrorMessage } from "@/lib/errors";
 
 // Drives TxStatus for backend-relayed actions: the server signs via Privy and returns the signature.
-export function useTx<Args extends unknown[]>(run: (...args: Args) => Promise<{ signature?: string }>) {
+export function useTx<Args extends unknown[], Result extends { signature?: string } = { signature?: string }>(run: (...args: Args) => Promise<Result>) {
   const [state, setState] = useState<TxState>({ phase: "idle" });
   const lastArgs = useRef<Args | null>(null);
 

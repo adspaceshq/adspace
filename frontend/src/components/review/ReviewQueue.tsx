@@ -17,6 +17,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { SellerAvatar } from "@/components/market/SellerAvatar";
 import { ResolveDisputeModal } from "./ResolveDisputeModal";
+import { SquadsPendingNote } from "./SquadsPendingNote";
 import { Address } from "@/components/ui/Address";
 import { UserLink } from "@/components/ui/UserLink";
 
@@ -112,6 +113,11 @@ function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings">; data: Review
                 <UserLink handle={item.buyerHandle} /> disputes <UserLink handle={item.sellerHandle} /> · opened {new Date(item.dispute.openedAt).toLocaleString()}
               </p>
               <blockquote className="rounded-control bg-canvas px-3 py-2 text-body">&ldquo;{item.dispute.reason}&rdquo;</blockquote>
+              {item.dispute.squadsTransactionIndex !== null && (
+                <SquadsPendingNote index={item.dispute.squadsTransactionIndex}>
+                  proposed: creator gets {(item.dispute.proposedSellerShareBps ?? 0) / 100}%. resolve again only if the multisig rejects it.
+                </SquadsPendingNote>
+              )}
               <div className="flex gap-2">
                 <Link href={`/dashboard/spots/${item.spotId}`} className="rounded-control border border-line px-3 py-1.5 text-small font-medium hover:border-line-strong">
                   view proof & messages

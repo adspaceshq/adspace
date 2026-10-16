@@ -3,8 +3,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, PauseCircle, PlayCircle } from "lucide-react";
+import { AlertOctagon, ArrowLeft, CheckCircle2, PauseCircle, PlayCircle } from "lucide-react";
 import { api } from "@/lib/api/v2";
+import type { SquadsPending } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
@@ -16,8 +17,13 @@ import { Stat } from "@/components/ui/Stat";
 import { TeamPanel } from "./TeamPanel";
 import { RentPanel } from "./RentPanel";
 import { Address } from "@/components/ui/Address";
+import { SquadsPendingNote } from "./SquadsPendingNote";
 
-type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
+// The guardian is an external wallet (not the Privy embedded one) and the app has no external wallet
+// connection, so the guardian signs guardian_pause from the adspaces-program repo instead.
+const GUARDIAN_PAUSE_COMMAND = "ADSPACES_GUARDIAN_WALLET=/path/to/guardian-keypair.json node scripts/pause-guardian-devnet.js pause --confirm";
+
+type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; disputesResolved?: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
 
 // Reviewers see protocol state; only admins can change it.
 export function OpsPanel() {
@@ -29,15 +35,23 @@ export function OpsPanel() {
   const [typed, setTyped] = useState("");
   const [days, setDays] = useState("");
   const [report, setReport] = useState<Report>();
+  const [resumeProposal, setResumeProposal] = useState<SquadsPending>();
+  const [copied, setCopied] = useState(false);
 
   const pause = useMutation({
     mutationFn: (paused: boolean) => api.admin.setPaused(paused),
-    onSuccess: () => {
+    onSuccess: (result) => {
       setConfirmPause(false);
       setTyped("");
+      if (result.pending) setResumeProposal(result.pending);
       void queryClient.invalidateQueries({ queryKey: queryKeys.adminStatus });
     },
   });
+  const copyCommand = async () => {
+    await navigator.clipboard.writeText(GUARDIAN_PAUSE_COMMAND);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
   const timeout = useMutation({
     mutationFn: (seconds: number) => api.admin.setDisputeTimeout(seconds),
     onSuccess: () => {
@@ -51,6 +65,8 @@ export function OpsPanel() {
   if (status.isError) return <p className="text-body text-danger">{status.error.message}</p>;
   const data = status.data;
   const paused = data.paused;
+  // With the multisig as config authority the server can't pause, and resuming becomes a Squads proposal.
+  const viaMultisig = !data.serverIsAuthority;
 
   return (
     <div className="flex flex-col gap-6">
@@ -58,6 +74,17 @@ export function OpsPanel() {
         <ArrowLeft className="size-4" aria-hidden /> queue
       </Link>
       <h1 className="text-title font-semibold sm:text-display">ops</h1>
+
+      <div
+        role="status"
+        className={`flex items-center gap-3 rounded-card border px-5 py-4 ${paused ? "border-danger/30 bg-danger-soft" : "border-success/30 bg-success-soft"}`}
+      >
+        {paused ? <AlertOctagon aria-hidden className="size-6 shrink-0 text-danger" /> : <CheckCircle2 aria-hidden className="size-6 shrink-0 text-success" />}
+        <div>
+          <p className="text-title font-semibold">{paused ? "protocol paused" : "protocol running"}</p>
+          <p className="text-small text-muted">{paused ? "new listings, claims and bids are blocked on-chain." : "read from the on-chain config every 30 seconds."}</p>
+        </div>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="p-4">
@@ -74,10 +101,12 @@ export function OpsPanel() {
         {[
           ["treasury", data.treasury],
           ["config authority", data.authority],
+          ["pause guardian", data.pauseGuardian],
+          ["squads multisig", data.squadsMultisig],
         ].map(([label, address]) => (
           <p key={label} className="flex flex-wrap items-center gap-2">
             <span className="w-32 text-muted">{label}</span>
-            <Address value={address} chars={6} />
+            {address ? <Address value={address} chars={6} /> : <span className="text-subtle">not set</span>}
           </p>
         ))}
       </Card>
@@ -91,10 +120,36 @@ export function OpsPanel() {
           <Card className="flex flex-col gap-3 p-5">
             <p className="text-body font-semibold">emergency pause</p>
             <p className="text-small text-muted">blocks new listings, spots, claims and bids. payouts, refunds and disputes keep working so no funds get stuck.</p>
-            <Button variant={paused ? "primary" : "danger"} onClick={() => setConfirmPause(true)}>
-              {paused ? <PlayCircle className="size-4" aria-hidden /> : <PauseCircle className="size-4" aria-hidden />}
-              {paused ? "resume protocol" : "pause protocol"}
-            </Button>
+            {viaMultisig && !paused ? (
+              <div className="flex flex-col gap-2 text-small">
+                <p className="text-muted">
+                  the config authority is the multisig, so the server can&apos;t pause. the pause guardian
+                  {data.pauseGuardian && (
+                    <>
+                      {" "}
+                      <Address value={data.pauseGuardian} chars={4} />
+                    </>
+                  )}{" "}
+                  can, but its wallet isn&apos;t connected to this app. run this in the adspaces-program repo with the guardian&apos;s keypair:
+                </p>
+                <pre className="no-scrollbar overflow-x-auto rounded-control bg-canvas px-3 py-2 font-mono text-caption">{GUARDIAN_PAUSE_COMMAND}</pre>
+                <Button variant="secondary" size="sm" className="self-start" onClick={() => void copyCommand()}>
+                  {copied ? "copied" : "copy command"}
+                </Button>
+                {!data.pauseGuardian && <p className="text-warning">no active guardian is set on-chain; the multisig must set one first.</p>}
+              </div>
+            ) : (
+              <Button variant={paused ? "primary" : "danger"} onClick={() => setConfirmPause(true)}>
+                {paused ? <PlayCircle className="size-4" aria-hidden /> : <PauseCircle className="size-4" aria-hidden />}
+                {paused ? (viaMultisig ? "propose resume to the multisig" : "resume protocol") : "pause protocol"}
+              </Button>
+            )}
+            {resumeProposal && paused && (
+              <SquadsPendingNote index={resumeProposal.transactionIndex} url={resumeProposal.url}>
+                the protocol stays paused until multisig members approve and execute the resume.
+              </SquadsPendingNote>
+            )}
+            {pause.isError && !confirmPause && <p className="text-small text-danger">{pause.error.message}</p>}
           </Card>
           <Card className="flex flex-col gap-3 p-5">
             <p className="text-body font-semibold">dispute timeout</p>
@@ -125,7 +180,7 @@ export function OpsPanel() {
         {report && (
           <div className="flex flex-col gap-2 text-small">
             <p className="text-muted">
-              checked {report.checkedTxs} transactions · {report.confirmedTxs} confirmed · {report.failedTxs} marked failed · {report.withdrawalsUpdated} withdrawals updated
+              checked {report.checkedTxs} transactions · {report.confirmedTxs} confirmed · {report.failedTxs} marked failed · {report.withdrawalsUpdated} withdrawals updated · {report.disputesResolved ?? 0} multisig resolutions settled
             </p>
             {report.spotDrift.length === 0 ? (
               <p className="text-success">every spot matches the chain.</p>
@@ -148,15 +203,21 @@ export function OpsPanel() {
       <Modal
         open={confirmPause}
         onClose={() => setConfirmPause(false)}
-        title={paused ? "resume the protocol?" : "pause the protocol?"}
-        description={paused ? "new listings and purchases will be allowed again." : `type "${"pause"}" to confirm. sellers and sponsors can't start anything new until you resume.`}
+        title={paused ? (viaMultisig ? "propose a resume?" : "resume the protocol?") : "pause the protocol?"}
+        description={
+          paused
+            ? viaMultisig
+              ? "opens a Squads proposal for pause_protocol(false). nothing changes until multisig members approve and execute it."
+              : "new listings and purchases will be allowed again."
+            : `type "${"pause"}" to confirm. sellers and sponsors can't start anything new until you resume.`
+        }
         footer={
           <>
             <Button variant="ghost" onClick={() => setConfirmPause(false)}>
               cancel
             </Button>
             <Button variant={paused ? "primary" : "danger"} loading={pause.isPending} disabled={!paused && typed !== "pause"} onClick={() => pause.mutate(!paused)}>
-              {paused ? "resume" : "pause"}
+              {paused ? (viaMultisig ? "propose resume" : "resume") : "pause"}
             </Button>
           </>
         }
