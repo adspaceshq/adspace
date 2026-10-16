@@ -3,7 +3,8 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { AlertTriangle, Search, SearchX } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, Search, SearchX, Store } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { BrowseFilters, PricingMode, Surface } from "@/lib/api/types";
 import { SURFACE_LABELS } from "@/lib/listing-display";
@@ -159,17 +160,31 @@ export function BrowseView() {
             <ListingCardSkeleton key={index} />
           ))}
         </div>
-      ) : items.length === 0 ? (
+      ) : items.length === 0 && filtered ? (
         <EmptyState
           icon={SearchX}
-          title={filtered ? "no spaces match" : "no open spaces right now"}
-          description={filtered ? "try a different surface or search term." : "new spaces are listed every week. check back soon."}
+          title="no spaces match"
+          description="try a different surface or search term."
           action={
-            filtered ? (
-              <Button variant="secondary" onClick={() => router.replace(pathname)}>
-                clear filters
-              </Button>
-            ) : undefined
+            <Button variant="secondary" onClick={() => router.replace(pathname)}>
+              clear filters
+            </Button>
+          }
+        />
+      ) : items.length === 0 ? (
+        <EmptyState
+          icon={Store}
+          title="nothing listed yet"
+          description="be the first. put a sponsor's logo on your laptop, car or shopfront: sponsors pay in usdc, held in escrow until you post proof."
+          action={
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Link href="/sell" className="inline-flex h-10 items-center rounded-control bg-ink px-4 text-body font-medium text-white transition-colors hover:bg-ink-soft">
+                list your space
+              </Link>
+              <a href="https://adspaces.fun/#how" className="text-body font-medium text-accent hover:underline">
+                how it works
+              </a>
+            </div>
           }
         />
       ) : (

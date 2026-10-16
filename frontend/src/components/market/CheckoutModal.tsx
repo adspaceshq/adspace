@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/Field";
 import { Modal } from "@/components/ui/Modal";
 import { Money } from "@/components/ui/Money";
 import { TxStatus } from "@/components/ui/TxStatus";
+import { DevnetBanner } from "@/components/app/DevnetBanner";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
 import { LogoUpload } from "./LogoUpload";
 import { UserLink } from "@/components/ui/UserLink";
@@ -95,8 +96,11 @@ export function CheckoutModal({
     }
   };
 
+  // A bid leads until bidding closes; only a claim makes the spot yours outright.
   const title = done
-    ? `spot ${spot.index + 1} is yours`
+    ? auction
+      ? "you're the top bidder"
+      : `spot ${spot.index + 1} is yours`
     : auction
       ? `bid on spot ${spot.index + 1}`
       : `claim spot ${spot.index + 1}`;
@@ -203,12 +207,14 @@ export function CheckoutModal({
             <div className="mt-1 flex gap-2 border-t border-line pt-3 text-small text-muted">
               <ShieldCheck className="mt-0.5 size-4 shrink-0 text-success" aria-hidden />
               <p>
-                held in escrow until <UserLink handle={listing.seller.handle} /> posts proof. refunded in full if it isn&apos;t delivered by{" "}
-                {new Date(listing.deliveryDueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}.
+                held in escrow until <UserLink handle={listing.seller.handle} /> posts proof. if it isn&apos;t delivered by{" "}
+                {new Date(listing.deliveryDueAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}, you can get a full refund.
                 {auction && " if you're outbid, it comes straight back."}
               </p>
             </div>
           </dl>
+
+          <DevnetBanner variant="inline" />
 
           <Checkbox checked={agreed} onChange={setAgreed} disabled={tx.busy}>
             i agree to the <NewTabLink href="/terms">terms</NewTabLink> and{" "}
