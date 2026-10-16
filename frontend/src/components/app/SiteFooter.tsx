@@ -37,6 +37,8 @@ export function SiteFooter() {
           links={[
             { href: "/terms", label: "terms" },
             { href: "/privacy", label: "privacy" },
+            { href: "/fees", label: "fees" },
+            { href: "/content-policy", label: "content policy" },
           ]}
         />
       </div>
@@ -69,6 +71,8 @@ export function CompactFooter() {
         <nav aria-label="footer" className="flex gap-4">
           <Link href="/terms" className="hover:text-ink">terms</Link>
           <Link href="/privacy" className="hover:text-ink">privacy</Link>
+          <Link href="/fees" className="hover:text-ink">fees</Link>
+          <Link href="/content-policy" className="hover:text-ink">content policy</Link>
           <a href="mailto:support@adspaces.fun" className="hover:text-ink">support</a>
           <a href="https://adspaces.fun" className="hover:text-ink">adspaces.fun</a>
         </nav>
