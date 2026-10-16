@@ -73,6 +73,8 @@ export const chainOp = app.enum("chain_op", [
   "wallet_withdrawal",
   "pause_protocol",
   "set_dispute_timeout",
+  // Creates a Squads vault transaction + proposal; the multisig approves and executes it later.
+  "squads_proposal",
 ]);
 export const chainTxStatus = app.enum("chain_tx_status", ["pending", "submitted", "confirmed", "failed"]);
 
@@ -414,6 +416,19 @@ export const disputes = app.table(
     sellerShareBps: smallint("seller_share_bps"),
     decision: text("decision"),
     resolvedBy: uuid("resolved_by").references(() => users.id, { onDelete: "set null" }),
+    // A reviewer's decision waiting for the multisig (the config authority) to approve and execute it
+    // as a Squads vault transaction. The dispute stays open until the chain shows it resolved.
+    squadsMultisig: text("squads_multisig"),
+    squadsTransactionIndex: bigint("squads_transaction_index", { mode: "number" }),
+    squadsVaultTransaction: text("squads_vault_transaction"),
+    squadsProposal: text("squads_proposal"),
+    proposedSellerShareBps: smallint("proposed_seller_share_bps"),
+    proposedDecision: text("proposed_decision"),
+    // Hex sha256 and listing link recorded on-chain with the decision.
+    decisionHash: text("decision_hash"),
+    decisionUri: text("decision_uri"),
+    proposedBy: uuid("proposed_by").references(() => users.id, { onDelete: "set null" }),
+    proposedAt: at("proposed_at"),
     openedAt: createdAt(),
     closedAt: at("closed_at"),
   },
@@ -425,6 +440,18 @@ export const disputes = app.table(
       "disputes_resolution_complete",
       sql`state <> 'resolved' OR (seller_share_bps IS NOT NULL AND decision IS NOT NULL AND resolved_by IS NOT NULL)`,
     ),
+    check(
+      "disputes_proposal_complete",
+      sql`(squads_transaction_index IS NULL) = (squads_multisig IS NULL)
+        AND (squads_transaction_index IS NULL) = (squads_vault_transaction IS NULL)
+        AND (squads_transaction_index IS NULL) = (squads_proposal IS NULL)
+        AND (squads_transaction_index IS NULL) = (proposed_seller_share_bps IS NULL)
+        AND (squads_transaction_index IS NULL) = (proposed_decision IS NULL)
+        AND (squads_transaction_index IS NULL) = (decision_hash IS NULL)
+        AND (squads_transaction_index IS NULL) = (decision_uri IS NULL)
+        AND (squads_transaction_index IS NULL) = (proposed_at IS NULL)`,
+    ),
+    check("disputes_proposed_share_range", sql`proposed_seller_share_bps IS NULL OR proposed_seller_share_bps BETWEEN 0 AND 10000`),
   ],
 );
 
