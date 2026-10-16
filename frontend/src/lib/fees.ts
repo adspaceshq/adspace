@@ -34,3 +34,38 @@ export function feeFor(mode: PricingMode, fees: FeePolicy, startPrice: bigint, f
   const cap = applyBps(finalAmount, fees.maxFeeBps);
   return calculated < cap ? calculated : cap;
 }
+
+// Fees above this get an extra confirmation: the policy is fixed on-chain at publish.
+export const HIGH_FEE_BPS = 1000;
+
+// What a fee-% field may hold while someone is typing: digits, at most one dot, at most two decimals
+// (one basis point is 0.01%). "", "2" and "2." are all fine mid-edit.
+export function isPercentDraft(input: string): boolean {
+  return /^\d{0,3}(\.\d{0,2})?$/.test(input.trim());
+}
+
+// "2.5" -> 250. Null for anything that isn't a whole number of basis points between 0 and 100%.
+export function parsePercentToBps(input: string): number | null {
+  const text = input.trim();
+  const match = /^(\d{1,3})?(?:\.(\d{0,2}))?$/.exec(text);
+  if (!match || (match[1] === undefined && !match[2])) return null;
+  const bps = Number(match[1] ?? "0") * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+  return bps <= 10_000 ? bps : null;
+}
+
+// 250 -> "2.5"; the canonical text a field settles on after blur.
+export function bpsToPercentText(bps: number): string {
+  return String(bps / 100);
+}
+
+// The most a sale can ever pay, as a share of the final amount. In auctions the uplift rate is
+// normally above the cap (base <= cap <= uplift), so the cap is what bounds the fee.
+export function effectiveMaxFeeBps(fees: FeePolicy): number {
+  return Math.max(fees.feeBps, fees.maxFeeBps);
+}
+
+// The policy recorded on a listing at approval. Null until a reviewer has set one.
+export function listingFeePolicy(listing: { feeBps: number | null; upliftFeeBps: number | null; maxFeeBps: number | null }): FeePolicy | null {
+  if (listing.feeBps === null || listing.upliftFeeBps === null || listing.maxFeeBps === null) return null;
+  return { feeBps: listing.feeBps, upliftFeeBps: listing.upliftFeeBps, maxFeeBps: listing.maxFeeBps };
+}

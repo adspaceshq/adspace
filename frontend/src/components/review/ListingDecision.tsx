@@ -7,12 +7,13 @@ import { useState } from "react";
 import { AlertTriangle, ArrowLeft, BadgeCheck } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { ReviewDecision, ReviewQueueItem } from "@/lib/api/types";
-import { DEFAULT_FEES, feeFor, feePolicyError, type FeePolicy } from "@/lib/fees";
+import { DEFAULT_FEES, HIGH_FEE_BPS, bpsToPercentText, effectiveMaxFeeBps, feeFor, feePolicyError, isPercentDraft, parsePercentToBps, type FeePolicy } from "@/lib/fees";
 import { formatFollowers } from "@/lib/listing-display";
 import { formatUsd } from "@/lib/money";
 import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { Button } from "@/components/ui/Button";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Input, Textarea } from "@/components/ui/Field";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
@@ -53,7 +54,12 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
   const router = useRouter();
   const queryClient = useQueryClient();
   const { session } = useSession();
-  const [fees, setFees] = useState<FeePolicy>(DEFAULT_FEES[listing.mode]);
+  // Raw text per field so "2." survives while typing; parsed to basis points for checks and approve.
+  const [feeText, setFeeText] = useState<Record<keyof FeePolicy, string>>(() => {
+    const defaults = DEFAULT_FEES[listing.mode];
+    return { feeBps: bpsToPercentText(defaults.feeBps), upliftFeeBps: bpsToPercentText(defaults.upliftFeeBps), maxFeeBps: bpsToPercentText(defaults.maxFeeBps) };
+  });
+  const [confirm, setConfirm] = useState<"high_fee" | "reject" | null>(null);
   const [reviewHours, setReviewHours] = useState(String(Math.round(listing.reviewWindowSeconds / 3600)));
   const [delivery, setDelivery] = useState(toLocal(listing.deliveryDueAt));
   const [note, setNote] = useState("");
@@ -72,26 +78,48 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
   });
 
   const ownListing = session?.id === listing.sellerId;
-  const policyError = feePolicyError(listing.mode, fees, floorBps);
-  const sample = listing.spots[0] ? BigInt(listing.spots[0].price) : 0n;
-  const sampleFee = feeFor(listing.mode, fees, sample, sample);
-  const hotAuction = sample * 3n;
-  const hotFee = feeFor(listing.mode, fees, sample, hotAuction);
-  const setBps = (key: keyof FeePolicy, percent: string) => {
-    const bps = Math.round(Number(percent) * 100);
-    setFees((current) => (listing.mode === "fixed" ? { feeBps: bps, upliftFeeBps: 0, maxFeeBps: bps } : { ...current, [key]: bps }));
+  const auction = listing.mode === "auction";
+  const parsed = {
+    feeBps: parsePercentToBps(feeText.feeBps),
+    upliftFeeBps: auction ? parsePercentToBps(feeText.upliftFeeBps) : 0,
+    maxFeeBps: auction ? parsePercentToBps(feeText.maxFeeBps) : parsePercentToBps(feeText.feeBps),
   };
+  const fieldError = (key: keyof FeePolicy) => (parsed[key] === null ? "enter a % like 2.5 (0-100, up to 2 decimals)" : undefined);
+  const fees: FeePolicy | null =
+    parsed.feeBps !== null && parsed.upliftFeeBps !== null && parsed.maxFeeBps !== null
+      ? { feeBps: parsed.feeBps, upliftFeeBps: parsed.upliftFeeBps, maxFeeBps: parsed.maxFeeBps }
+      : null;
+  const policyError = fees ? feePolicyError(listing.mode, fees, floorBps) : "fix the fee fields";
+  const highFee = fees !== null && effectiveMaxFeeBps(fees) > HIGH_FEE_BPS;
+  const sample = listing.spots[0] ? BigInt(listing.spots[0].price) : 0n;
+  const hotAuction = sample * 3n;
+  const hotFee = fees ? feeFor(listing.mode, fees, sample, hotAuction) : 0n;
+  const setPercent = (key: keyof FeePolicy, text: string) => {
+    if (isPercentDraft(text)) setFeeText((current) => ({ ...current, [key]: text }));
+  };
+  // On blur a valid value settles on its canonical form ("2." -> "2", "02.50" -> "2.5").
+  const settlePercent = (key: keyof FeePolicy) => {
+    const bps = parsePercentToBps(feeText[key]);
+    if (bps !== null) setFeeText((current) => ({ ...current, [key]: bpsToPercentText(bps) }));
+  };
+  const bpsHint = (key: keyof FeePolicy) => (parsed[key] === null ? undefined : `${parsed[key]} bps`);
 
+  const submitApproval = () => {
+    if (!fees) return;
+    decide.mutate({ action: "approve", fees, reviewWindowSeconds: Number(reviewHours) * 3600, deliveryDueAt: new Date(delivery).toISOString(), note });
+  };
   const approve = () => {
     const hours = Number(reviewHours);
-    if (policyError) return setError(policyError);
+    if (!fees || policyError) return setError(policyError ?? "fix the fee fields");
     if (!Number.isInteger(hours) || hours < 1 || hours > 720) return setError("review window must be 1-720 hours");
     setError(undefined);
-    decide.mutate({ action: "approve", fees, reviewWindowSeconds: hours * 3600, deliveryDueAt: new Date(delivery).toISOString(), note });
+    if (highFee) return setConfirm("high_fee");
+    submitApproval();
   };
   const sendBack = (action: "request_changes" | "reject") => {
     if (!note.trim()) return setError("tell the creator why in the note");
     setError(undefined);
+    if (action === "reject") return setConfirm("reject");
     decide.mutate({ action, note });
   };
 
@@ -155,25 +183,55 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
           )}
           <div className="flex flex-col gap-4 rounded-panel border border-line bg-surface p-5 shadow-card">
             <p className="text-body font-semibold">fees</p>
-            <div className={listing.mode === "auction" ? "grid grid-cols-3 gap-2" : "grid grid-cols-1"}>
-              <Input label={listing.mode === "auction" ? "base %" : "fee %"} inputMode="decimal" value={String(fees.feeBps / 100)} onChange={(event) => setBps("feeBps", event.target.value)} />
-              {listing.mode === "auction" && (
-                <>
-                  <Input label="uplift %" inputMode="decimal" value={String(fees.upliftFeeBps / 100)} onChange={(event) => setBps("upliftFeeBps", event.target.value)} />
-                  <Input label="cap %" inputMode="decimal" value={String(fees.maxFeeBps / 100)} onChange={(event) => setBps("maxFeeBps", event.target.value)} />
-                </>
-              )}
+            <div className={auction ? "grid grid-cols-3 gap-2" : "grid grid-cols-1"}>
+              {(auction
+                ? ([
+                    ["feeBps", "base %"],
+                    ["upliftFeeBps", "uplift %"],
+                    ["maxFeeBps", "cap %"],
+                  ] as const)
+                : ([["feeBps", "fee %"]] as const)
+              ).map(([key, label]) => (
+                <Input
+                  key={key}
+                  label={label}
+                  inputMode="decimal"
+                  autoComplete="off"
+                  value={feeText[key]}
+                  onChange={(event) => setPercent(key, event.target.value)}
+                  onBlur={() => settlePercent(key)}
+                  error={fieldError(key)}
+                  hint={bpsHint(key)}
+                />
+              ))}
             </div>
-            {policyError ? (
+            <p className="text-small text-muted">
+              floor {floorBps / 100}%{auction ? " · base ≤ cap ≤ uplift" : ""}. fixed on-chain at publish; it can&apos;t be changed later.
+            </p>
+            {highFee && fees && (
+              <p role="alert" className="flex gap-2 rounded-control bg-warning-soft px-3 py-2 text-small text-ink">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+                {bpsToPercentText(effectiveMaxFeeBps(fees))}% is above the usual 10% ceiling. check it&apos;s intended.
+              </p>
+            )}
+            {policyError || !fees ? (
               <p className="text-small text-danger">{policyError}</p>
             ) : (
               <div className="flex flex-col gap-1 rounded-card bg-canvas p-3 text-small">
-                <p>
-                  on a {formatUsd(sample)} spot: seller gets <strong>{formatUsd(sample - sampleFee)}</strong>, platform earns {formatUsd(sampleFee)}
-                </p>
-                {listing.mode === "auction" && (
+                <ul className="flex flex-col gap-0.5">
+                  {listing.spots.map((spot) => {
+                    const price = BigInt(spot.price);
+                    const fee = feeFor(listing.mode, fees, price, price);
+                    return (
+                      <li key={spot.id}>
+                        spot {spot.index + 1} at {formatUsd(price)}: creator gets <strong>{formatUsd(price - fee)}</strong>, platform {formatUsd(fee)}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {auction && (
                   <p className="text-muted">
-                    if bidding reaches {formatUsd(hotAuction)}: seller gets {formatUsd(hotAuction - hotFee)}, platform {formatUsd(hotFee)}
+                    if spot 1 bidding reaches {formatUsd(hotAuction)}: creator gets {formatUsd(hotAuction - hotFee)}, platform {formatUsd(hotFee)}
                   </p>
                 )}
               </div>
@@ -204,6 +262,28 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewQueueItem; floorBp
           </div>
         </aside>
       </div>
+      <ConfirmModal
+        open={confirm === "high_fee"}
+        onClose={() => setConfirm(null)}
+        onConfirm={submitApproval}
+        tone="primary"
+        title={`approve with a ${fees ? bpsToPercentText(effectiveMaxFeeBps(fees)) : ""}% fee?`}
+        description="that's above the usual 10%. the fee is fixed on-chain when the creator publishes and can't be changed later."
+        confirmLabel="approve anyway"
+        cancelLabel="edit fees"
+      >
+        <p className="text-body text-muted">double-check the base, uplift and cap before you approve.</p>
+      </ConfirmModal>
+      <ConfirmModal
+        open={confirm === "reject"}
+        onClose={() => setConfirm(null)}
+        onConfirm={() => decide.mutate({ action: "reject", note })}
+        title="reject this listing?"
+        description="the creator sees your note and can't resubmit this listing. this can't be undone."
+        confirmLabel="reject listing"
+      >
+        <p className="text-body text-muted">to let them fix it instead, use request changes.</p>
+      </ConfirmModal>
     </div>
   );
 }
