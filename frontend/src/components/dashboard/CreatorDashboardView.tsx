@@ -23,6 +23,8 @@ import { DashboardHeader } from "./DashboardHeader";
 import { EarningsChart } from "./EarningsChart";
 import { NeedsYouList } from "./NeedsYouList";
 import { SubmittedBanner } from "./SubmittedBanner";
+import { userErrorMessage } from "@/lib/errors";
+import { useToast } from "@/components/ToastProvider";
 
 type CreatorListing = CreatorDashboard["listings"][number];
 
@@ -36,11 +38,13 @@ const DELETABLE: ListingState[] = ["draft", "changes_requested", "rejected"];
 
 function DeleteListingButton({ listing }: { listing: CreatorListing }) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const remove = useMutation({
     mutationFn: () => api.listings.remove(listing.id),
     onSuccess: () => {
       setOpen(false);
+      toast.success("listing deleted");
       void queryClient.invalidateQueries({ queryKey: queryKeys.creatorDashboard });
     },
   });
@@ -70,7 +74,7 @@ function DeleteListingButton({ listing }: { listing: CreatorListing }) {
           </>
         }
       >
-        {remove.isError && <p className="text-small text-danger">{remove.error.message}</p>}
+        {remove.isError && <p className="text-small text-danger">{userErrorMessage(remove.error)}</p>}
       </Modal>
     </>
   );
@@ -164,7 +168,7 @@ export function CreatorDashboardView() {
         <EmptyState
           icon={AlertTriangle}
           title="couldn't load your dashboard"
-          description={query.error.message}
+          description={userErrorMessage(query.error)}
           action={<Button onClick={() => void query.refetch()}>try again</Button>}
         />
       ) : (

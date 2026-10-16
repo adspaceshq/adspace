@@ -8,11 +8,13 @@ import { ProfileFields, useProfileForm } from "@/components/account/ProfileField
 import type { Session } from "@/lib/api/types";
 import { BRAND_CATEGORIES, buildOnboarding, landingPath, SOCIAL_PLATFORMS, sells, sponsors, type Role, type RoleErrors, type RoleForm } from "@/lib/onboarding";
 import { useSession } from "@/lib/session";
+import { TERMS_VERSION } from "@/lib/terms";
 import { Button } from "@/components/ui/Button";
 import { Checkbox, NewTabLink } from "@/components/ui/Checkbox";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Field";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { userErrorMessage } from "@/lib/errors";
 
 type Step = "email" | "profile" | "role";
 const STEPS: Array<{ id: Step; label: string }> = [
@@ -85,7 +87,7 @@ function EmailStep() {
           {linkError}
         </p>
       )}
-      <Button onClick={linkEmail} className="self-start">
+      <Button onClick={() => void linkEmail()} className="self-start">
         send me a code
       </Button>
     </section>
@@ -112,7 +114,7 @@ const ROLES: Array<{ id: Role; title: string; description: string; icon: typeof 
 ];
 
 // Used by onboarding (first save) and settings (edits); prefilled from saved answers.
-// requireConsent: first sign-up asks for age and terms agreement before finishing (frontend-only).
+// requireConsent: first sign-up asks for age and terms agreement before finishing; the server records the version.
 export function RoleEditor({
   session,
   onBack,
@@ -148,11 +150,12 @@ export function RoleEditor({
     setSaving(true);
     setError(undefined);
     try {
-      await api.me.saveOnboarding(built.payload);
+      // First sign-up records the terms version they agreed to; settings edits don't ask again.
+      await api.me.saveOnboarding(built.payload, requireConsent ? TERMS_VERSION : undefined);
       await refresh();
       onSaved?.();
     } catch (cause) {
-      setError((cause as Error).message);
+      setError(userErrorMessage(cause, "couldn't save. try again."));
     } finally {
       setSaving(false);
     }

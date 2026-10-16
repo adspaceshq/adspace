@@ -19,6 +19,7 @@ import { RentPanel } from "./RentPanel";
 import { Address } from "@/components/ui/Address";
 import { SquadsPendingNote } from "./SquadsPendingNote";
 import { GuardianPause } from "./GuardianPause";
+import { userErrorMessage } from "@/lib/errors";
 
 type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; disputesResolved?: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
 
@@ -55,7 +56,7 @@ export function OpsPanel() {
   const reconcile = useMutation({ mutationFn: () => api.review.reconcile() as Promise<Report>, onSuccess: setReport });
 
   if (status.isPending) return <Skeleton className="h-64 w-full" />;
-  if (status.isError) return <p className="text-body text-danger">{status.error.message}</p>;
+  if (status.isError) return <p className="text-body text-danger">{userErrorMessage(status.error)}</p>;
   const data = status.data;
   const paused = data.paused;
   // With the multisig as config authority the server can't pause, and resuming becomes a Squads proposal.
@@ -137,7 +138,7 @@ export function OpsPanel() {
                 the protocol stays paused until multisig members approve and execute the resume.
               </SquadsPendingNote>
             )}
-            {pause.isError && !confirmPause && <p className="text-small text-danger">{pause.error.message}</p>}
+            {pause.isError && !confirmPause && <p className="text-small text-danger">{userErrorMessage(pause.error)}</p>}
           </Card>
           <Card className="flex flex-col gap-3 p-5">
             <p className="text-body font-semibold">dispute timeout</p>
@@ -148,7 +149,7 @@ export function OpsPanel() {
                 update
               </Button>
             </div>
-            {timeout.isError && <p className="text-small text-danger">{timeout.error.message}</p>}
+            {timeout.isError && <p className="text-small text-danger">{userErrorMessage(timeout.error)}</p>}
           </Card>
         </div>
       ) : (
@@ -220,7 +221,7 @@ export function OpsPanel() {
             <Input label="confirmation" value={typed} onChange={(event) => setTyped(event.target.value)} autoFocus />
           </div>
         )}
-        {pause.isError && <p className="mt-2 text-small text-danger">{pause.error.message}</p>}
+        {pause.isError && <p className="mt-2 text-small text-danger">{userErrorMessage(pause.error)}</p>}
       </Modal>
     </div>
   );

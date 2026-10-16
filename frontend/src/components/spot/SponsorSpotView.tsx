@@ -3,8 +3,11 @@
 import { safeHref } from "@/lib/safe-href";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, BadgeCheck, ExternalLink } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BadgeCheck, ExternalLink, MailCheck } from "lucide-react";
 import { api } from "@/lib/api/v2";
+import { isNotFound, userErrorMessage } from "@/lib/errors";
+import { useSession } from "@/lib/session";
+import { Button } from "@/components/ui/Button";
 import { listingHref, profileHref } from "@/lib/listing-display";
 import { queryKeys } from "@/lib/query";
 import { useNow } from "@/lib/use-now";
@@ -34,15 +37,25 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
     );
   }
   if (query.isError) {
+    const status = (query.error as { status?: number }).status;
+    const hidden = status === 403 || isNotFound(query.error);
     return (
       <EmptyState
         icon={AlertTriangle}
-        title={query.error.message}
-        description="this spot is only visible to its sponsor, its creator and the adspaces team."
+        title={hidden ? "you can't see this spot" : "couldn't load this spot"}
+        description={
+          hidden ? "this spot is only visible to its sponsor, its creator and the adspaces team." : userErrorMessage(query.error)
+        }
         action={
-          <Link href="/dashboard/sponsor" className="text-body font-medium text-accent hover:underline">
-            back to your spots
-          </Link>
+          hidden ? (
+            <Link href="/dashboard/sponsor" className="text-body font-medium text-accent hover:underline">
+              back to your spots
+            </Link>
+          ) : (
+            <Button variant="secondary" onClick={() => void query.refetch()}>
+              try again
+            </Button>
+          )
         }
       />
     );
@@ -58,6 +71,7 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
       <Link href="/dashboard/sponsor" className="inline-flex items-center gap-1.5 self-start text-small text-muted hover:text-ink">
         <ArrowLeft className="size-4" aria-hidden /> your spots
       </Link>
+      {detail.role === "sponsor" && <VerifyEmailNote />}
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
         <div className="flex min-w-0 flex-col gap-8">
           <div className="flex flex-col gap-2">
@@ -90,7 +104,7 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
               {spot.brand.handle && <XHandleLink handle={spot.brand.handle} className="text-muted" />}
               {spot.brand.link && (
                 <a href={safeHref(spot.brand.link)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-                  {new URL(spot.brand.link).hostname} <ExternalLink className="size-3" aria-hidden />
+                  {hostnameOf(spot.brand.link)} <ExternalLink className="size-3" aria-hidden />
                 </a>
               )}
             </div>
@@ -143,6 +157,34 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
           )}
         </aside>
       </div>
+    </div>
+  );
+}
+
+// A stored link that doesn't parse shouldn't take the page down.
+function hostnameOf(link: string): string {
+  try {
+    return new URL(link).hostname;
+  } catch {
+    return link;
+  }
+}
+
+// The page no longer waits for setup, so sponsors without a verified email are nudged here instead:
+// that's where outbid, proof and dispute emails go.
+function VerifyEmailNote() {
+  const { session, linkEmail, linkError } = useSession();
+  if (!session || session.emailVerified) return null;
+  return (
+    <div role="status" className="flex flex-wrap items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
+      <MailCheck className="size-5 shrink-0 text-accent" aria-hidden />
+      <p className="min-w-0 flex-1 text-small text-muted">
+        <span className="font-medium text-ink">verify your email</span> so we can tell you when proof is posted or something needs you.
+        {linkError && <span className="block text-danger">{linkError}</span>}
+      </p>
+      <Button size="sm" variant="secondary" onClick={() => void linkEmail()}>
+        verify email
+      </Button>
     </div>
   );
 }

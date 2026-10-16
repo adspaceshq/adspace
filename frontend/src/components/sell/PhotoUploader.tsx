@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, ImagePlus, RotateCcw, X } from "lucide-react
 import { ACCEPT_ATTRIBUTE, uploadImage, validateImageFile } from "@/lib/upload";
 import type { WizardPhoto } from "@/lib/sell-draft";
 import { cx } from "@/lib/cx";
+import { userErrorMessage } from "@/lib/errors";
 
 const MAX_PHOTOS = 6;
 
@@ -42,7 +43,7 @@ export function PhotoUploader({
       URL.revokeObjectURL(item.preview);
       setPending((items) => items.filter((entry) => entry.id !== item.id));
     } catch (cause) {
-      update(item.id, { error: cause instanceof Error ? cause.message : "upload failed" });
+      update(item.id, { error: userErrorMessage(cause, "upload failed") });
     }
   };
 

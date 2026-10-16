@@ -22,6 +22,7 @@ import { Timeline } from "@/components/ui/Timeline";
 import { MacMockupPicker } from "./MacMockupPicker";
 import { PhotoUploader } from "./PhotoUploader";
 import { SpotEditor } from "./SpotEditor";
+import { userErrorMessage } from "@/lib/errors";
 
 const storageKey = (listingId?: string, surface?: string) => `adspaces:sell:${listingId ?? `new:${surface}`}`;
 
@@ -82,7 +83,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
       void queryClient.invalidateQueries({ queryKey: queryKeys.creatorDashboard });
       return true;
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : "couldn't save; try again");
+      setSaveError(userErrorMessage(cause, "couldn't save; try again"));
       return false;
     } finally {
       setSaving(false);
@@ -119,7 +120,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
       setState((current) => ({ ...current, photos, photoSource: "mockup", mockup }));
       return { ...state, photos, photoSource: "mockup", mockup };
     } catch (cause) {
-      setMockupError(`couldn't add the mockup: ${cause instanceof Error ? cause.message : "upload failed"}`);
+      setMockupError(`couldn't add the mockup: ${userErrorMessage(cause, "upload failed")}`);
       return null;
     } finally {
       setPreparing(null);
@@ -171,7 +172,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
       await queryClient.invalidateQueries({ queryKey: queryKeys.creatorDashboard });
       router.push("/dashboard/creator?submitted=1");
     } catch (cause) {
-      setSaveError(cause instanceof Error ? cause.message : "couldn't submit; try again");
+      setSaveError(userErrorMessage(cause, "couldn't submit; try again"));
       setSaving(false);
     }
   };

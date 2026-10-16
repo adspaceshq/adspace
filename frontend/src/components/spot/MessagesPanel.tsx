@@ -9,6 +9,7 @@ import { useSession } from "@/lib/session";
 import { cx } from "@/lib/cx";
 import { Button } from "@/components/ui/Button";
 import { UserLink } from "@/components/ui/UserLink";
+import { userErrorMessage } from "@/lib/errors";
 
 export function MessagesPanel({ spotId, counterpart }: { spotId: string; counterpart: string }) {
   const { session } = useSession();
@@ -103,7 +104,7 @@ export function MessagesPanel({ spotId, counterpart }: { spotId: string; counter
       </form>
       {send.isError && (
         <p role="alert" className="text-small text-danger">
-          {send.error.message}
+          {userErrorMessage(send.error, "couldn't send that message. try again.")}
         </p>
       )}
     </section>

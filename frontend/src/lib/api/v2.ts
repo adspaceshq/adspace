@@ -21,6 +21,7 @@ import type {
   RentReport,
   PublicListing,
   PublicProfile,
+  PublicStatus,
   ReviewQueueItem,
   ReviewSummary,
   ReviewDecision,
@@ -69,7 +70,13 @@ async function request<T>(method: Method, path: string, body?: unknown, headers:
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await response.text();
-  const json = text ? (JSON.parse(text) as unknown) : undefined;
+  // A proxy or gateway can answer with HTML; treat anything unparseable as no body.
+  let json: unknown;
+  try {
+    json = text ? (JSON.parse(text) as unknown) : undefined;
+  } catch {
+    json = undefined;
+  }
   if (!response.ok) {
     const message = (json as { error?: string } | undefined)?.error ?? `request failed (${response.status})`;
     throw new ApiError(message, response.status);
@@ -82,6 +89,9 @@ const post = <T>(path: string, body: unknown = {}) => request<T>("POST", path, b
 const enc = encodeURIComponent;
 
 export const api = {
+  // Public: whether trading is paused, the cluster and the terms version purchases must send.
+  status: () => get<PublicStatus>("/status"),
+
   auth: {
     exchange: (accessToken: string, identityToken?: string) =>
       request<Session>("POST", "/auth/session", {}, {
@@ -93,7 +103,9 @@ export const api = {
   },
 
   me: {
-    saveOnboarding: (input: unknown) => request<Session["onboarding"]>("PUT", "/me/onboarding", input),
+    // Finishing onboarding the first time needs the terms version the user agreed to.
+    saveOnboarding: (input: object, termsVersion?: string) =>
+      request<Session["onboarding"]>("PUT", "/me/onboarding", termsVersion ? { ...input, termsVersion } : input),
     updateProfile: (patch: { displayName?: string; handle?: string; avatar?: string | null; bio?: string; payoutWallet?: string }) => request<PublicProfile>("PATCH", "/me", patch),
     listings: () => get<OwnedListing[]>("/me/listings"),
     listing: (id: string) => get<OwnedListing>(`/me/listings/${enc(id)}`),
@@ -166,11 +178,13 @@ export const api = {
 
   spots: {
     detail: (id: string) => get<SpotDetail>(`/spots/${enc(id)}`),
-    claim: (id: string, brand: SponsorBrand) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/claim`, { brand }),
+    // `termsVersion`: the terms the sponsor agreed to at checkout; the server records it and refuses stale versions.
+    claim: (id: string, brand: SponsorBrand, termsVersion: string) =>
+      post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/claim`, { brand, termsVersion }),
     bids: (id: string) => get<BidHistory>(`/spots/${enc(id)}/bids`),
     // `amount` is USDC as a decimal string ("1.5"), like withdrawals; never base units.
-    bid: (id: string, amount: string, brand: SponsorBrand) =>
-      post<{ spot: Spot; signature: string; deadline: string }>(`/spots/${enc(id)}/bid`, { amount, brand }),
+    bid: (id: string, amount: string, brand: SponsorBrand, termsVersion: string) =>
+      post<{ spot: Spot; signature: string; deadline: string }>(`/spots/${enc(id)}/bid`, { amount, brand, termsVersion }),
     submitProof: (id: string, postIds: string[]) => post<{ spot: Spot; signature: string }>(`/spots/${enc(id)}/proof`, { postIds }),
     payout: (id: string) => post<{ spot: Spot; settlement: Settlement; signature: string }>(`/spots/${enc(id)}/payout`),
     refund: (id: string, asSeller: boolean) =>

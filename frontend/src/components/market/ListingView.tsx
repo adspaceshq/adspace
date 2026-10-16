@@ -1,9 +1,11 @@
 "use client";
 
 import { safeHref } from "@/lib/safe-href";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useToast } from "@/components/ToastProvider";
+import { usePaused } from "@/lib/use-status";
 import { BadgeCheck, MapPin, Share2, Users } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { PublicListing, PublicSpot } from "@/lib/api/types";
@@ -27,8 +29,47 @@ import { WatchButton } from "@/components/watchlist/WatchButton";
 import { SellerAvatar } from "./SellerAvatar";
 import { UserLink, XHandleLink } from "@/components/ui/UserLink";
 
+// Remembers which spot a signed-out visitor chose, so checkout reopens after sign-in (Privy's OAuth
+// logins can reload the page, so component state alone would be lost).
+const PENDING_CHECKOUT = "adspaces:pending-checkout";
+function savePendingCheckout(value: { slug: string; spotId: string } | null) {
+  try {
+    if (value) sessionStorage.setItem(PENDING_CHECKOUT, JSON.stringify({ ...value, at: Date.now() }));
+    else sessionStorage.removeItem(PENDING_CHECKOUT);
+  } catch {
+    // Storage blocked (private mode): the visitor just clicks claim again after signing in.
+  }
+}
+function readPendingCheckout(slug: string): string | undefined {
+  try {
+    const raw = sessionStorage.getItem(PENDING_CHECKOUT);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw) as { slug?: string; spotId?: string; at?: number };
+    // Only for this listing, and only for a sign-in that just happened.
+    if (value.slug !== slug || !value.spotId || Date.now() - (value.at ?? 0) > 15 * 60_000) return undefined;
+    return value.spotId;
+  } catch {
+    return undefined;
+  }
+}
+
+// The API refuses a bid from the current top bidder; the panel and the mobile bar both say so instead.
+// Shares BidHistory's query (same key), so this costs no extra request.
+function useYouLead(listing: PublicListing, spot: PublicSpot, available: boolean) {
+  const bidQuery = useQuery({
+    queryKey: ["bids", spot.id],
+    queryFn: () => api.spots.bids(spot.id),
+    enabled: listing.mode === "auction" && spot.state === "funded",
+    refetchInterval: available ? 30_000 : false,
+  });
+  return Boolean(bidQuery.data?.items[0]?.isYou && bidQuery.data.items[0].isTop);
+}
+
 export function ListingView({ initial }: { initial: PublicListing }) {
-  const { session, signIn } = useSession();
+  const { ready, session, signIn } = useSession();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const paused = usePaused();
   const now = useNow(10_000);
   const live = initial.state === "published" && new Date(initial.deadline).getTime() > now;
   // Live auctions move fast; refresh bids every few seconds while the tab is visible.
@@ -47,15 +88,49 @@ export function ListingView({ initial }: { initial: PublicListing }) {
   const isOwner = session?.id === listing.sellerId;
 
   const startCheckout = () => {
-    if (!session) return signIn();
+    if (!session) {
+      if (selected) savePendingCheckout({ slug: listing.slug, spotId: selected.id });
+      return signIn();
+    }
     setCheckoutOpen(true);
   };
+
+  // Back from sign-in: reopen checkout on the spot they picked, if it can still be bought.
+  const sessionId = session?.id;
+  useEffect(() => {
+    if (!ready || !sessionId) return;
+    const pending = readPendingCheckout(listing.slug);
+    if (!pending) return;
+    savePendingCheckout(null);
+    const spot = listing.spots.find((item) => item.id === pending);
+    if (!spot || listing.sellerId === sessionId || !canPurchase(listing, spot, Date.now())) return;
+    // Bid history marks "you" per session: refresh it now that we know who this is, then open
+    // checkout (so a returning top bidder sees "you're leading" rather than a bid form).
+    let active = true;
+    void queryClient.invalidateQueries({ queryKey: ["bids", spot.id] }).finally(() => {
+      if (!active) return;
+      setSelectedId(spot.id);
+      setCheckoutOpen(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [ready, sessionId, listing, queryClient]);
 
   const share = async () => {
     const url = window.location.href;
     if (navigator.share) await navigator.share({ title: listing.title, url }).catch(() => undefined);
-    else await navigator.clipboard.writeText(url);
+    else {
+      try {
+        await navigator.clipboard.writeText(url);
+        toast.success("link copied");
+      } catch {
+        toast.error("couldn't copy the link", url);
+      }
+    }
   };
+
+  const scrollToPanel = () => document.getElementById("buy")?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <div className="grid gap-8 pb-24 lg:grid-cols-[minmax(0,1fr)_360px] lg:pb-0">
@@ -75,6 +150,14 @@ export function ListingView({ initial }: { initial: PublicListing }) {
             logoUrl: spot.brand?.logoUrl,
           }))}
         />
+
+        {/* Small screens get the whole purchase panel inline (bid history, top-bidder state, escrow line);
+            the fixed bar below is a shortcut to it. Desktop shows the same panel in the sidebar. */}
+        {selected && (
+          <div id="buy" className="scroll-mt-20 lg:hidden">
+            <PurchasePanel listing={listing} spot={selected} isOwner={isOwner} paused={paused} now={now} onPurchase={startCheckout} />
+          </div>
+        )}
 
         <SpotList listing={listing} selectedId={selected?.id} onSelect={setSelectedId} now={now} />
 
@@ -104,6 +187,7 @@ export function ListingView({ initial }: { initial: PublicListing }) {
             listing={listing}
             spot={selected}
             isOwner={isOwner}
+            paused={paused}
             now={now}
             onPurchase={startCheckout}
             className="hidden lg:flex"
@@ -113,7 +197,15 @@ export function ListingView({ initial }: { initial: PublicListing }) {
 
       {selected && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/95 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] backdrop-blur-md lg:hidden">
-          <MobilePurchaseBar listing={listing} spot={selected} isOwner={isOwner} now={now} onPurchase={startCheckout} />
+          <MobilePurchaseBar
+            listing={listing}
+            spot={selected}
+            isOwner={isOwner}
+            paused={paused}
+            now={now}
+            onPurchase={startCheckout}
+            onShowDetails={scrollToPanel}
+          />
         </div>
       )}
 
@@ -181,6 +273,7 @@ function PurchasePanel({
   listing,
   spot,
   isOwner,
+  paused,
   now,
   onPurchase,
   className,
@@ -188,20 +281,13 @@ function PurchasePanel({
   listing: PublicListing;
   spot: PublicSpot;
   isOwner: boolean;
+  paused: boolean;
   now: number;
   onPurchase: () => void;
   className?: string;
 }) {
   const available = canPurchase(listing, spot, now);
-  // Shares BidHistory's query (same key), so this costs no extra request. The API also refuses
-  // a bid from the current top bidder; this just says so instead of offering the button.
-  const bidQuery = useQuery({
-    queryKey: ["bids", spot.id],
-    queryFn: () => api.spots.bids(spot.id),
-    enabled: listing.mode === "auction" && spot.state === "funded",
-    refetchInterval: available ? 30_000 : false,
-  });
-  const youLead = Boolean(bidQuery.data?.items[0]?.isYou && bidQuery.data.items[0].isTop);
+  const youLead = useYouLead(listing, spot, available);
   const headline = spotHeadline(listing, spot);
   return (
     <div className={cx("flex flex-col gap-4 rounded-panel border border-line bg-surface p-5 shadow-card", className)}>
@@ -225,15 +311,27 @@ function PurchasePanel({
         )}
       </div>
       {isOwner ? (
-        <p className="rounded-control bg-canvas px-3 py-2 text-small text-muted">this is your listing.</p>
+        <p className="rounded-control bg-canvas px-3 py-2 text-small text-muted">
+          this is your listing.{" "}
+          <Link href={`/sell/listings/${listing.id}`} className="font-medium text-accent hover:underline">
+            open control room
+          </Link>
+        </p>
       ) : youLead && available ? (
         <p className="rounded-control bg-success-soft px-3 py-2 text-small text-ink">
           you&apos;re the top bidder. we&apos;ll let you know if someone outbids you.
         </p>
       ) : (
-        <Button size="lg" onClick={onPurchase} disabled={!available}>
-          {!available ? "not available" : listing.mode === "auction" ? "place a bid" : "claim this spot"}
-        </Button>
+        <>
+          <Button size="lg" onClick={onPurchase} disabled={!available || paused} aria-describedby={paused && available ? "paused-note" : undefined}>
+            {!available ? "not available" : paused ? "trading is paused" : listing.mode === "auction" ? "place a bid" : "claim this spot"}
+          </Button>
+          {paused && available && (
+            <p id="paused-note" className="-mt-2 text-small text-muted">
+              claims and bids are paused for now. payouts, refunds and disputes still work.
+            </p>
+          )}
+        </>
       )}
       <p className="text-small text-muted">
         your USDC is held in escrow until delivery is proven. no fees for sponsors.
@@ -247,30 +345,41 @@ function MobilePurchaseBar({
   listing,
   spot,
   isOwner,
+  paused,
   now,
   onPurchase,
+  onShowDetails,
 }: {
   listing: PublicListing;
   spot: PublicSpot;
   isOwner: boolean;
+  paused: boolean;
   now: number;
   onPurchase: () => void;
+  onShowDetails: () => void;
 }) {
   const available = canPurchase(listing, spot, now);
+  const youLead = useYouLead(listing, spot, available);
   const headline = spotHeadline(listing, spot);
   return (
     <div className="mx-auto flex max-w-xl items-center gap-4">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-small text-muted">
+      <button type="button" onClick={onShowDetails} aria-label={`spot ${spot.index + 1} details`} className="min-w-0 flex-1 cursor-pointer text-left">
+        <span className="block truncate text-small text-muted">
           spot {spot.index + 1} · {headline.label}
-        </p>
-        <p className="text-lead font-semibold">
+        </span>
+        <span className="block text-lead font-semibold">
           <Money value={headline.amount} />
-        </p>
-      </div>
-      {!isOwner && (
-        <Button onClick={onPurchase} disabled={!available}>
-          {!available ? "not available" : listing.mode === "auction" ? "bid" : "claim"}
+        </span>
+      </button>
+      {isOwner ? (
+        <Link href={`/sell/listings/${listing.id}`} className="text-small font-medium text-accent hover:underline">
+          your listing · control room
+        </Link>
+      ) : youLead && available ? (
+        <span className="rounded-full bg-success-soft px-3 py-1.5 text-small font-medium text-ink">you&apos;re leading</span>
+      ) : (
+        <Button onClick={onPurchase} disabled={!available || paused}>
+          {!available ? "not available" : paused ? "paused" : listing.mode === "auction" ? "bid" : "claim"}
         </Button>
       )}
     </div>

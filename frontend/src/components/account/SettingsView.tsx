@@ -160,7 +160,7 @@ function EmailSection({ session }: { session: Session }) {
             <span className="text-muted">no email yet</span>
           )}
         </p>
-        <Button variant="secondary" size="sm" onClick={session.email ? updateEmail : linkEmail}>
+        <Button variant="secondary" size="sm" onClick={() => (session.email ? updateEmail() : void linkEmail())}>
           <MailCheck className="size-4" aria-hidden /> {session.email ? "change email" : "add email"}
         </Button>
       </div>

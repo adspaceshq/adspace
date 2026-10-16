@@ -21,6 +21,7 @@ import { SpotStateBadge } from "@/components/ui/StateBadge";
 import { DashboardHeader } from "./DashboardHeader";
 import { NeedsYouList } from "./NeedsYouList";
 import { UserLink } from "@/components/ui/UserLink";
+import { userErrorMessage } from "@/lib/errors";
 
 // The photo this spot sits on, with only this sponsor's sticker drawn (their logo when they have one).
 function SpotThumb({ spot }: { spot: SponsorSpot }) {
@@ -184,7 +185,7 @@ export function SponsorDashboardView() {
         <EmptyState
           icon={AlertTriangle}
           title="couldn't load your dashboard"
-          description={query.error.message}
+          description={userErrorMessage(query.error)}
           action={<Button onClick={() => void query.refetch()}>try again</Button>}
         />
       ) : (

@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Info,
   Loader2,
-  TriangleAlert,
   X,
   XCircle,
 } from 'lucide-react'
@@ -44,18 +43,19 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null)
 
+// Same tones as TxStatus, from the design tokens.
 const toneStyles: Record<ToastTone, string> = {
-  success: 'border-emerald-200 bg-emerald-50 text-emerald-950',
-  error: 'border-rose-200 bg-rose-50 text-rose-950',
-  info: 'border-[#d8dffb] bg-[#f3f6ff] text-[#020817]',
-  loading: 'border-[#e7e5e0] bg-white text-[#020817]',
+  success: 'border-success/30 bg-success-soft text-ink',
+  error: 'border-danger/30 bg-danger-soft text-ink',
+  info: 'border-accent-ring bg-accent-soft text-ink',
+  loading: 'border-line bg-surface text-ink',
 }
 
 const toneIcons: Record<ToastTone, React.ReactNode> = {
-  success: <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-hidden />,
-  error: <XCircle className="h-4 w-4 text-rose-600" aria-hidden />,
-  info: <Info className="h-4 w-4 text-[#4166fb]" aria-hidden />,
-  loading: <Loader2 className="h-4 w-4 animate-spin text-[#4166fb]" aria-hidden />,
+  success: <CheckCircle2 className="size-4 text-success" aria-hidden />,
+  error: <XCircle className="size-4 text-danger" aria-hidden />,
+  info: <Info className="size-4 text-accent" aria-hidden />,
+  loading: <Loader2 className="size-4 animate-spin text-accent" aria-hidden />,
 }
 
 const DEFAULT_DURATION = 4_500
@@ -150,25 +150,25 @@ export default function ToastProvider({ children }: { children: React.ReactNode 
       <div
         aria-live="polite"
         aria-atomic="false"
-        className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[calc(100vw-2rem)] max-w-sm flex-col-reverse gap-2 sm:bottom-5 sm:right-5"
+        // Top on phones, where bottom tabs and the listing's purchase bar sit; bottom-right from sm up.
+        className="pointer-events-none fixed inset-x-4 top-4 z-[100] mx-auto flex max-w-sm flex-col gap-2 sm:inset-x-auto sm:top-auto sm:bottom-5 sm:right-5 sm:mx-0 sm:w-full sm:flex-col-reverse"
       >
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start gap-3 rounded-2xl border px-4 py-3 shadow-[0_18px_50px_rgba(2,8,23,0.16)] backdrop-blur ${toneStyles[toast.tone]}`}
+            role={toast.tone === 'error' ? 'alert' : 'status'}
+            className={`pointer-events-auto flex items-start gap-3 rounded-card border px-4 py-3 shadow-pop ${toneStyles[toast.tone]}`}
           >
             <div className="mt-0.5 shrink-0">{toneIcons[toast.tone]}</div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold leading-5">{toast.title}</p>
-              {toast.description ? (
-                <p className="mt-0.5 text-sm leading-5 text-[#64748b]">{toast.description}</p>
-              ) : null}
+              <p className="text-body font-medium">{toast.title}</p>
+              {toast.description ? <p className="mt-0.5 text-small text-muted">{toast.description}</p> : null}
             </div>
             <button
               type="button"
               onClick={() => dismiss(toast.id)}
-              className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[#64748b] transition hover:bg-black/5 hover:text-[#020817] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4166fb] focus-visible:ring-offset-2"
-              aria-label="Dismiss notification"
+              className="grid size-8 shrink-0 cursor-pointer place-items-center rounded-full text-muted transition hover:bg-ink/5 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-ring"
+              aria-label="dismiss"
             >
               <X className="h-4 w-4" aria-hidden />
             </button>

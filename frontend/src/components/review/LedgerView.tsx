@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { ListingStateBadge, SpotStateBadge } from "@/components/ui/StateBadge";
 import { UserLink } from "@/components/ui/UserLink";
+import { userErrorMessage } from "@/lib/errors";
 
 const OP_LABEL: Record<string, string> = {
   publish_listing: "published",
@@ -129,7 +130,7 @@ function Ledger({ listingId }: { listingId: string }) {
   const ledger = useQuery({ queryKey: ["ledger", listingId], queryFn: () => api.review.ledger(listingId) });
   const verify = useMutation({ mutationFn: () => api.review.verifyLedger(listingId) });
   if (ledger.isPending) return <Skeleton className="h-96 w-full" />;
-  if (ledger.isError) return <p className="text-body text-danger">{ledger.error.message}</p>;
+  if (ledger.isError) return <p className="text-body text-danger">{userErrorMessage(ledger.error)}</p>;
   const data = ledger.data;
   const checks = new Map((verify.data ?? []).map((row) => [row.entryId, row]));
   const mismatches = (verify.data ?? []).filter((row) => !row.matches).length;
@@ -157,7 +158,7 @@ function Ledger({ listingId }: { listingId: string }) {
           </Button>
         </div>
       </div>
-      {verify.isError && <p className="text-small text-danger">{verify.error.message}</p>}
+      {verify.isError && <p className="text-small text-danger">{userErrorMessage(verify.error)}</p>}
 
       <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         {[
