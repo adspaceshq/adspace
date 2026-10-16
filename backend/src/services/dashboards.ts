@@ -98,7 +98,8 @@ export async function creatorDashboard(db: Db, sellerId: string, now = new Date(
     const listingSpots = ownedSpots.filter((spot) => spot.listingId === listing.id);
     for (const spot of listingSpots) {
       const item = { ...base, spotId: spot.id, spotIndex: spot.index };
-      if (spot.state === "funded" && listing.deadline <= now && now < listing.deliveryDueAt) {
+      // Proof is accepted on-chain only from artwork close.
+      if (spot.state === "funded" && listing.artworkDueAt <= now && now < listing.deliveryDueAt) {
         needsYou.push({ ...item, type: "proof_due", dueAt: listing.deliveryDueAt });
       }
       if (spot.state === "disputed") needsYou.push({ ...item, type: "dispute_open" });

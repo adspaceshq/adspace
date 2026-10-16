@@ -151,7 +151,7 @@ test("bids enforce minimums, keep history, and track the leader", async () => {
 
   await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 99n * USDC, BRAND), /at least/);
   await placeBid(deps(), spot.id, alice.purchaser, 100n * USDC, BRAND);
-  await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 200n * USDC, BRAND), /already hold/);
+  await assert.rejects(placeBid(deps(), spot.id, alice.purchaser, 200n * USDC, BRAND), /already the top bidder/);
   await assert.rejects(placeBid(deps(), spot.id, bob.purchaser, 105n * USDC, BRAND), /at least/);
   const result = await placeBid(deps(), spot.id, bob.purchaser, 110n * USDC, BRAND);
 
