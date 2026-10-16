@@ -16,7 +16,7 @@ import type { AuthenticatedIdentity, Onboarding, PublicProfile, SessionUser, Upd
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const stripAt = (handle: string) => handle.trim().replace(/^@+/, "");
-const RESERVED_HANDLES = new Set(["admin", "api", "browse", "dashboard", "review", "sell", "settings", "wallet", "onboarding", "activity", "notifications", "watchlist", "adspaces", "support", "help"]);
+const RESERVED_HANDLES = new Set(["admin", "api", "browse", "dashboard", "review", "sell", "settings", "wallet", "onboarding", "activity", "notifications", "watchlist", "adspaces", "support", "help", "terms", "privacy", "fees", "content-policy"]);
 
 export function parseHandle(value: unknown): string {
   const handle = stripAt(String(value ?? ""));
