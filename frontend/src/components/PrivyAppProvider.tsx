@@ -1,8 +1,15 @@
 'use client';
 
 import { PrivyProvider } from '@privy-io/react-auth';
+import { toSolanaWalletConnectors } from '@privy-io/react-auth/solana';
 import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 import { PRIVY_APP_ID } from '@/lib/privy';
+
+// Solana wallet connectors exist only for the admin ops panel, where the pause guardian connects its
+// own wallet (e.g. Phantom) to sign guardian_pause. They don't touch login: the login modal lists
+// wallets only when loginMethods includes 'wallet', which it doesn't. No auto-connect, so a wallet is
+// connected only when an admin presses "connect guardian wallet".
+const solanaConnectors = toSolanaWalletConnectors({ shouldAutoConnect: false });
 
 // The browser never talks to our paid RPC (audit F-14). The server builds, submits and confirms every
 // transaction; the browser only signs headlessly (showWalletUIs: false), which makes no RPC calls.
@@ -48,6 +55,7 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
           solana: { createOnLogin: 'all-users' },
         },
         solana: { rpcs: solanaRpcs },
+        externalWallets: { solana: { connectors: solanaConnectors } },
       }}
     >
       {children}

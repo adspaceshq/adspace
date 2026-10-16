@@ -204,6 +204,10 @@ export const api = {
   admin: {
     status: () => get<ProtocolStatus>("/admin/status"),
     setPaused: (paused: boolean) => post<{ paused: boolean; signature: string | null; pending: SquadsPending | null }>("/admin/pause", { paused }),
+    // Emergency pause signed by the guardian's own wallet: the server builds the transaction and submits it.
+    prepareGuardianPause: (wallet: string) => post<{ chainTxId: string; transaction: string }>("/admin/guardian-pause/prepare", { wallet }),
+    submitGuardianPause: (chainTxId: string, transaction: string) =>
+      post<{ paused: boolean; signature: string }>("/admin/guardian-pause/submit", { chainTxId, transaction }),
     setDisputeTimeout: (seconds: number) =>
       post<{ disputeTimeoutSeconds: number; signature: string | null }>("/admin/dispute-timeout", { seconds }),
     team: () => get<TeamMember[]>("/admin/team"),
