@@ -69,3 +69,19 @@ export function listingFeePolicy(listing: { feeBps: number | null; upliftFeeBps:
   if (listing.feeBps === null || listing.upliftFeeBps === null || listing.maxFeeBps === null) return null;
   return { feeBps: listing.feeBps, upliftFeeBps: listing.upliftFeeBps, maxFeeBps: listing.maxFeeBps };
 }
+
+export interface DisputeSplit {
+  buyerRefund: bigint;
+  // The creator's share before the fee.
+  creatorGross: bigint;
+  fee: bigint;
+  creatorNet: bigint;
+}
+
+// Same integer math as the program's resolve_dispute: the creator's share of the escrow pays the
+// full fee scaled by that share (calculate_dispute_fee), each step rounding down.
+export function disputeSplit(mode: PricingMode, fees: FeePolicy, startPrice: bigint, balance: bigint, creatorShareBps: number): DisputeSplit {
+  const creatorGross = applyBps(balance, creatorShareBps);
+  const fee = applyBps(feeFor(mode, fees, startPrice, balance), creatorShareBps);
+  return { buyerRefund: balance - creatorGross, creatorGross, fee, creatorNet: creatorGross - fee };
+}

@@ -1,13 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ImagePlus, RotateCcw, X } from "lucide-react";
 import { ACCEPT_ATTRIBUTE, uploadImage, validateImageFile } from "@/lib/upload";
 import type { WizardPhoto } from "@/lib/sell-draft";
 import { cx } from "@/lib/cx";
 import { userErrorMessage } from "@/lib/errors";
+import type { AssetKind } from "@/lib/api/types";
 
-const MAX_PHOTOS = 6;
 
 interface Pending {
   id: string;
@@ -17,20 +17,37 @@ interface Pending {
   error?: string;
 }
 
+// Listing photos by default; also used for dispute evidence (kind "evidence", no cover).
 export function PhotoUploader({
   photos,
   onChange,
   error,
+  kind = "listing_photo",
+  max = 6,
+  cover = true,
+  addLabel = "add photos",
+  disabled = false,
+  onUploadingChange,
 }: {
   photos: WizardPhoto[];
   // Updater form: concurrent uploads each apply to the newest list, so none overwrites another.
   onChange: (update: (current: WizardPhoto[]) => WizardPhoto[]) => void;
   error?: string;
+  kind?: AssetKind;
+  max?: number;
+  // Labels the first photo as the cover.
+  cover?: boolean;
+  addLabel?: string;
+  disabled?: boolean;
+  // True while any upload is still in flight or failed, so a form can wait before submitting.
+  onUploadingChange?: (uploading: boolean) => void;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState<Pending[]>([]);
   const [dragging, setDragging] = useState(false);
   const [notice, setNotice] = useState<string>();
+  const uploading = pending.length > 0;
+  useEffect(() => onUploadingChange?.(uploading), [uploading, onUploadingChange]);
 
   const update = (id: string, patch: Partial<Pending>) =>
     setPending((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -38,7 +55,7 @@ export function PhotoUploader({
   const start = async (item: Pending) => {
     update(item.id, { error: undefined, progress: 0 });
     try {
-      const asset = await uploadImage("listing_photo", item.file, { onProgress: (progress) => update(item.id, { progress }) });
+      const asset = await uploadImage(kind, item.file, { onProgress: (progress) => update(item.id, { progress }) });
       onChange((current) => [...current, { assetId: asset.id, url: asset.url }]);
       URL.revokeObjectURL(item.preview);
       setPending((items) => items.filter((entry) => entry.id !== item.id));
@@ -49,7 +66,7 @@ export function PhotoUploader({
 
   const add = (files: FileList | File[]) => {
     setNotice(undefined);
-    const room = MAX_PHOTOS - photos.length - pending.length;
+    const room = max - photos.length - pending.length;
     const list = Array.from(files);
     if (list.length > room) setNotice(`you can add ${Math.max(room, 0)} more photo${room === 1 ? "" : "s"}`);
     for (const file of list.slice(0, Math.max(room, 0))) {
@@ -73,7 +90,7 @@ export function PhotoUploader({
     });
   };
 
-  const full = photos.length + pending.length >= MAX_PHOTOS;
+  const full = photos.length + pending.length >= max;
 
   return (
     <div className="flex flex-col gap-3">
@@ -82,7 +99,7 @@ export function PhotoUploader({
           <figure key={photo.assetId} className="group relative aspect-[4/3] overflow-hidden rounded-card border border-line bg-ink/5">
             {/* eslint-disable-next-line @next/next/no-img-element -- just-uploaded Cloudinary preview */}
             <img src={photo.url} alt={`photo ${index + 1}`} className="size-full object-cover" />
-            {index === 0 && (
+            {cover && index === 0 && (
               <figcaption className="absolute left-2 top-2 rounded-full bg-ink px-2 py-0.5 text-caption font-medium text-white">cover</figcaption>
             )}
             <div className="absolute inset-x-2 bottom-2 flex justify-between opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
@@ -123,7 +140,7 @@ export function PhotoUploader({
             )}
           </div>
         ))}
-        {!full && (
+        {!full && !disabled && (
           <button
             type="button"
             onClick={() => input.current?.click()}
@@ -143,8 +160,8 @@ export function PhotoUploader({
             )}
           >
             <ImagePlus className="size-6" aria-hidden />
-            {photos.length === 0 ? "add photos" : "add more"}
-            <span className="text-caption text-subtle">up to {MAX_PHOTOS}, 15MB each</span>
+            {photos.length === 0 ? addLabel : "add more"}
+            <span className="text-caption text-subtle">up to {max}, 15MB each</span>
           </button>
         )}
       </div>
