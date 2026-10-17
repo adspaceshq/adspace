@@ -428,3 +428,72 @@ test("listings delivering more than 90 days out need an admin to approve over th
   assert.equal(approved.status, 200);
   assert.equal(approved.body.state, "approved");
 });
+
+test("adopting listings after a reviewer key rotation is admin-only and reports adopted and skipped", async () => {
+  const reviewer = keypairSigner(Keypair.generate());
+  const former = Keypair.generate().publicKey;
+  const sent: ChainTxRequest[] = [];
+  const HOUR = 60 * 60 * 1000;
+  const legacy = await seedListing(db, { deadline: new Date(Date.now() + HOUR), deliveryDueAt: new Date(Date.now() + 48 * HOUR) });
+  const payers = new Map<string, PublicKey>([[legacy.listing.chainAddress!, former]]);
+  let authority = Keypair.generate().publicKey;
+  const chain = {
+    program: createProgram(new Connection("http://127.0.0.1:8899")),
+    mint: Keypair.generate().publicKey,
+    reviewer,
+    rentPayer: reviewer,
+    runTx: fakeRunTx(db, sent),
+    readReviewAuthority: async () => authority,
+    // Listings other tests seeded already belong to the current key.
+    readListingRentPayers: async (keys: PublicKey[]) => keys.map((key) => payers.get(key.toBase58()) ?? reviewer.publicKey),
+    readLamports: async (addresses: PublicKey[]) => addresses.map(() => 1_000_000),
+  } as unknown as ChainContext;
+  const adoptApp = createApp({
+    v2Router: createV2Router({
+      db,
+      chain,
+      reviewers: ["did:privy:adopt_reviewer"],
+      admins: ["did:privy:adopt_admin"],
+      termsVersion: "test",
+      metadataBaseUrl: "https://adspaces.test",
+    }),
+  });
+  const post = (who: { cookie: string; csrf: string }) =>
+    request(adoptApp).post("/api/v2/admin/listings/adopt").set("Cookie", who.cookie).set("X-CSRF-Token", who.csrf).send({});
+
+  assert.equal((await request(adoptApp).post("/api/v2/admin/listings/adopt")).status, 401);
+  for (const handle of ["adopt_reviewer", "adopt_user"]) assert.equal((await post(await signIn(handle))).status, 403);
+  const admin = await signIn("adopt_admin");
+
+  // The rent report shows what is still on the former key.
+  const rent = await request(adoptApp).get("/api/v2/admin/rent").set("Cookie", admin.cookie);
+  assert.equal(rent.status, 200);
+  assert.equal(rent.body.serverRentPayer, reviewer.publicKey.toBase58());
+
+  // Before the review authority points at the server key, nothing is sent.
+  const early = await post(admin);
+  assert.equal(early.status, 409);
+  assert.match(early.body.error, /not the on-chain review authority/);
+  assert.equal(sent.length, 0);
+
+  authority = reviewer.publicKey;
+  const adopted = await post(admin);
+  assert.equal(adopted.status, 200);
+  assert.equal(adopted.body.reviewer, reviewer.publicKey.toBase58());
+  assert.deepEqual(adopted.body.adopted.map((item: { listingId: string }) => item.listingId), [legacy.listing.id]);
+  assert.equal(adopted.body.adopted[0].previousRentPayer, former.toBase58());
+  assert.ok(adopted.body.skipped.every((item: { reason: string }) => item.reason === "already on the current key"));
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].actorId, admin.id);
+});
+
+test("the review summary lists stale Squads proposals with what to cancel", async () => {
+  const reviewApp = createApp({
+    v2Router: createV2Router({ db, reviewers: ["did:privy:stale_reviewer"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
+  });
+  const reviewer = await signIn("stale_reviewer");
+  const summary = await request(reviewApp).get("/api/v2/review/summary").set("Cookie", reviewer.cookie);
+  assert.equal(summary.status, 200);
+  assert.ok(Array.isArray(summary.body.staleProposals));
+  assert.equal(typeof summary.body.counts.staleProposals, "number");
+});
