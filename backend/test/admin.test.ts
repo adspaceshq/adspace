@@ -1,15 +1,17 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import { eq } from "drizzle-orm";
-import { Connection, Keypair, SystemProgram, Transaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
 import { createProgram } from "../src/chain/program.js";
 import { prepareChainTx, submitPreparedChainTx, type ChainTxRequest } from "../src/chain/runner.js";
 import * as multisig from "@sqds/multisig";
 import { keypairSigner } from "../src/chain/signers.js";
 import { squadsProposalInstructions, squadsVault, type SquadsProposer } from "../src/chain/squads.js";
 import type { Db } from "../src/db/client.js";
-import { chainTxs } from "../src/db/schema.js";
+import { chainTxs, listings } from "../src/db/schema.js";
 import {
+  ADOPT_BATCH_SIZE,
+  adoptListings,
   prepareGuardianPause,
   setDisputeTimeout,
   setPaused,
@@ -19,7 +21,7 @@ import {
   type ProtocolStatus,
 } from "../src/services/admin.js";
 import { createTestDb } from "./helpers/db.js";
-import { fakeRunTx, seedUser } from "./helpers/seed.js";
+import { fakeRunTx, seedListing, seedUser } from "./helpers/seed.js";
 
 let db: Db;
 let close: () => Promise<void>;
@@ -244,4 +246,103 @@ test("guardian pause: rejects extra instructions, other signers, and other admin
   await assert.rejects(submitGuardianPause(deps, other.user.id, prepared.chainTxId, signWith(prepared.transaction, guardianKey)), /not found/);
   await assert.rejects(submitGuardianPause(deps, user.id, prepared.chainTxId, "not base64 at all"), /could not be read/);
   assert.equal(sentRaw.length, 0);
+});
+
+// ---------- reviewer key rotation: adopt_listing ----------
+
+test("adopting listings moves every live listing on a former key to the current reviewer, in batches", async () => {
+  const admin = await seedUser(db, "admin");
+  const reviewer = keypairSigner(Keypair.generate());
+  const former = Keypair.generate().publicKey;
+  const later = { deadline: new Date(Date.now() + 3_600_000), deliveryDueAt: new Date(Date.now() + 7_200_000) };
+  const legacy = [];
+  for (let i = 0; i < ADOPT_BATCH_SIZE + 2; i += 1) legacy.push(await seedListing(db, later));
+  const current = await seedListing(db, later);
+  const gone = await seedListing(db, later);
+  const closed = await seedListing(db, later);
+  await db.update(listings).set({ state: "closed" }).where(eq(listings.id, closed.listing.id));
+  const payers = new Map<string, PublicKey>([
+    ...legacy.map((item) => [item.listing.chainAddress!, former] as const),
+    [current.listing.chainAddress!, reviewer.publicKey],
+    [closed.listing.chainAddress!, former],
+  ]);
+  let reads = 0;
+  const adoptDeps = (authorityKey = reviewer.publicKey) => ({
+    db,
+    program: createProgram(new Connection("http://127.0.0.1:8899")),
+    reviewer,
+    runTx: fakeRunTx(db, sent),
+    readReviewAuthority: async () => authorityKey,
+    readListingRentPayers: async (keys: PublicKey[]) => {
+      reads += 1;
+      return keys.map((key) => payers.get(key.toBase58()) ?? null);
+    },
+  });
+
+  // The server key must already be the on-chain review authority.
+  await assert.rejects(adoptListings(adoptDeps(Keypair.generate().publicKey), admin.user.id), /is not the on-chain review authority/);
+  assert.equal(sent.length, 0);
+
+  const report = await adoptListings(adoptDeps(), admin.user.id);
+  assert.equal(reads, 1);
+  assert.deepEqual(report.adopted.map((item) => item.listingId).sort(), legacy.map((item) => item.listing.id).sort());
+  assert.ok(report.adopted.every((item) => item.previousRentPayer === former.toBase58()));
+  assert.equal(report.failed.length, 0);
+  const skipped = new Map(report.skipped.map((item) => [item.listingId, item.reason]));
+  assert.equal(skipped.get(current.listing.id), "already on the current key");
+  assert.equal(skipped.get(gone.listing.id), "not on-chain");
+  // Closed listings are not considered at all.
+  assert.ok(!skipped.has(closed.listing.id) && !report.adopted.some((item) => item.listingId === closed.listing.id));
+
+  // Two transactions: a full batch and the rest, each signed only by the reviewer (the fee payer).
+  assert.deepEqual(sent.map((tx) => tx.instructions.length), [ADOPT_BATCH_SIZE, 2]);
+  for (const tx of sent) {
+    assert.ok(tx.feePayer.publicKey.equals(reviewer.publicKey));
+    assert.equal(tx.signers, undefined);
+    assert.match(tx.idempotencyKey, /^adopt-listings:/);
+    for (const ix of tx.instructions) {
+      // reviewer, config, review_authority, listing (writable)
+      assert.equal(ix.keys.length, 4);
+      assert.ok(ix.keys[0].pubkey.equals(reviewer.publicKey) && ix.keys[0].isSigner);
+      assert.ok(ix.keys[3].isWritable);
+    }
+  }
+  assert.ok(sent[0].instructions[0].keys[3].pubkey.toBase58() === legacy[0].listing.chainAddress);
+
+  // Once the chain shows them adopted, a second run sends nothing.
+  for (const item of legacy) payers.set(item.listing.chainAddress!, reviewer.publicKey);
+  const again = await adoptListings(adoptDeps(), admin.user.id);
+  assert.equal(again.adopted.length, 0);
+  assert.equal(sent.length, 2);
+});
+
+test("a failed adopt batch is reported and the others still go through", async () => {
+  // Earlier tests' listings are closed so this one controls what is live.
+  await db.update(listings).set({ state: "closed" });
+  const admin = await seedUser(db, "admin");
+  const reviewer = keypairSigner(Keypair.generate());
+  const former = Keypair.generate().publicKey;
+  const later = { deadline: new Date(Date.now() + 3_600_000), deliveryDueAt: new Date(Date.now() + 7_200_000) };
+  const seeded = [];
+  for (let i = 0; i < ADOPT_BATCH_SIZE + 1; i += 1) seeded.push(await seedListing(db, later));
+  let calls = 0;
+  const report = await adoptListings(
+    {
+      db,
+      program: createProgram(new Connection("http://127.0.0.1:8899")),
+      reviewer,
+      runTx: async (request) => {
+        calls += 1;
+        if (calls === 1) throw new Error("the network took too long; please retry");
+        return fakeRunTx(db, sent)(request);
+      },
+      readReviewAuthority: async () => reviewer.publicKey,
+      readListingRentPayers: async (keys) => keys.map(() => former),
+    },
+    admin.user.id,
+  );
+  // The first batch failed; the last listing, in its own batch, was adopted.
+  assert.equal(report.failed.length, ADOPT_BATCH_SIZE);
+  assert.ok(report.failed.every((item) => item.error === "the network took too long; please retry"));
+  assert.deepEqual(report.adopted.map((item) => item.listingId), [seeded.at(-1)!.listing.id]);
 });

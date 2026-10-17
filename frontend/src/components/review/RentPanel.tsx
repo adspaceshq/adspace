@@ -57,10 +57,13 @@ export function RentPanel() {
       }
     };
     try {
+      // Items still on a former reviewer key would fail until adopted; they are left for after adoption.
       for (const spot of (await fresh()).spots) {
+        if (spot.needsAdoption) continue;
         if (!(await step({ kind: "spot", id: spot.id, label: spotLabel(spot) }))) return;
       }
       for (const listing of (await fresh()).listings) {
+        if (listing.needsAdoption) continue;
         if (!(await step({ kind: "listing", id: listing.id, label: listing.title }))) return;
       }
     } catch (error) {
@@ -102,6 +105,13 @@ export function RentPanel() {
             <Stat label="listings" value={rent.data.listings.length} />
           </div>
 
+          {(rent.data.needsAdoptionLamports ?? 0) > 0 && (
+            <p role="status" className="rounded-control border border-warning/30 bg-warning-soft px-3 py-2 text-small">
+              {sol(rent.data.needsAdoptionLamports ?? 0)} is recorded to a former reviewer key, which the server can&apos;t sign for. adopt listings
+              under key rotation below, then close them; their rent then comes back to the current key.
+            </p>
+          )}
+
           {progress && (
             <p className="text-small text-muted" aria-live="polite">
               closed {progress.done} · now closing {progress.current}
@@ -124,6 +134,7 @@ export function RentPanel() {
                           </p>
                           <p className="truncate text-caption text-muted">
                             {spot.listingSlug} · past deadline {new Date(spot.deadline).toLocaleDateString()}
+                            {spot.needsAdoption && <span className="text-warning"> · former reviewer key, adopt first</span>}
                           </p>
                         </div>
                         <span className="font-mono tabular-nums">{sol(spot.lamports)}</span>
@@ -150,7 +161,10 @@ export function RentPanel() {
                       <li key={listing.id} className="flex flex-wrap items-center gap-3 px-3 py-2.5 text-small">
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-medium">{listing.title}</p>
-                          <p className="truncate text-caption text-muted">{listing.slug} · every spot finished</p>
+                          <p className="truncate text-caption text-muted">
+                            {listing.slug} · every spot finished
+                            {listing.needsAdoption && <span className="text-warning"> · former reviewer key, adopt first</span>}
+                          </p>
                         </div>
                         <span className="font-mono tabular-nums">{sol(listing.lamports)}</span>
                         <Button

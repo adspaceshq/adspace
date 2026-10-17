@@ -249,6 +249,106 @@ export const ADSPACES_IDL = {
       ]
     },
     {
+      "name": "adopt_listing",
+      "discriminator": [
+        123,
+        23,
+        209,
+        144,
+        171,
+        114,
+        193,
+        106
+      ],
+      "accounts": [
+        {
+          "name": "reviewer",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "review_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  118,
+                  105,
+                  101,
+                  119,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "config"
+              }
+            ]
+          }
+        },
+        {
+          "name": "listing",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  105,
+                  115,
+                  116,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "listing.seller",
+                "account": "Listing"
+              },
+              {
+                "kind": "account",
+                "path": "listing.slug_hash",
+                "account": "Listing"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "cancel_config_authority",
       "discriminator": [
         13,
@@ -522,9 +622,11 @@ export const ADSPACES_IDL = {
         {
           "name": "seller_ata",
           "docs": [
-            "Receives anything sent to the open spot's vault (donations), so nobody can block closing it."
+            "Receives anything sent to the open spot's vault (donations), so nobody can block closing it.",
+            "Only required when the vault holds tokens; otherwise pass None (the program ID)."
           ],
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "usdc_mint"
@@ -1361,7 +1463,8 @@ export const ADSPACES_IDL = {
           "name": "rent_payer",
           "docs": [
             "Funds the dispute's rent and gets it back. Normally the listing's rent payer, so buyers never",
-            "need SOL; once proof exists the buyer may pay it instead, so no co-signature can block the dispute."
+            "need SOL. Once proof exists any signer may pay it instead (the buyer or a sponsor), so no",
+            "co-signature can block the dispute; without proof the handler requires the listing's rent payer."
           ],
           "writable": true,
           "signer": true
@@ -1460,6 +1563,10 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "rent_payer",
+          "docs": [
+            "proof: the listing's current rent payer. Any owner is accepted, so an owner change of that key",
+            "cannot block settlement."
+          ],
           "writable": true
         },
         {
@@ -1606,7 +1713,8 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the rent back for the spot, vault and proof: the platform account that paid it."
+            "proof: the listing's current rent payer. Any owner is accepted, so an owner change of that key",
+            "cannot block settlement."
           ],
           "writable": true
         },
@@ -1688,6 +1796,19 @@ export const ADSPACES_IDL = {
         {
           "name": "decision_uri",
           "type": "string"
+        },
+        {
+          "name": "expected_opened_at",
+          "type": "i64"
+        },
+        {
+          "name": "expected_evidence_hash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
         }
       ]
     },
@@ -1934,7 +2055,8 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the rent back for the spot, vault and proof: the platform account that paid it."
+            "proof: the listing's current rent payer. Any owner is accepted, so an owner change of that key",
+            "cannot block settlement."
           ],
           "writable": true
         },
@@ -2272,7 +2394,8 @@ export const ADSPACES_IDL = {
         {
           "name": "rent_payer",
           "docs": [
-            "Gets the dispute's rent back: whoever paid it (the listing's rent payer or the buyer)."
+            "(the listing's rent payer, the buyer or a sponsor). Any owner is accepted, so an owner change of",
+            "that key cannot block the withdrawal."
           ],
           "writable": true
         }
@@ -2334,6 +2457,10 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "rent_payer",
+          "docs": [
+            "proof: the listing's current rent payer. Any owner is accepted, so an owner change of that key",
+            "cannot block settlement."
+          ],
           "writable": true
         },
         {
@@ -2685,6 +2812,19 @@ export const ADSPACES_IDL = {
         186,
         12,
         96
+      ]
+    },
+    {
+      "name": "ListingRentPayerReassigned",
+      "discriminator": [
+        236,
+        135,
+        223,
+        56,
+        15,
+        133,
+        119,
+        159
       ]
     },
     {
@@ -3083,6 +3223,16 @@ export const ADSPACES_IDL = {
       "code": 6052,
       "name": "SelfOutbid",
       "msg": "The current top bidder cannot outbid itself."
+    },
+    {
+      "code": 6053,
+      "name": "DisputeMismatch",
+      "msg": "The dispute does not match the one this resolution was decided for."
+    },
+    {
+      "code": 6054,
+      "name": "SellerAccountRequired",
+      "msg": "The vault holds funds; pass the seller token account to sweep them."
     }
   ],
   "types": [
@@ -3727,6 +3877,26 @@ export const ADSPACES_IDL = {
       }
     },
     {
+      "name": "ListingRentPayerReassigned",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "listing",
+            "type": "pubkey"
+          },
+          {
+            "name": "previous_rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_rent_payer",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
       "name": "PauseGuardian",
       "docs": [
         "A key that can pause the protocol but never unpause it, so an incident does not wait on the",
@@ -4144,8 +4314,11 @@ export const ADSPACES_IDL = {
     {
       "name": "MAX_LISTING_HORIZON_SECONDS",
       "docs": [
-        "Furthest a listing's delivery deadline may lie in the future at creation: 365 days. It bounds how",
-        "long escrow can stay locked and keeps `delivery_deadline + review_window_seconds` far from overflow."
+        "Furthest a listing's delivery deadline may lie in the future at creation: 365 days. It keeps",
+        "`delivery_deadline + review_window_seconds` far from overflow. It bounds the delivery deadline, not",
+        "the escrow lock: the payout gate adds the review window (at most 30 days) and a dispute raised just",
+        "before it adds the dispute timeout (at most 30 days), so the worst case is about 425 days after",
+        "creation. The seller can refund in full at any time."
       ],
       "type": "i64",
       "value": "31536000"

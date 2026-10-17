@@ -24,6 +24,12 @@ const KNOWN: Array<[RegExp, string]> = [
   [/ArtworkWindowOpen|artwork window is still open/i, 'proof opens when the artwork window closes. try again after the artwork due date.'],
   [/DisputeTimeoutPassed|dispute timeout has passed|timed out and can no longer be resolved/i, "this dispute has timed out, so it can't be resolved anymore. the sponsor can take a full refund."],
   [/SelfOutbid|top bidder cannot outbid itself|already the top bidder/i, "you're already the top bidder."],
+  // Added with the second CertiK scan (6053-6054).
+  [/DisputeMismatch|does not match the one this resolution was decided for|made for an earlier dispute/i, 'this decision was made for an earlier dispute on this spot. review the current dispute and decide again.'],
+  [/SellerAccountRequired|pass the seller token account|needs the creator's token account/i, "this spot's escrow holds funds, so closing it needs the creator's token account. try the close again."],
+  // Reviewer key rotation: listings still on the former key, and adopting before the authority moved.
+  [/adopt listings in ops first/i, 'this listing still belongs to the former reviewer key. adopt listings in ops first, then close it.'],
+  [/is not the on-chain review authority/i, "the server's reviewer key isn't the on-chain review authority yet. rotate the review authority to it first, then adopt listings."],
   [/left before this dispute times out/i, 'too little time is left before this dispute times out for a multisig approval. let it time out: the sponsor gets a full refund.'],
   [/invalid csrf token/i, 'your session expired. refresh the page and try again.'],
   [/^sign in required$|^missing access token$/i, 'sign in again to continue.'],

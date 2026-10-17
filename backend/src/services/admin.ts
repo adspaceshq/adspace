@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import anchor from "@coral-xyz/anchor";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull, ne } from "drizzle-orm";
 import { PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
-import { chainTxs } from "../db/schema.js";
+import { chainTxs, listings } from "../db/schema.js";
 import { pdas, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult, PreparedChainTx } from "../chain/runner.js";
 import { cosigners, externalSigner, type TxSigner } from "../chain/signers.js";
@@ -218,4 +218,85 @@ export async function submitGuardianPause(deps: GuardianPauseDeps, adminId: stri
   assertGuardianPause(signed, await guardianPauseInstruction(deps.program, guardian), guardian);
   const tx = await deps.submitTx(row.id, signedBase64);
   return { status: await deps.readProtocolStatus(), signature: tx.signature };
+}
+
+// ---------- reviewer key rotation: adopt_listing ----------
+
+export interface AdoptListingsDeps {
+  db: Db;
+  program: AdspacesProgram;
+  // The server's reviewer key; it must be the on-chain review authority, signs every adopt_listing and pays the fees.
+  reviewer: TxSigner;
+  runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
+  readReviewAuthority: () => Promise<PublicKey>;
+  readListingRentPayers: (listings: PublicKey[]) => Promise<Array<PublicKey | null>>;
+}
+
+export interface AdoptListingsReport {
+  reviewer: string;
+  adopted: Array<{ listingId: string; title: string; previousRentPayer: string; signature: string }>;
+  skipped: Array<{ listingId: string; title: string; reason: string }>;
+  failed: Array<{ listingId: string; title: string; error: string }>;
+}
+
+// adopt_listing is four accounts; this many fit one legacy transaction with room to spare.
+export const ADOPT_BATCH_SIZE = 8;
+
+// After the review authority moves to a new reviewer key, live listings still name the former key as
+// their rent payer, which keeps its power to close them and co-sign spots, proof and disputes. This
+// moves every one of them to the current key (rent of their accounts then returns to it). Idempotent:
+// listings already on the current key, or no longer on-chain, are skipped.
+export async function adoptListings(deps: AdoptListingsDeps, adminId: string): Promise<AdoptListingsReport> {
+  const reviewer = deps.reviewer.publicKey;
+  const authority = await deps.readReviewAuthority();
+  if (!authority.equals(reviewer)) {
+    throw new AdminError(
+      `the server's reviewer key ${reviewer.toBase58()} is not the on-chain review authority ${authority.toBase58()}; rotate the review authority to it first`,
+      409,
+    );
+  }
+  const live = await deps.db
+    .select({ id: listings.id, title: listings.title, chainAddress: listings.chainAddress })
+    .from(listings)
+    .where(and(isNotNull(listings.chainAddress), ne(listings.state, "closed")))
+    .orderBy(asc(listings.createdAt));
+  const report: AdoptListingsReport = { reviewer: reviewer.toBase58(), adopted: [], skipped: [], failed: [] };
+  const payers = live.length ? await deps.readListingRentPayers(live.map((row) => new PublicKey(row.chainAddress!))) : [];
+  const pending: Array<{ id: string; title: string; address: PublicKey; previous: PublicKey }> = [];
+  live.forEach((row, index) => {
+    const payer = payers[index];
+    if (!payer) report.skipped.push({ listingId: row.id, title: row.title, reason: "not on-chain" });
+    else if (payer.equals(reviewer)) report.skipped.push({ listingId: row.id, title: row.title, reason: "already on the current key" });
+    else pending.push({ id: row.id, title: row.title, address: new PublicKey(row.chainAddress!), previous: payer });
+  });
+
+  const addresses = pdas(deps.program.programId);
+  const config = addresses.config();
+  const reviewAuthority = addresses.reviewAuthority(config);
+  for (let start = 0; start < pending.length; start += ADOPT_BATCH_SIZE) {
+    const batch = pending.slice(start, start + ADOPT_BATCH_SIZE);
+    try {
+      const instructions = await Promise.all(
+        batch.map((item) =>
+          deps.program.methods.adoptListing().accountsStrict({ reviewer, config, reviewAuthority, listing: item.address }).instruction(),
+        ),
+      );
+      const tx = await deps.runTx({
+        // No chain_op of its own (that would need a migration); the idempotency key names it.
+        op: "publish_listing",
+        idempotencyKey: `adopt-listings:${reviewer.toBase58()}:${batch.map((item) => item.id).join(",")}`,
+        listingId: batch.length === 1 ? batch[0].id : undefined,
+        actorId: adminId,
+        instructions,
+        feePayer: deps.reviewer,
+      });
+      for (const item of batch) {
+        report.adopted.push({ listingId: item.id, title: item.title, previousRentPayer: item.previous.toBase58(), signature: tx.signature });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      for (const item of batch) report.failed.push({ listingId: item.id, title: item.title, error: message });
+    }
+  }
+  return report;
 }

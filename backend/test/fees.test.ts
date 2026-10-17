@@ -16,6 +16,21 @@ test("auction uplift is charged above the starting price and capped", () => {
   assert.equal(calculateFee(auction, 50_000_000n, 200_000_000n), 20_000_000n);
 });
 
+test("auction fee sums both components before rounding down once", () => {
+  // base 50.000039 * 2.5% = 1.250000975, uplift 0.000004 * 20% = 0.0000008: two floors give 1.250000,
+  // the program's single floor over the sum gives 1.250001.
+  assert.equal(calculateFee(auction, 50_000_039n, 50_000_043n), 1_250_001n);
+  // Tiny amounts: each component alone rounds to 0, the sum does not.
+  assert.equal(calculateFee(auction, 39n, 43n), 1n);
+  // Still capped at max_fee_bps of the balance.
+  assert.equal(calculateFee({ ...auction, maxFeeBps: 250 }, 39n, 43n), 1n);
+  assert.equal(calculateFee({ ...auction, maxFeeBps: 250 }, 39n, 41n), 1n);
+  assert.equal(calculateFee({ ...auction, maxFeeBps: 100 }, 39n, 43n), 0n);
+  // The dispute fee scales the single-rounded full fee.
+  assert.equal(calculateDisputeSplit(auction, 50_000_039n, 50_000_043n, 10_000).fee, 1_250_001n);
+  assert.equal(calculateDisputeSplit(auction, 50_000_039n, 50_000_043n, 5_000).fee, 625_000n);
+});
+
 test("floor division matches the program for tiny balances", () => {
   assert.equal(calculateFee(fixed, 1n, 1n), 0n);
   assert.equal(calculateFee(fixed, 19n, 19n), 0n);

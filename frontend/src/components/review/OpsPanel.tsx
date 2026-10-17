@@ -19,6 +19,8 @@ import { RentPanel } from "./RentPanel";
 import { Address } from "@/components/ui/Address";
 import { SquadsPendingNote } from "./SquadsPendingNote";
 import { GuardianPause } from "./GuardianPause";
+import { KeyRotationPanel } from "./KeyRotationPanel";
+import { StaleProposals } from "./StaleProposals";
 import { userErrorMessage } from "@/lib/errors";
 
 type Report = { checkedTxs: number; confirmedTxs: number; failedTxs: number; withdrawalsUpdated: number; disputesResolved?: number; spotDrift: Array<{ spotId: string; dbState: string; chainStatus: string }> };
@@ -34,6 +36,8 @@ export function OpsPanel() {
   const isAdmin = Boolean(session?.isAdmin);
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: queryKeys.adminStatus, queryFn: () => api.admin.status(), refetchInterval: 30_000 });
+  // Same query as the review queue: resolve proposals left behind by withdrawn or timed-out disputes.
+  const summary = useQuery({ queryKey: queryKeys.reviewSummary, queryFn: () => api.review.summary(), refetchInterval: 30_000 });
   const [confirmPause, setConfirmPause] = useState(false);
   const [typed, setTyped] = useState("");
   const [days, setDays] = useState("");
@@ -114,7 +118,11 @@ export function OpsPanel() {
         ))}
       </Card>
 
+      <StaleProposals items={summary.data?.staleProposals ?? []} />
+
       {isAdmin && <TeamPanel />}
+
+      {isAdmin && <KeyRotationPanel />}
 
       {isAdmin && <RentPanel />}
 

@@ -38,8 +38,13 @@ export interface ChainContext {
   readDisputeTimeoutSeconds: () => Promise<number>;
   // When each spot's dispute times out: opened_at plus the timeout captured at raise. Null without a dispute account.
   readDisputeDeadlines: (spotAddresses: string[]) => Promise<Array<Date | null>>;
-  // The spot's DisputeRecord: who paid its rent (the platform or the buyer) and when it times out.
+  // The spot's DisputeRecord: who paid its rent (the platform or the buyer), when it times out, and the
+  // opened_at and evidence_hash that resolve_dispute must echo back.
   readDisputeRecord: (spot: PublicKey) => Promise<ChainDisputeRecord | null>;
+  // Each listing's current rent payer (adopt_listing can change it), null for accounts that don't exist.
+  readListingRentPayers: (listings: PublicKey[]) => Promise<Array<PublicKey | null>>;
+  // The on-chain review authority: the only key adopt_listing accepts.
+  readReviewAuthority: () => Promise<PublicKey>;
   readTokenBalance: (owner: PublicKey) => Promise<bigint>;
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
   readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
@@ -107,6 +112,7 @@ export function createChainContext(options: {
       const account = await program.account.listing.fetch(listing);
       return {
         treasury: account.treasury,
+        rentPayer: account.rentPayer,
         fees: {
           mode: account.mode === 1 ? "auction" : "fixed",
           feeBps: account.feeBps,
@@ -216,7 +222,24 @@ export function createChainContext(options: {
       return {
         rentPayer: record.rentPayer,
         timesOutAt: new Date((record.openedAt.toNumber() + record.timeoutSeconds.toNumber()) * 1000),
+        openedAt: record.openedAt.toNumber(),
+        evidenceHash: Array.from(record.evidenceHash),
       };
+    },
+
+    async readListingRentPayers(listings) {
+      const out: Array<PublicKey | null> = [];
+      for (let start = 0; start < listings.length; start += 100) {
+        const accounts = await program.account.listing.fetchMultiple(listings.slice(start, start + 100));
+        out.push(...accounts.map((account) => account?.rentPayer ?? null));
+      }
+      return out;
+    },
+
+    async readReviewAuthority() {
+      const addresses = pdas(program.programId);
+      const account = await program.account.reviewAuthority.fetch(addresses.reviewAuthority(addresses.config()));
+      return account.authority;
     },
 
     async readDisputeTimeoutSeconds() {

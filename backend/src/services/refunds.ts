@@ -19,13 +19,34 @@ export interface RefundDeps {
   program: AdspacesProgram;
   mint: PublicKey;
   feePayer: TxSigner;
-  // The platform key recorded on-chain as each listing's rent payer. It gets every account's rent
-  // back, and is the only key that can close unsold spots and listings.
+  // The platform key that pays listing rent today (the reviewer key). It signs closes, which the program
+  // allows only for the key recorded on the listing.
   rentPayer: TxSigner;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   readVaultBalance: (vault: PublicKey) => Promise<bigint>;
   accountExists: (address: PublicKey) => Promise<boolean>;
+  // Each listing's on-chain rent payer, null once the account is gone. adopt_listing moves it to a new
+  // reviewer key, so it can differ from `rentPayer`. Without a reader, `rentPayer` is assumed.
+  readListingRentPayers?: (listings: PublicKey[]) => Promise<Array<PublicKey | null>>;
   now?: () => Date;
+}
+
+export const ADOPT_FIRST = "adopt listings in ops first (after a reviewer key rotation)";
+
+// The rent payer recorded on the listing account; it receives rent back and must sign closes.
+async function listingRentPayer(deps: RefundDeps, listing: PublicKey): Promise<PublicKey> {
+  if (!deps.readListingRentPayers) return deps.rentPayer.publicKey;
+  const [payer] = await deps.readListingRentPayers([listing]);
+  if (!payer) throw new RefundError("the listing is no longer on-chain; reconciling");
+  return payer;
+}
+
+// Closing needs the listing's rent payer to sign, which the server can only do for its own key.
+async function requireServerRentPayer(deps: RefundDeps, listing: PublicKey) {
+  const payer = await listingRentPayer(deps, listing);
+  if (!payer.equals(deps.rentPayer.publicKey)) {
+    throw new RefundError(`this listing's rent payer is ${payer.toBase58()}, not the server key ${deps.rentPayer.publicKey.toBase58()}; ${ADOPT_FIRST}`);
+  }
 }
 
 async function loadSpot(db: Db, spotId: string) {
@@ -69,13 +90,14 @@ export async function refundSpot(
     instructions.push(createAtaIdempotent(deps.feePayer.publicKey, buyer, deps.mint));
   }
   const caller = sellerInitiated ? actor.sellerSigner! : deps.feePayer;
+  const rentPayer = await listingRentPayer(deps, new PublicKey(listing.chainAddress!));
   instructions.push(
     await deps.program.methods
       .refundSpot()
       .accountsStrict({
         caller: caller.publicKey,
         listing: new PublicKey(listing.chainAddress!),
-        rentPayer: deps.rentPayer.publicKey,
+        rentPayer,
         spot: new PublicKey(spot.chainAddress!),
         vault,
         buyerAta: associatedTokenAddress(buyer, deps.mint),
@@ -130,15 +152,20 @@ export async function closeSpot(deps: RefundDeps, adminId: string, spotId: strin
   if (spot.state !== "open") throw new RefundError("only unsold spots can be closed");
   if (now < listing.deadline && !options.force) throw new RefundError("the listing is still selling; force to close it early");
   const seller = new PublicKey(listing.sellerWallet!);
+  const listingKey = new PublicKey(listing.chainAddress!);
+  await requireServerRentPayer(deps, listingKey);
+  const vault = new PublicKey(spot.vaultAddress!);
   // Anything sent to the open spot's vault is swept to the creator's token account before it closes.
+  // The program needs that account only when there is something to sweep (SellerAccountRequired).
+  const sweep = (await deps.readVaultBalance(vault)) > 0n;
   const instruction = await deps.program.methods
     .closeSpot()
     .accountsStrict({
       rentPayer: deps.rentPayer.publicKey,
-      listing: new PublicKey(listing.chainAddress!),
+      listing: listingKey,
       spot: new PublicKey(spot.chainAddress!),
-      vault: new PublicKey(spot.vaultAddress!),
-      sellerAta: associatedTokenAddress(seller, deps.mint),
+      vault,
+      sellerAta: sweep ? associatedTokenAddress(seller, deps.mint) : null,
       usdcMint: deps.mint,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
@@ -149,7 +176,7 @@ export async function closeSpot(deps: RefundDeps, adminId: string, spotId: strin
     listingId: listing.id,
     spotId: spot.id,
     actorId: adminId,
-    instructions: [createAtaIdempotent(deps.feePayer.publicKey, seller, deps.mint), instruction],
+    instructions: sweep ? [createAtaIdempotent(deps.feePayer.publicKey, seller, deps.mint), instruction] : [instruction],
     feePayer: deps.feePayer,
     signers: cosigners(deps.feePayer, deps.rentPayer),
   });
@@ -168,7 +195,7 @@ export async function closeSpot(deps: RefundDeps, adminId: string, spotId: strin
       type: "closed",
       actorId: adminId,
       chainTxId: tx.chainTxId,
-      data: { force: Boolean(options.force) },
+      data: { force: Boolean(options.force), swept: sweep },
     });
     return { spot: updated, signature: tx.signature };
   });
@@ -186,6 +213,7 @@ export async function closeListing(deps: RefundDeps, adminId: string, listingId:
   if (active.length > 0) {
     throw new RefundError(`finish or close ${active.length} remaining spot${active.length === 1 ? "" : "s"} first`);
   }
+  await requireServerRentPayer(deps, new PublicKey(listing.chainAddress));
   const instruction = await deps.program.methods
     .closeListing()
     .accountsStrict({ rentPayer: deps.rentPayer.publicKey, listing: new PublicKey(listing.chainAddress) })
@@ -212,6 +240,10 @@ export interface RentReportDeps {
   db: Db;
   // Lamports held by each account, null once it is closed.
   readLamports: (addresses: PublicKey[]) => Promise<Array<number | null>>;
+  // Each listing's on-chain rent payer and the server's key: rent returns to the former, and only the
+  // server's key can close. Without them every listing is assumed to be the server's.
+  readListingRentPayers?: (listings: PublicKey[]) => Promise<Array<PublicKey | null>>;
+  serverRentPayer?: PublicKey;
   now?: () => Date;
 }
 
@@ -228,6 +260,7 @@ export async function rentReport(deps: RentReportDeps) {
       listingId: listings.id,
       listingTitle: listings.title,
       listingSlug: listings.slug,
+      listingAddress: listings.chainAddress,
       deadline: listings.deadline,
     })
     .from(spots)
@@ -252,11 +285,32 @@ export async function rentReport(deps: RentReportDeps) {
   const lamports = addresses.length ? await deps.readLamports(addresses.map((address) => new PublicKey(address))) : [];
   const held = new Map(addresses.map((address, i) => [address, lamports[i] ?? 0]));
 
-  const spotItems = openSpots.map(({ vaultAddress, ...spot }) => ({
+  // Rent goes back to each listing's own rent payer, which stays a former reviewer key until adopted.
+  const listingAddresses = [...new Set([...openSpots.map((spot) => spot.listingAddress!), ...closable.map((listing) => listing.chainAddress)])];
+  const payers = new Map<string, string | null>();
+  if (deps.readListingRentPayers && deps.serverRentPayer && listingAddresses.length) {
+    const read = await deps.readListingRentPayers(listingAddresses.map((address) => new PublicKey(address)));
+    listingAddresses.forEach((address, i) => payers.set(address, read[i]?.toBase58() ?? null));
+  }
+  const server = deps.serverRentPayer?.toBase58() ?? null;
+  const ownership = (listingAddress: string) => {
+    const rentPayer = payers.has(listingAddress) ? payers.get(listingAddress)! : server;
+    return { rentPayer, needsAdoption: Boolean(rentPayer && server && rentPayer !== server) };
+  };
+
+  const spotItems = openSpots.map(({ vaultAddress, listingAddress, ...spot }) => ({
     ...spot,
     lamports: (held.get(spot.chainAddress!) ?? 0) + (held.get(vaultAddress!) ?? 0),
+    ...ownership(listingAddress!),
   }));
-  const listingItems = closable.map(({ done: _done, ...listing }) => ({ ...listing, lamports: held.get(listing.chainAddress) ?? 0 }));
-  const reclaimableLamports = [...spotItems, ...listingItems].reduce((sum, item) => sum + item.lamports, 0);
-  return { spots: spotItems, listings: listingItems, reclaimableLamports };
+  const listingItems = closable.map(({ done: _done, ...listing }) => ({
+    ...listing,
+    lamports: held.get(listing.chainAddress) ?? 0,
+    ...ownership(listing.chainAddress),
+  }));
+  const items = [...spotItems, ...listingItems];
+  const reclaimableLamports = items.reduce((sum, item) => sum + item.lamports, 0);
+  // Recorded to a former reviewer key: closing needs adopt_listing first, then the rent returns to the server.
+  const needsAdoptionLamports = items.filter((item) => item.needsAdoption).reduce((sum, item) => sum + item.lamports, 0);
+  return { spots: spotItems, listings: listingItems, reclaimableLamports, needsAdoptionLamports, serverRentPayer: server };
 }

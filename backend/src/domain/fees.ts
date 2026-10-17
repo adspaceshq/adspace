@@ -14,7 +14,8 @@ export function calculateFee(fees: FeeSnapshot, spotPrice: bigint, balance: bigi
   if (fees.mode === "fixed") return applyBps(balance, fees.feeBps);
   const baseValue = balance < spotPrice ? balance : spotPrice;
   const uplift = balance - baseValue;
-  const calculated = applyBps(baseValue, fees.feeBps) + applyBps(uplift, fees.upliftFeeBps);
+  // Both components are summed before the one division, so the fee rounds down only once.
+  const calculated = (baseValue * BigInt(fees.feeBps) + uplift * BigInt(fees.upliftFeeBps)) / 10_000n;
   const maximum = applyBps(balance, fees.maxFeeBps);
   return calculated < maximum ? calculated : maximum;
 }
