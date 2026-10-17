@@ -17,6 +17,7 @@ import {
   users,
 } from "../db/schema.js";
 import { payoutAvailableAt } from "./settlement.js";
+import { staleSquadsProposals } from "./disputes.js";
 
 export class DashboardError extends Error {
   constructor(message: string, readonly status = 403) {
@@ -451,8 +452,14 @@ async function disputeDeadlines(
   );
 }
 
-// Counts and work lists for the reviewer queue tabs.
-export async function reviewSummary(db: Db, now = new Date(), deadlines: DisputeDeadlineSource = { timeoutSeconds: 3 * DAY_MS / 1000 }) {
+// Counts and work lists for the reviewer queue tabs. `proposalStatus` reads Squads so resolve proposals
+// whose dispute closed another way are listed until someone cancels them.
+export async function reviewSummary(
+  db: Db,
+  now = new Date(),
+  deadlines: DisputeDeadlineSource = { timeoutSeconds: 3 * DAY_MS / 1000 },
+  options: { proposalStatus?: (transactionIndex: bigint) => Promise<string | null> } = {},
+) {
   const buyer = alias(users, "buyer");
   const [inReview, openDisputes, delivered, failedTxs] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(listings).where(eq(listings.state, "in_review")),
@@ -498,14 +505,17 @@ export async function reviewSummary(db: Db, now = new Date(), deadlines: Dispute
   const disputesByDeadline = openDisputes
     .map(({ spotAddress: _spotAddress, ...row }, index) => ({ ...row, timeoutAt: timeouts[index] }))
     .sort((a, b) => a.timeoutAt.getTime() - b.timeoutAt.getTime());
+  const staleProposals = await staleSquadsProposals(db, { proposalStatus: options.proposalStatus, now });
   return {
     counts: {
       listingsInReview: inReview[0]?.count ?? 0,
       openDisputes: openDisputes.length,
       payoutsReady: payoutsReady.length,
       failedTxs: failedTxs.length,
+      staleProposals: staleProposals.length,
     },
     disputes: disputesByDeadline,
+    staleProposals,
     payoutsReady,
     failedTxs,
   };

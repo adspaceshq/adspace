@@ -24,6 +24,7 @@ import { cx } from "@/lib/cx";
 import { SquadsPendingNote } from "./SquadsPendingNote";
 import { Address } from "@/components/ui/Address";
 import { UserLink } from "@/components/ui/UserLink";
+import { StaleProposals } from "./StaleProposals";
 
 type Tab = "listings" | "disputes" | "payouts" | "failed";
 const TABS: Tab[] = ["listings", "disputes", "payouts", "failed"];
@@ -102,7 +103,7 @@ function ListingsTab() {
 }
 
 function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings">; data: ReviewSummary }) {
-  if (tab === "disputes") return <DisputesTab disputes={data.disputes} />;
+  if (tab === "disputes") return <DisputesTab disputes={data.disputes} stale={data.staleProposals ?? []} />;
   if (tab === "payouts") {
     if (data.payoutsReady.length === 0) return <EmptyState icon={CheckCircle2} title="no payouts waiting" description="delivered spots appear here once their review window closes." />;
     return (
@@ -151,15 +152,23 @@ function PayoutRow({ item }: { item: ReviewSummary["payoutsReady"][number] }) {
 
 // Sorted by the server, soonest timeout first. A timed-out dispute refunds the sponsor in full, and a
 // multisig decision needs 2 of 3 members to approve and execute, so the deadline leads each row.
-function DisputesTab({ disputes }: { disputes: ReviewSummary["disputes"] }) {
+function DisputesTab({ disputes, stale }: { disputes: ReviewSummary["disputes"]; stale: NonNullable<ReviewSummary["staleProposals"]> }) {
   const [resolving, setResolving] = useState<ReviewSummary["disputes"][number] | null>(null);
   const now = useNow(60_000);
   // Reviewers can read the status; it says whether a decision is direct or a Squads proposal.
   const status = useQuery({ queryKey: queryKeys.adminStatus, queryFn: () => api.admin.status() });
   const viaMultisig = status.data ? !status.data.serverIsAuthority : false;
-  if (disputes.length === 0) return <EmptyState icon={CheckCircle2} title="no open disputes" />;
+  if (disputes.length === 0) {
+    return (
+      <>
+        <StaleProposals items={stale} />
+        <EmptyState icon={CheckCircle2} title="no open disputes" />
+      </>
+    );
+  }
   return (
     <>
+      <StaleProposals items={stale} className="mb-2" />
       <ul className="flex flex-col gap-2">
         {disputes.map((item) => {
           const left = new Date(item.timeoutAt).getTime() - now;
@@ -213,7 +222,14 @@ function DisputesTab({ disputes }: { disputes: ReviewSummary["disputes"] }) {
           );
         })}
       </ul>
-      {resolving && <ResolveDisputeModal item={resolving} viaMultisig={viaMultisig} onClose={() => setResolving(null)} />}
+      {resolving && (
+        <ResolveDisputeModal
+          item={resolving}
+          viaMultisig={viaMultisig}
+          stale={stale.filter((entry) => entry.spotId === resolving.spotId)}
+          onClose={() => setResolving(null)}
+        />
+      )}
     </>
   );
 }

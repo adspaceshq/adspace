@@ -18,6 +18,9 @@ export class SettlementError extends Error {
 // On-chain values snapshotted at publish time; payouts must use these, not current config.
 export interface ListingSnapshot {
   treasury: PublicKey;
+  // The listing's current rent payer. adopt_listing moves it to a new reviewer key, so settlement
+  // paths name this account rather than the configured key. Absent in tests: the configured key.
+  rentPayer?: PublicKey;
   fees: FeeSnapshot;
 }
 
@@ -95,7 +98,7 @@ export async function payoutSeller(deps: SettlementDeps, spotId: string, trigger
         caller: deps.caller.publicKey,
         listing: listingKey,
         seller,
-        rentPayer: deps.rentPayer,
+        rentPayer: snapshot.rentPayer ?? deps.rentPayer,
         spot: spotKey,
         vault,
         sellerAta: associatedTokenAddress(seller, deps.mint),

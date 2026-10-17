@@ -131,9 +131,12 @@ export function SponsorActions({ detail, now }: { detail: SpotDetail; now: numbe
             get my refund
           </Button>
         )}
-        <Button variant="secondary" onClick={() => setConfirmWithdraw(true)} loading={withdraw.busy}>
-          withdraw dispute
-        </Button>
+        {/* From the timeout on the program only allows the full refund, not a withdrawal. */}
+        {!timedOut && (
+          <Button variant="secondary" onClick={() => setConfirmWithdraw(true)} loading={withdraw.busy}>
+            withdraw dispute
+          </Button>
+        )}
         <ConfirmModal
           open={confirmWithdraw}
           onClose={() => setConfirmWithdraw(false)}
