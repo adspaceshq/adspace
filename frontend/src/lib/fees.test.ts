@@ -16,6 +16,14 @@ describe("fees", () => {
     expect(feeFor("auction", DEFAULT_FEES.auction, 50_000_000n, 60_000_000n)).toBe(3_250_000n);
     expect(feeFor("auction", DEFAULT_FEES.auction, 50_000_000n, 200_000_000n)).toBe(20_000_000n);
   });
+
+  it("rounds the auction fee down once, over the sum of both components", () => {
+    // Flooring each component separately would give 1_250_000 and 0.
+    expect(feeFor("auction", DEFAULT_FEES.auction, 50_000_039n, 50_000_043n)).toBe(1_250_001n);
+    expect(feeFor("auction", DEFAULT_FEES.auction, 39n, 43n)).toBe(1n);
+    expect(feeFor("auction", { ...DEFAULT_FEES.auction, maxFeeBps: 100 }, 39n, 43n)).toBe(0n);
+    expect(disputeSplit("auction", DEFAULT_FEES.auction, 50_000_039n, 50_000_043n, 10_000).fee).toBe(1_250_001n);
+  });
 });
 
 describe("fee % inputs", () => {
