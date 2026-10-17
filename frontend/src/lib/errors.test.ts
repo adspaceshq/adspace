@@ -47,6 +47,19 @@ describe('userErrorMessage', () => {
     expect(userErrorMessage(new ApiError('listings longer than 90 days need an admin to approve', 403))).toBe('listings longer than 90 days need an admin to approve')
   })
 
+  it('maps the second-scan program errors (6053-6054)', () => {
+    expect(userErrorMessage(new ApiError('The dispute does not match the one this resolution was decided for.', 409))).toMatch(/earlier dispute on this spot/)
+    expect(userErrorMessage(new ApiError('this decision was made for an earlier dispute on this spot (it was withdrawn or raised again); review the current dispute and decide again', 409))).toMatch(/decide again/)
+    expect(userErrorMessage(new ApiError('The vault holds funds; pass the seller token account to sweep them.', 409))).toMatch(/creator's token account/)
+  })
+
+  it('explains reviewer key rotation errors', () => {
+    const key = '8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5'
+    expect(userErrorMessage(new ApiError(`this listing's rent payer is ${key}, not the server key ${key}; adopt listings in ops first (after a reviewer key rotation)`, 409))).toMatch(/adopt listings in ops first, then close it/)
+    expect(userErrorMessage(new ApiError(`the server's reviewer key ${key} is not the on-chain review authority ${key}; rotate the review authority to it first`, 409))).toMatch(/rotate the review authority/)
+    expect(userErrorMessage(new ApiError("this dispute has timed out, so it can't be withdrawn anymore. take the full refund instead", 409))).toMatch(/can't be withdrawn anymore/)
+  })
+
   it('uses status defaults where the server text is missing or internal', () => {
     expect(userErrorMessage(new ApiError('sign in required', 401))).toBe('sign in again to continue.')
     expect(userErrorMessage(new ApiError('something went wrong', 500))).toBe(SERVER_MESSAGE)

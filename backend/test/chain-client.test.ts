@@ -49,6 +49,8 @@ test("the CertiK-fix program errors decode to friendly copy", () => {
     [6050, "ArtworkWindowOpen", /proof opens when the artwork window closes/],
     [6051, "DisputeTimeoutPassed", /timed out, so it can't be resolved/],
     [6052, "SelfOutbid", /already the top bidder/],
+    [6053, "DisputeMismatch", /made for an earlier dispute/],
+    [6054, "SellerAccountRequired", /needs the creator's token account/],
   ];
   for (const [code, name, copy] of cases) {
     const hex = decodeChainError(new Error(`custom program error: 0x${code.toString(16)}`));

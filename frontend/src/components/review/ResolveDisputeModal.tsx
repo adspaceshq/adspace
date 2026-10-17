@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "@/lib/api/v2";
-import type { ReviewSummary, SquadsPending } from "@/lib/api/types";
+import type { ReviewSummary, SquadsPending, StaleSquadsProposal } from "@/lib/api/types";
 import { disputeSplit, listingFeePolicy } from "@/lib/fees";
 import { userErrorMessage } from "@/lib/errors";
 import { formatUsd } from "@/lib/money";
@@ -19,12 +19,25 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { DisputeEvidence } from "@/components/spot/DisputeEvidence";
 import { SquadsPendingNote } from "./SquadsPendingNote";
+import { StaleProposals } from "./StaleProposals";
 
 // Under 24h a 2-of-3 multisig approval is at risk of missing the timeout.
 export const DISPUTE_URGENT_MS = 24 * 60 * 60 * 1000;
 
 // `viaMultisig`: the config authority is the Squads vault, so the decision becomes a proposal.
-export function ResolveDisputeModal({ item, viaMultisig, onClose }: { item: ReviewSummary["disputes"][number]; viaMultisig: boolean; onClose: () => void }) {
+// `stale`: proposals made for an earlier dispute on this spot (withdrawn, then raised again). They can't
+// settle this one (the program checks the dispute's open time and evidence), but should be cancelled.
+export function ResolveDisputeModal({
+  item,
+  viaMultisig,
+  stale = [],
+  onClose,
+}: {
+  item: ReviewSummary["disputes"][number];
+  viaMultisig: boolean;
+  stale?: StaleSquadsProposal[];
+  onClose: () => void;
+}) {
   const queryClient = useQueryClient();
   const detail = useQuery({ queryKey: queryKeys.spot(item.spotId), queryFn: () => api.spots.detail(item.spotId) });
   const [share, setShare] = useState(50);
@@ -86,6 +99,7 @@ export function ResolveDisputeModal({ item, viaMultisig, onClose }: { item: Revi
             times out <Countdown to={item.timeoutAt} prefix="in" endedLabel="now: the sponsor can take a full refund" urgentWithinMs={DISPUTE_URGENT_MS} className="font-medium" />
             {viaMultisig ? ". multisig members still need to approve and execute after you propose." : "."}
           </p>
+          <StaleProposals items={stale} compact />
           {blocked && (
             <p role="alert" className="rounded-control bg-danger-soft px-3 py-2 text-small text-danger">
               {blocked}

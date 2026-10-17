@@ -10,6 +10,8 @@ const FRIENDLY: Record<string, string> = {
   ArtworkWindowOpen: "proof opens when the artwork window closes; try again after the artwork due date",
   DisputeTimeoutPassed: "this dispute has timed out, so it can't be resolved anymore; the sponsor gets a full refund instead",
   SelfOutbid: "you're already the top bidder",
+  DisputeMismatch: "this decision was made for an earlier dispute on this spot (it was withdrawn or raised again); review the current dispute and decide again",
+  SellerAccountRequired: "this spot's escrow holds funds, so closing it needs the creator's token account; retry the close",
 };
 
 export class ChainError extends Error {

@@ -431,8 +431,26 @@ export interface MediaAsset {
   createdAt: IsoDate;
 }
 
+// A multisig resolve proposal whose dispute closed another way (withdrawn or timed out). It can never
+// execute (DisputeMismatch), so someone should cancel it in Squads; listed until Squads shows it cancelled.
+export interface StaleSquadsProposal {
+  disputeId: string;
+  spotId: string;
+  spotIndex: number;
+  listingTitle: string;
+  transactionIndex: number;
+  proposal: string | null;
+  disputeState: "withdrawn" | "timed_out";
+  closedAt: IsoDate | null;
+  // Squads' own status, null when it couldn't be read.
+  status: string | null;
+  // e.g. "the dispute was withdrawn; cancel Squads proposal #12"
+  message: string;
+}
+
 export interface ReviewSummary {
-  counts: { listingsInReview: number; openDisputes: number; payoutsReady: number; failedTxs: number };
+  counts: { listingsInReview: number; openDisputes: number; payoutsReady: number; failedTxs: number; staleProposals?: number };
+  staleProposals?: StaleSquadsProposal[];
   disputes: Array<{
     dispute: {
       id: string;
@@ -591,6 +609,9 @@ export interface RentSpot {
   listingSlug: string;
   deadline: IsoDate;
   lamports: number;
+  // The listing's on-chain rent payer; true when it is a former reviewer key (adopt before closing).
+  rentPayer?: string | null;
+  needsAdoption?: boolean;
 }
 
 export interface RentListing {
@@ -599,6 +620,8 @@ export interface RentListing {
   slug: string;
   chainAddress: string;
   lamports: number;
+  rentPayer?: string | null;
+  needsAdoption?: boolean;
 }
 
 export interface RentReport {
@@ -607,6 +630,17 @@ export interface RentReport {
   // Published listings whose spots are all finished.
   listings: RentListing[];
   reclaimableLamports: number;
+  // Rent recorded to a former reviewer key: closing it needs the listings adopted first.
+  needsAdoptionLamports?: number;
+  serverRentPayer?: string | null;
+}
+
+// POST /admin/listings/adopt: moves live listings off a former reviewer key after a rotation.
+export interface AdoptListingsReport {
+  reviewer: string;
+  adopted: Array<{ listingId: string; title: string; previousRentPayer: string; signature: string }>;
+  skipped: Array<{ listingId: string; title: string; reason: string }>;
+  failed: Array<{ listingId: string; title: string; error: string }>;
 }
 
 // Public protocol status (GET /status): no session needed; the pause flag is cached server-side.

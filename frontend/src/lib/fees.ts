@@ -26,11 +26,12 @@ export function feePolicyError(mode: PricingMode, fees: FeePolicy, floorBps: num
 
 const applyBps = (amount: bigint, bps: number) => (amount * BigInt(bps)) / 10_000n;
 
-// Same integer math as the program's calculate_fee.
+// Same integer math as the program's calculate_fee: both auction components are summed before one
+// floor division, then capped at max_fee_bps of the final amount.
 export function feeFor(mode: PricingMode, fees: FeePolicy, startPrice: bigint, finalAmount: bigint): bigint {
   if (mode === "fixed") return applyBps(finalAmount, fees.feeBps);
   const base = finalAmount < startPrice ? finalAmount : startPrice;
-  const calculated = applyBps(base, fees.feeBps) + applyBps(finalAmount - base, fees.upliftFeeBps);
+  const calculated = (base * BigInt(fees.feeBps) + (finalAmount - base) * BigInt(fees.upliftFeeBps)) / 10_000n;
   const cap = applyBps(finalAmount, fees.maxFeeBps);
   return calculated < cap ? calculated : cap;
 }

@@ -15,11 +15,14 @@ import {
   DisputeError,
   raiseDispute,
   resolveDispute,
+  staleSquadsProposals,
   timeoutDispute,
   withdrawDispute,
   type DisputeDeps,
+  type StaleSquadsProposal,
 } from "../src/services/disputes.js";
 import { reconcile, type ChainSpotStatus } from "../src/services/reconciler.js";
+import { reviewSummary } from "../src/services/dashboards.js";
 import { createTestDb } from "./helpers/db.js";
 import { fakeRunTx, seedListing, seedUser, USDC } from "./helpers/seed.js";
 
@@ -494,4 +497,141 @@ test("a platform signing failure falls back; a buyer signing failure does not", 
   assert.equal(result.buyerPaidRent, true);
   assert.equal(result.spot.state, "disputed");
   assert.ok(sent[0].feePayer.publicKey.equals(buyer!.signer.publicKey));
+});
+
+// ---------- second CertiK scan: decisions bound to a dispute instance, withdraw before timeout ----------
+
+const coder = createProgram(new Connection("http://127.0.0.1:8899")).coder.instruction;
+type ResolveArgs = { sellerShareBps: number; expectedOpenedAt: { toNumber(): number }; expectedEvidenceHash: number[] };
+const decodeResolve = (ix: TransactionInstruction) => {
+  const decoded = coder.decode(Buffer.from(ix.data));
+  assert.equal(decoded?.name, "resolveDispute");
+  return decoded!.data as ResolveArgs;
+};
+const raisedEvidenceHash = (ix: TransactionInstruction) => {
+  const decoded = coder.decode(Buffer.from(ix.data));
+  assert.equal(decoded?.name, "raiseDispute");
+  return Array.from((decoded!.data as { evidenceHash: number[] }).evidenceHash);
+};
+
+test("resolve passes the on-chain opened_at and evidence_hash, directly and in a Squads proposal", async () => {
+  const evidenceHash = Array.from({ length: 32 }, (_, i) => i + 1);
+  const record = async () => ({ rentPayer: reviewerKey.publicKey, timesOutAt: new Date(Date.now() + 24 * HOUR), openedAt: 1_760_000_123, evidenceHash });
+
+  const direct = await disputedSpot();
+  await resolveDispute({ ...deps(), readDisputeRecord: record }, direct.reviewer.user.id, direct.spot.id, DECISION);
+  const args = decodeResolve(sent.at(-1)!.instructions.at(-1)!);
+  assert.equal(args.sellerShareBps, 5000);
+  assert.equal(args.expectedOpenedAt.toNumber(), 1_760_000_123);
+  assert.deepEqual(Array.from(args.expectedEvidenceHash), evidenceHash);
+
+  const proposed: TransactionInstruction[][] = [];
+  const viaMultisig = await disputedSpot();
+  await resolveDispute({ ...viaSquads(proposed), readDisputeRecord: record }, viaMultisig.reviewer.user.id, viaMultisig.spot.id, DECISION);
+  const wrapped = decodeResolve(proposed[0][0]);
+  assert.equal(wrapped.expectedOpenedAt.toNumber(), 1_760_000_123);
+  assert.deepEqual(Array.from(wrapped.expectedEvidenceHash), evidenceHash);
+});
+
+test("without the chain record, resolve falls back to the DB open time and the hash raise_dispute sent", async () => {
+  const seeded = await overdueSpot();
+  await raiseDispute(deps(), seeded.buyer!.user.id, seeded.buyer!.signer, seeded.spot.id, { reason: REASON });
+  const raisedHash = raisedEvidenceHash(sent[0].instructions[0]);
+  const reviewer = await seedUser(db, "reviewer");
+  await resolveDispute(deps(), reviewer.user.id, seeded.spot.id, DECISION);
+  const [row] = await db.select().from(disputes).where(eq(disputes.spotId, seeded.spot.id));
+  const args = decodeResolve(sent.at(-1)!.instructions.at(-1)!);
+  assert.equal(args.expectedOpenedAt.toNumber(), Math.floor(row.openedAt.getTime() / 1000));
+  assert.deepEqual(Array.from(args.expectedEvidenceHash), raisedHash);
+});
+
+test("a withdrawal is refused once the dispute has timed out; nothing is sent", async () => {
+  const { buyer, spot } = await disputedSpot();
+  const timedOut = async () => ({ rentPayer: reviewerKey.publicKey, timesOutAt: new Date(Date.now() - 1000) });
+  await assert.rejects(
+    withdrawDispute({ ...deps(), readDisputeRecord: timedOut }, buyer!.user.id, buyer!.signer, spot.id),
+    (error: DisputeError) => error.status === 409 && /timed out, so it can't be withdrawn anymore/.test(error.message),
+  );
+  assert.equal(sent.length, 0);
+  // Just before the timeout it still goes through.
+  const justBefore = async () => ({ rentPayer: reviewerKey.publicKey, timesOutAt: new Date(Date.now() + 60_000) });
+  const result = await withdrawDispute({ ...deps(), readDisputeRecord: justBefore }, buyer!.user.id, buyer!.signer, spot.id);
+  assert.equal(result.spot.state, "funded");
+});
+
+test("withdrawing a dispute with a pending Squads resolve marks the proposal stale for cancelling", async () => {
+  const { spot, buyer, reviewer } = await disputedSpot();
+  const result = await resolveDispute(viaSquads([], new Map(), 41n), reviewer.user.id, spot.id, DECISION);
+  assert.ok("pending" in result);
+  await withdrawDispute(deps(), buyer!.user.id, buyer!.signer, spot.id);
+
+  const events = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));
+  const withdrawn = events.find((event) => event.type === "dispute_withdrawn");
+  assert.equal((withdrawn?.data as { staleSquadsTransactionIndex?: number }).staleSquadsTransactionIndex, 41);
+
+  const mine = (list: StaleSquadsProposal[]) => list.filter((item) => item.spotId === spot.id);
+  // Without a Squads reader, recently closed disputes are listed.
+  const [listed] = mine(await staleSquadsProposals(db));
+  assert.equal(listed.transactionIndex, 41);
+  assert.equal(listed.disputeState, "withdrawn");
+  assert.equal(listed.message, "the dispute was withdrawn; cancel Squads proposal #41");
+  // With one, only proposals members could still approve or execute.
+  for (const status of ["active", "approved", "draft", "executing"]) {
+    assert.equal(mine(await staleSquadsProposals(db, { proposalStatus: async () => status })).length, 1, status);
+  }
+  for (const status of ["cancelled", "rejected", "executed", null]) {
+    assert.equal(mine(await staleSquadsProposals(db, { proposalStatus: async () => status })).length, 0, String(status));
+  }
+  // A failed read keeps it listed rather than hiding a live proposal.
+  const unreadable = mine(await staleSquadsProposals(db, { proposalStatus: () => Promise.reject(new Error("rpc down")) }));
+  assert.equal(unreadable.length, 1);
+  assert.equal(unreadable[0].status, null);
+
+  // The re-raised dispute is a new row: the stale proposal doesn't block a new decision.
+  await raiseDispute(deps(), buyer!.user.id, buyer!.signer, spot.id, { reason: REASON });
+  const again = await resolveDispute(viaSquads([], new Map([[41n, "active" as const]]), 42n), reviewer.user.id, spot.id, DECISION);
+  assert.ok("pending" in again && again.pending.transactionIndex === 42);
+});
+
+test("a dispute that times out with a pending Squads resolve is listed as stale too", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  await resolveDispute(viaSquads([], new Map(), 77n), reviewer.user.id, spot.id, DECISION);
+  timeoutSeconds = 0;
+  await timeoutDispute(deps(new Date(Date.now() + 1000)), spot.id);
+  const summary = await reviewSummary(db, new Date(), { timeoutSeconds: 60 }, { proposalStatus: async (index) => (index === 77n ? "active" : "cancelled") });
+  const item = summary.staleProposals.find((entry) => entry.spotId === spot.id);
+  assert.equal(item?.message, "the dispute timed out; cancel Squads proposal #77");
+  assert.equal(item?.status, "active");
+  assert.equal(summary.counts.staleProposals, summary.staleProposals.length);
+});
+
+test("settlement paths name the listing's on-chain rent payer; a proofless dispute waits for adoption", async () => {
+  const adopted = keypairSigner(Keypair.generate());
+  const former = Keypair.generate().publicKey;
+  const snapshot = (rentPayer: PublicKey) => async () => ({
+    treasury: Keypair.generate().publicKey,
+    rentPayer,
+    fees: { mode: "fixed" as const, feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 },
+  });
+
+  // Not yet adopted: the platform can't pay a proofless dispute's rent, so nothing is sent.
+  const unadopted = await overdueSpot();
+  await assert.rejects(
+    raiseDispute({ ...deps(), readListingSnapshot: snapshot(former) }, unadopted.buyer!.user.id, unadopted.buyer!.signer, unadopted.spot.id, { reason: REASON }),
+    (error: DisputeError) => error.status === 503 && /key change/.test(error.message),
+  );
+  assert.equal(sent.length, 0);
+  // With proof any signer may pay, so the platform still opens it.
+  const proven = await provenSpot();
+  await raiseDispute({ ...deps(), readListingSnapshot: snapshot(former) }, proven.buyer!.user.id, proven.buyer!.signer, proven.spot.id, { reason: REASON });
+  assert.equal(keyAt(sent.at(-1)!.instructions[0], RAISE_RENT_PAYER), reviewerKey.publicKey.toBase58());
+
+  // Resolve and timeout return listing rent to whoever the listing names now.
+  const resolved = await disputedSpot();
+  await resolveDispute({ ...deps(), readListingSnapshot: snapshot(adopted.publicKey) }, resolved.reviewer.user.id, resolved.spot.id, DECISION);
+  assert.equal(keyAt(sent.at(-1)!.instructions.at(-1)!, RENT_PAYER), adopted.publicKey.toBase58());
+  const timedOut = await disputedSpot();
+  timeoutSeconds = 0;
+  await timeoutDispute({ ...deps(new Date(Date.now() + 1000)), readListingSnapshot: snapshot(former) }, timedOut.spot.id);
+  assert.equal(keyAt(sent.at(-1)!.instructions.at(-1)!, RENT_PAYER), former.toBase58());
 });

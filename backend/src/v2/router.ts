@@ -35,7 +35,7 @@ import { listingLedger, searchListings, verifyLedger } from "../services/ledger.
 import { listWatchlist, unwatchListing, watchListing } from "../services/watchlist.js";
 import { getPrefs, listNotifications, markRead, setPrefs } from "../services/notifications.js";
 import { reconcile } from "../services/reconciler.js";
-import { prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
+import { adoptListings, prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
 
@@ -622,6 +622,7 @@ export function createV2Router(options: {
       runTx: context.runTx,
       readVaultBalance: context.readVaultBalance,
       accountExists: context.accountExists,
+      readListingRentPayers: context.readListingRentPayers,
     };
   };
   // Creators refund with their own signature; sponsors after a missed delivery need none.
@@ -830,7 +831,39 @@ export function createV2Router(options: {
   );
   // Rent reclaim: the platform paid every account's rent, so only admins close unsold spots and
   // finished listings, and the rent returns to the platform's rent payer. Creators never close anything.
-  router.get("/admin/rent", requireUser, requireAdmin, handle(async (_req, res) => send(res, await rentReport({ db, readLamports: requireChain().readLamports }))));
+  router.get(
+    "/admin/rent",
+    requireUser,
+    requireAdmin,
+    handle(async (_req, res) => {
+      const context = requireChain();
+      send(res, await rentReport({ db, readLamports: context.readLamports, readListingRentPayers: context.readListingRentPayers, serverRentPayer: context.rentPayer.publicKey }));
+    }),
+  );
+  // Reviewer key rotation: once the review authority is the server's new key, move every live listing
+  // still recorded to a former key onto it (adopt_listing). Safe to run again; adopted ones are skipped.
+  router.post(
+    "/admin/listings/adopt",
+    ...mutate,
+    requireAdmin,
+    handle(async (req, res) => {
+      const context = requireChain();
+      send(
+        res,
+        await adoptListings(
+          {
+            db,
+            program: context.program,
+            reviewer: context.reviewer,
+            runTx: context.runTx,
+            readReviewAuthority: context.readReviewAuthority,
+            readListingRentPayers: context.readListingRentPayers,
+          },
+          me(req).id,
+        ),
+      );
+    }),
+  );
   router.post(
     "/admin/spots/:id/close",
     ...mutate,
@@ -918,7 +951,7 @@ export function createV2Router(options: {
     requireReviewer,
     handle(async (_req, res) => {
       const timeoutSeconds = chain ? await chain.readDisputeTimeoutSeconds().catch(() => 3 * 24 * 60 * 60) : 3 * 24 * 60 * 60;
-      send(res, await reviewSummary(db, new Date(), { readDeadlines: chain?.readDisputeDeadlines, timeoutSeconds }));
+      send(res, await reviewSummary(db, new Date(), { readDeadlines: chain?.readDisputeDeadlines, timeoutSeconds }, { proposalStatus: chain?.squads?.proposalStatus }));
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));

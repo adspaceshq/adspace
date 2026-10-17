@@ -19,6 +19,7 @@ import type {
   Post,
   ProtocolStatus,
   RentReport,
+  AdoptListingsReport,
   PublicListing,
   PublicProfile,
   PublicStatus,
@@ -240,5 +241,7 @@ export const api = {
     // Without force the server only closes spots past their listing deadline.
     closeSpot: (spotId: string, force = false) => post<{ spot: Spot; signature: string }>(`/admin/spots/${enc(spotId)}/close`, force ? { force: true } : {}),
     closeListing: (listingId: string) => post<{ listing: Listing; signature: string }>(`/admin/listings/${enc(listingId)}/close`),
+    // After rotating the reviewer key: moves every live listing on a former key to the current one.
+    adoptListings: () => post<AdoptListingsReport>("/admin/listings/adopt"),
   },
 };

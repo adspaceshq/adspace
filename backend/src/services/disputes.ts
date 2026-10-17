@@ -1,5 +1,6 @@
 import { eventAmount, type TxEventReader } from "../chain/events.js";
 import { createHash } from "node:crypto";
+import anchor from "@coral-xyz/anchor";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { PublicKey, SystemProgram, type TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
@@ -13,6 +14,8 @@ import { cosigners, type TxSigner } from "../chain/signers.js";
 import { squadsPending, type SquadsProposer } from "../chain/squads.js";
 import type { ChainSpotStatus } from "./reconciler.js";
 import { createAtaIdempotent, payoutAvailableAt, type ListingSnapshot } from "./settlement.js";
+
+const { BN } = anchor;
 
 export class DisputeError extends Error {
   constructor(message: string, readonly status = 409) {
@@ -55,6 +58,10 @@ export interface DisputeDeps {
 export interface ChainDisputeRecord {
   rentPayer: PublicKey;
   timesOutAt: Date;
+  // opened_at (unix seconds) and evidence_hash as stored on-chain. resolve_dispute must pass both back
+  // (DisputeMismatch otherwise), which binds a decision to this dispute instance and not a re-raised one.
+  openedAt?: number;
+  evidenceHash?: number[];
 }
 
 // Rent for a DisputeRecord (8 + 628 bytes), and that plus a margin for the network fee when the buyer pays.
@@ -71,9 +78,34 @@ function formatRemaining(ms: number) {
   return hours > 0 ? `${hours}h ${minutes % 60}m` : `${minutes}m`;
 }
 
+// What raise_dispute hashed into the DisputeRecord's evidence_hash.
+const evidenceHashOf = (spotId: string, reason: string, evidenceUrls: string[]) =>
+  sha256(`adspaces-dispute-v1\n${spotId}\n${reason}\n${[...evidenceUrls].sort().join("\n")}`);
+
+// Recomputed from the DB when the chain record can't be read (tests, or a record without the fields).
+async function storedEvidenceHash(db: Db, dispute: { id: string; spotId: string; reason: string }) {
+  const evidence = await db
+    .select({ url: mediaAssets.url })
+    .from(disputeEvidence)
+    .innerJoin(mediaAssets, eq(mediaAssets.id, disputeEvidence.assetId))
+    .where(eq(disputeEvidence.disputeId, dispute.id));
+  return Array.from(evidenceHashOf(dispute.spotId, dispute.reason, evidence.map((item) => item.url)));
+}
+
+type DisputeRow = { id: string; spotId: string; reason: string; openedAt: Date };
+
+// The values resolve_dispute must echo back. The chain's own values when readable; otherwise the DB's,
+// which only match if the clocks agree to the second, so a mismatch fails on-chain rather than misapplying.
+async function expectedDispute(deps: DisputeDeps, record: Partial<ChainDisputeRecord>, dispute: DisputeRow) {
+  return {
+    openedAt: record.openedAt ?? Math.floor(dispute.openedAt.getTime() / 1000),
+    evidenceHash: record.evidenceHash ?? (await storedEvidenceHash(deps.db, dispute)),
+  };
+}
+
 // Where the dispute's rent goes back to and when it times out: the chain record when readable, else
 // the payer recorded at raise (the platform for disputes raised before buyer-paid rent existed).
-async function disputeOnChain(deps: DisputeDeps, spotKey: PublicKey, dispute: { id: string; spotId: string; openedAt: Date }) {
+async function disputeOnChain(deps: DisputeDeps, spotKey: PublicKey, dispute: { id: string; spotId: string; openedAt: Date }): Promise<ChainDisputeRecord> {
   const record = deps.readDisputeRecord ? await deps.readDisputeRecord(spotKey) : undefined;
   if (record === null) throw new DisputeError("the dispute is no longer open on-chain; reconciling");
   if (record) return record;
@@ -156,10 +188,18 @@ export async function raiseDispute(
     : [];
   if (evidence.length !== evidenceIds.length) throw new DisputeError("one of the evidence files isn't yours", 400);
 
-  const hash = sha256(`adspaces-dispute-v1\n${spot.id}\n${reason}\n${evidence.map((item) => item.url).sort().join("\n")}`);
+  const hash = evidenceHashOf(spot.id, reason, evidence.map((item) => item.url));
   const uri = listingUri(deps.listingBaseUrl, handle, listing.slug, `dispute-${spot.index + 1}`);
   const spotKey = new PublicKey(spot.chainAddress!);
   const disputeKey = pdas(deps.program.programId).dispute(spotKey);
+  // Without proof only the listing's own rent payer may pay. After a reviewer rotation a listing not yet
+  // adopted still names the former key, which the server no longer holds.
+  if (!spot.proofSubmittedAt) {
+    const { rentPayer: listingRentPayer } = await deps.readListingSnapshot(new PublicKey(listing.chainAddress!));
+    if (listingRentPayer && !listingRentPayer.equals(deps.rentPayer.publicKey)) {
+      throw new DisputeError("disputes on this listing can't be opened until the platform finishes a key change; please try again later", 503);
+    }
+  }
 
   const raiseInstruction = (rentPayer: PublicKey) =>
     deps.program.methods
@@ -264,7 +304,11 @@ export async function withdrawDispute(deps: DisputeDeps, buyerId: string, buyer:
   const dispute = await openDispute(deps.db, spotId);
   if (dispute.buyerId !== buyerId) throw new DisputeError("only the sponsor can withdraw this dispute", 403);
   const spotKey = new PublicKey(spot.chainAddress!);
-  const { rentPayer } = await disputeOnChain(deps, spotKey, dispute);
+  const { rentPayer, timesOutAt } = await disputeOnChain(deps, spotKey, dispute);
+  // The program refuses a withdrawal from the timeout on: the buyer's full refund has matured by then.
+  if (now >= timesOutAt) {
+    throw new DisputeError("this dispute has timed out, so it can't be withdrawn anymore. take the full refund instead");
+  }
   const instruction = await deps.program.methods
     .withdrawDispute()
     .accountsStrict({
@@ -303,10 +347,83 @@ export async function withdrawDispute(deps: DisputeDeps, buyerId: string, buyer:
       type: "dispute_withdrawn",
       actorId: buyerId,
       chainTxId: tx.chainTxId,
-      data: { disputeId: dispute.id },
+      data: { disputeId: dispute.id, ...staleProposalMarker(dispute) },
     });
     return { spot: updated, signature: tx.signature };
   });
+}
+
+// A decision proposed to the multisig for a dispute that then closed another way (withdrawn, timed out)
+// can never execute: resolve_dispute fails with DisputeMismatch on a re-raised dispute and finds no
+// dispute otherwise. The dispute row keeps its Squads index, and the closing event records it as stale
+// so the review queue asks someone to cancel it in Squads.
+function staleProposalMarker(dispute: { squadsTransactionIndex: number | null }) {
+  return dispute.squadsTransactionIndex === null ? {} : { staleSquadsTransactionIndex: dispute.squadsTransactionIndex };
+}
+
+const STALE_REASON = { withdrawn: "the dispute was withdrawn", timed_out: "the dispute timed out" } as const;
+// Squads statuses that can still be approved or executed, so the proposal needs cancelling.
+const CANCELLABLE = new Set(["draft", "active", "approved", "executing"]);
+// Without a Squads reader, closed disputes are listed for this long.
+const STALE_LIST_MS = 30 * 24 * 60 * 60 * 1000;
+
+export interface StaleSquadsProposal {
+  disputeId: string;
+  spotId: string;
+  spotIndex: number;
+  listingTitle: string;
+  transactionIndex: number;
+  proposal: string | null;
+  disputeState: "withdrawn" | "timed_out";
+  closedAt: Date | null;
+  // Squads' own status when readable; null when the reader is missing or failed.
+  status: string | null;
+  message: string;
+}
+
+// Resolve proposals whose dispute is no longer open but which Squads members could still approve.
+export async function staleSquadsProposals(
+  db: Db,
+  options: { proposalStatus?: (transactionIndex: bigint) => Promise<string | null>; now?: Date } = {},
+): Promise<StaleSquadsProposal[]> {
+  const now = options.now ?? new Date();
+  const rows = await db
+    .select({ dispute: disputes, spotIndex: spots.index, listingTitle: listings.title })
+    .from(disputes)
+    .innerJoin(spots, eq(spots.id, disputes.spotId))
+    .innerJoin(listings, eq(listings.id, spots.listingId))
+    .where(and(inArray(disputes.state, ["withdrawn", "timed_out"]), isNotNull(disputes.squadsTransactionIndex)));
+  const out: StaleSquadsProposal[] = [];
+  for (const { dispute, spotIndex, listingTitle } of rows) {
+    const index = dispute.squadsTransactionIndex!;
+    let status: string | null = null;
+    if (options.proposalStatus) {
+      // Undefined when the read failed: keep listing it rather than hide a live proposal.
+      const read = await options.proposalStatus(BigInt(index)).catch((error) => {
+        console.error(`reading Squads proposal #${index} failed:`, error instanceof Error ? error.message : error);
+        return undefined;
+      });
+      // Cancelled, rejected, executed or gone: nothing left to do.
+      if (read !== undefined && (read === null || !CANCELLABLE.has(read))) continue;
+      status = read ?? null;
+    } else if (!dispute.closedAt || now.getTime() - dispute.closedAt.getTime() > STALE_LIST_MS) {
+      continue;
+    }
+    const disputeState = dispute.state as "withdrawn" | "timed_out";
+    out.push({
+      disputeId: dispute.id,
+      spotId: dispute.spotId,
+      spotIndex,
+      listingTitle,
+      transactionIndex: index,
+      proposal: dispute.squadsProposal,
+      disputeState,
+      closedAt: dispute.closedAt,
+      status,
+      message: `${STALE_REASON[disputeState]}; cancel Squads proposal #${index}`,
+    });
+  }
+  return out.sort((a, b) => a.transactionIndex - b.transactionIndex);
 }
 
 // Proposals that still count: anything not rejected, cancelled or gone blocks a second one.
@@ -422,7 +539,9 @@ export async function resolveDispute(
   const seller = new PublicKey(listing.sellerWallet!);
   const buyer = new PublicKey(spot.buyerWallet!);
   // The program refuses resolve_dispute from the timeout on; only the full refund remains then.
-  const { rentPayer: disputeRentPayer, timesOutAt } = await disputeOnChain(deps, spotKey, dispute);
+  const record = await disputeOnChain(deps, spotKey, dispute);
+  const { rentPayer: disputeRentPayer, timesOutAt } = record;
+  const expected = await expectedDispute(deps, record, dispute);
   const remainingMs = timesOutAt.getTime() - now.getTime();
   if (remainingMs <= 0) {
     throw new DisputeError("this dispute has timed out and can no longer be resolved; refund the sponsor in full instead");
@@ -448,10 +567,12 @@ export async function resolveDispute(
   const hash = decisionHash(dispute.id, sellerShareBps, decision);
   const uri = listingUri(deps.listingBaseUrl, handle, listing.slug, `decision-${spot.index + 1}`);
   const resolveInstruction = await deps.program.methods
-    .resolveDispute(sellerShareBps, Array.from(hash), uri)
+    // opened_at and evidence_hash bind the decision to this dispute: if it is withdrawn and raised again
+    // before a Squads proposal executes, the program rejects the proposal (DisputeMismatch).
+    .resolveDispute(sellerShareBps, Array.from(hash), uri, new BN(expected.openedAt), expected.evidenceHash)
     .accountsStrict({
       resolver: authority,
-      rentPayer: deps.rentPayer.publicKey,
+      rentPayer: snapshot.rentPayer ?? deps.rentPayer.publicKey,
       disputeRentPayer,
       config: addresses.config(),
       listing: listingKey,
@@ -622,6 +743,7 @@ export async function timeoutDispute(deps: DisputeDeps, spotId: string, triggere
   const vault = new PublicKey(spot.vaultAddress!);
   const buyer = new PublicKey(spot.buyerWallet!);
   const balance = await deps.readVaultBalance(vault);
+  const { rentPayer: listingRentPayer } = await deps.readListingSnapshot(listingKey);
   const addresses = pdas(deps.program.programId);
   const instructions: TransactionInstruction[] = [];
   if (!(await deps.accountExists(associatedTokenAddress(buyer, deps.mint)))) {
@@ -632,7 +754,7 @@ export async function timeoutDispute(deps: DisputeDeps, spotId: string, triggere
       .timeoutDispute()
       .accountsStrict({
         caller: deps.feePayer.publicKey,
-        rentPayer: deps.rentPayer.publicKey,
+        rentPayer: listingRentPayer ?? deps.rentPayer.publicKey,
         disputeRentPayer,
         config: addresses.config(),
         listing: listingKey,
@@ -676,7 +798,7 @@ export async function timeoutDispute(deps: DisputeDeps, spotId: string, triggere
       type: "dispute_timed_out",
       actorId: triggeredBy,
       chainTxId: tx.chainTxId,
-      data: { disputeId: dispute.id },
+      data: { disputeId: dispute.id, ...staleProposalMarker(dispute) },
     });
     return { spot: updated, settlement, signature: tx.signature };
   });
