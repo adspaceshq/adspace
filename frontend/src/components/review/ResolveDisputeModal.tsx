@@ -45,6 +45,7 @@ export function ResolveDisputeModal({
   const [error, setError] = useState<string>();
   // Set when the multisig is the config authority: the decision went to Squads instead of the chain.
   const [pending, setPending] = useState<SquadsPending>();
+  const [warnings, setWarnings] = useState<string[]>([]);
   const tx = useTx(() => api.review.resolveDispute(item.spotId, share * 100, decision.trim()));
   const now = useNow(30_000);
   const blocked = resolveBlockedReason(item.timeoutAt, viaMultisig, now);
@@ -62,7 +63,10 @@ export function ResolveDisputeModal({
     const result = await tx.execute();
     if (!result) return;
     await queryClient.invalidateQueries({ queryKey: queryKeys.reviewSummary });
-    if (result.pending) setPending(result.pending);
+    if (result.pending) {
+      setWarnings(result.warnings ?? []);
+      setPending(result.pending);
+    }
     else onClose();
   };
 
@@ -89,10 +93,19 @@ export function ResolveDisputeModal({
       }
     >
       {pending ? (
-        <SquadsPendingNote index={pending.transactionIndex} url={pending.url}>
-          the creator gets {share}%. the dispute stays open until multisig members approve and execute it, then settles here on its own. it must execute
-          before the timeout, or the sponsor can take a full refund.
-        </SquadsPendingNote>
+        <div className="flex flex-col gap-3">
+          <SquadsPendingNote index={pending.transactionIndex} url={pending.url} validUntil={pending.validUntil}>
+            the creator gets {share}%. the dispute stays open until multisig members approve and execute it, then settles here on its own. it must execute
+            before the timeout, or the sponsor can take a full refund.
+          </SquadsPendingNote>
+          {warnings.length > 0 && (
+            <ul role="alert" className="flex flex-col gap-1 rounded-control bg-warning-soft px-3 py-2 text-small text-ink">
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </div>
       ) : (
         <div className="flex flex-col gap-5">
           <p className="text-small text-muted">

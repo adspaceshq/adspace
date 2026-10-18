@@ -215,7 +215,8 @@ export const api = {
     decide: (listingId: string, decision: ReviewDecision) => post<Listing>(`/review/listings/${enc(listingId)}`, decision),
     resolveDispute: (spotId: string, sellerShareBps: number, decision: string) =>
       // With the multisig as config authority the decision becomes a Squads proposal (pending), not a settlement.
-      post<{ spot: Spot; settlement?: Settlement; pending?: SquadsPending; signature: string }>(`/review/spots/${enc(spotId)}/resolve`, {
+      // warnings: what members should know before approving (for example the vault's SOL for re-creating token accounts).
+      post<{ spot: Spot; settlement?: Settlement; pending?: SquadsPending; signature: string; warnings?: string[] }>(`/review/spots/${enc(spotId)}/resolve`, {
         sellerShareBps,
         decision,
       }),

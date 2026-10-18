@@ -1202,6 +1202,10 @@ export type Adspaces = {
         {
           "name": "paused",
           "type": "bool"
+        },
+        {
+          "name": "validUntil",
+          "type": "i64"
         }
       ]
     },
@@ -1390,6 +1394,10 @@ export type Adspaces = {
         {
           "name": "proposedAuthority",
           "type": "pubkey"
+        },
+        {
+          "name": "validUntil",
+          "type": "i64"
         }
       ]
     },
@@ -1735,7 +1743,13 @@ export type Adspaces = {
         },
         {
           "name": "sellerAta",
-          "writable": true
+          "docs": [
+            "The three destinations are optional: each is required only when its amount is above zero, so a",
+            "party whose leg is zero cannot block the resolution by closing or reassigning its token account.",
+            "When present, each is checked as before."
+          ],
+          "writable": true,
+          "optional": true
         },
         {
           "name": "seller",
@@ -1745,11 +1759,13 @@ export type Adspaces = {
         },
         {
           "name": "buyerAta",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "treasuryAta",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "proof",
@@ -1858,6 +1874,14 @@ export type Adspaces = {
       "args": [
         {
           "name": "seconds",
+          "type": "i64"
+        },
+        {
+          "name": "expectedSeconds",
+          "type": "i64"
+        },
+        {
+          "name": "validUntil",
           "type": "i64"
         }
       ]
@@ -2160,6 +2184,18 @@ export type Adspaces = {
         {
           "name": "feeBps",
           "type": "u16"
+        },
+        {
+          "name": "expectedTreasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "expectedFeeBps",
+          "type": "u16"
+        },
+        {
+          "name": "validUntil",
+          "type": "i64"
         }
       ]
     },
@@ -2237,6 +2273,14 @@ export type Adspaces = {
         {
           "name": "guardian",
           "type": "pubkey"
+        },
+        {
+          "name": "expectedGuardian",
+          "type": "pubkey"
+        },
+        {
+          "name": "validUntil",
+          "type": "i64"
         }
       ]
     },
@@ -2316,6 +2360,14 @@ export type Adspaces = {
         {
           "name": "newAuthority",
           "type": "pubkey"
+        },
+        {
+          "name": "expectedAuthority",
+          "type": "pubkey"
+        },
+        {
+          "name": "validUntil",
+          "type": "i64"
         }
       ]
     },
@@ -3236,6 +3288,26 @@ export type Adspaces = {
       "code": 6054,
       "name": "sellerAccountRequired",
       "msg": "The vault holds funds; pass the seller token account to sweep them."
+    },
+    {
+      "code": 6055,
+      "name": "adminMessageExpired",
+      "msg": "Admin message has expired, or its valid_until is more than 7 days ahead."
+    },
+    {
+      "code": 6056,
+      "name": "configMismatch",
+      "msg": "The current value differs from the one this admin message was built from."
+    },
+    {
+      "code": 6057,
+      "name": "disputeWithdrawTooSoon",
+      "msg": "A dispute cannot be withdrawn in the second it was opened."
+    },
+    {
+      "code": 6058,
+      "name": "resolveAccountRequired",
+      "msg": "Every nonzero resolution amount needs its destination token account."
     }
   ],
   "types": [
@@ -3498,6 +3570,17 @@ export type Adspaces = {
           {
             "name": "raisedAt",
             "type": "i64"
+          },
+          {
+            "name": "evidenceUri",
+            "type": "string"
+          },
+          {
+            "name": "timeoutSeconds",
+            "docs": [
+              "Timeout snapshotted for this dispute; it times out at `raised_at + timeout_seconds`."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -3638,7 +3721,18 @@ export type Adspaces = {
           },
           {
             "name": "treasuryAta",
+            "docs": [
+              "`Pubkey::default()` when the fee is zero and no treasury account was passed."
+            ],
             "type": "pubkey"
+          },
+          {
+            "name": "decisionUri",
+            "type": "string"
+          },
+          {
+            "name": "decidedAt",
+            "type": "i64"
           }
         ]
       }
@@ -4299,6 +4393,16 @@ export type Adspaces = {
       "name": "listingSeed",
       "type": "bytes",
       "value": "[108, 105, 115, 116, 105, 110, 103]"
+    },
+    {
+      "name": "maxAdminMessageTtlSeconds",
+      "docs": [
+        "Longest an admin message (a config-authority setter) stays executable: its `valid_until` must lie",
+        "between now and now + 7 days, so an approved but unexecuted multisig proposal dies within 7 days",
+        "and cannot overwrite newer state later."
+      ],
+      "type": "i64",
+      "value": "604800"
     },
     {
       "name": "maxBidIncrement",

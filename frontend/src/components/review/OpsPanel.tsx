@@ -151,7 +151,7 @@ export function OpsPanel() {
               </p>
             )}
             {resumeProposal && paused && (
-              <SquadsPendingNote index={resumeProposal.transactionIndex} url={resumeProposal.url}>
+              <SquadsPendingNote index={resumeProposal.transactionIndex} url={resumeProposal.url} validUntil={resumeProposal.validUntil}>
                 the protocol stays paused until multisig members approve and execute the resume.
               </SquadsPendingNote>
             )}
@@ -179,7 +179,7 @@ export function OpsPanel() {
               </Button>
             </div>
             {timeoutProposal && (
-              <SquadsPendingNote index={timeoutProposal.pending.transactionIndex} url={timeoutProposal.pending.url}>
+              <SquadsPendingNote index={timeoutProposal.pending.transactionIndex} url={timeoutProposal.pending.url} validUntil={timeoutProposal.pending.validUntil}>
                 the timeout becomes {formatDays(timeoutProposal.seconds)} once multisig members approve and execute it.
               </SquadsPendingNote>
             )}
@@ -242,6 +242,7 @@ export function OpsPanel() {
         <ul className="flex flex-col gap-1 rounded-card bg-canvas p-3 text-small text-muted">
           <li>applies only to disputes raised after the change; open disputes keep their current deadline</li>
           {viaMultisig && <li>opens a Squads proposal for set_dispute_timeout. nothing changes until multisig members approve and execute it</li>}
+          {viaMultisig && <li>the proposal only applies over the current timeout and expires after a set time (24 hours by default); after that it has to be rebuilt</li>}
           <li>allowed range: 1 hour to 30 days</li>
         </ul>
         {timeout.isError && <p className="mt-2 text-small text-danger">{userErrorMessage(timeout.error)}</p>}
@@ -254,7 +255,7 @@ export function OpsPanel() {
         description={
           paused
             ? viaMultisig
-              ? "opens a Squads proposal for pause_protocol(false). nothing changes until multisig members approve and execute it."
+              ? "opens a Squads proposal for pause_protocol(false). nothing changes until multisig members approve and execute it, and it expires after a set time (24 hours by default)."
               : "new listings and purchases will be allowed again."
             : `type "${"pause"}" to confirm. sellers and sponsors can't start anything new until you resume.`
         }

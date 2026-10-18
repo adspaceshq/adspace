@@ -27,6 +27,11 @@ const KNOWN: Array<[RegExp, string]> = [
   // Added with the second CertiK scan (6053-6054).
   [/DisputeMismatch|does not match the one this resolution was decided for|made for an earlier dispute/i, 'this decision was made for an earlier dispute on this spot. review the current dispute and decide again.'],
   [/SellerAccountRequired|pass the seller token account|needs the creator's token account/i, "this spot's escrow holds funds, so closing it needs the creator's token account. try the close again."],
+  // Added with the final CertiK scan (6055-6058), by name, IDL message or the server's copy.
+  [/AdminMessageExpired|admin message has expired|admin action has expired/i, 'this admin action has expired. rebuild it from the current settings and approve the new one.'],
+  [/ConfigMismatch|differs from the one this admin message was built from|settings changed since this admin action was built/i, 'the protocol settings changed since this action was built. rebuild it from the current settings.'],
+  [/DisputeWithdrawTooSoon|cannot be withdrawn in the second it was opened|opened a moment ago/i, 'this dispute was opened a moment ago. try withdrawing again in a few seconds.'],
+  [/ResolveAccountRequired|needs its destination token account|missing a token account; rebuild the decision/i, 'someone receiving funds from this decision has no token account yet. decide again to rebuild it.'],
   // Reviewer key rotation: listings still on the former key, and adopting before the authority moved.
   [/adopt listings in ops first/i, 'this listing still belongs to the former reviewer key. adopt listings in ops first, then close it.'],
   [/is not the on-chain review authority/i, "the server's reviewer key isn't the on-chain review authority yet. rotate the review authority to it first, then adopt listings."],

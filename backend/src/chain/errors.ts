@@ -12,6 +12,10 @@ const FRIENDLY: Record<string, string> = {
   SelfOutbid: "you're already the top bidder",
   DisputeMismatch: "this decision was made for an earlier dispute on this spot (it was withdrawn or raised again); review the current dispute and decide again",
   SellerAccountRequired: "this spot's escrow holds funds, so closing it needs the creator's token account; retry the close",
+  AdminMessageExpired: "this admin action has expired (or its expiry is more than 7 days ahead); rebuild it from the current settings",
+  ConfigMismatch: "the protocol settings changed since this admin action was built; rebuild it from the current settings",
+  DisputeWithdrawTooSoon: "this dispute was opened a moment ago; try withdrawing again in a few seconds",
+  ResolveAccountRequired: "a party receiving funds from this decision is missing a token account; rebuild the decision and try again",
 };
 
 export class ChainError extends Error {

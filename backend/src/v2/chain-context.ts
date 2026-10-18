@@ -1,6 +1,6 @@
 import { txEventReader, type TxEventReader } from "../chain/events.js";
 import type { PrivyClient } from "@privy-io/node";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey, SYSVAR_CLOCK_PUBKEY } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { associatedTokenAddress, createProgram, pdas, type AdspacesProgram } from "../chain/program.js";
 import { prepareChainTx, runChainTx, submitPreparedChainTx, type ChainTxRequest, type ChainTxResult, type PreparedChainTx } from "../chain/runner.js";
@@ -49,6 +49,10 @@ export interface ChainContext {
   signatureOutcomes: (signatures: string[]) => Promise<Map<string, SignatureOutcome>>;
   readSpotStatus: (address: string) => Promise<ChainSpotStatus>;
   readProtocolStatus: () => Promise<ProtocolStatus>;
+  // The cluster clock (unix seconds): admin messages' valid_until is checked against it, not server time.
+  readClusterTime: () => Promise<number>;
+  // SQUADS_PROPOSAL_TTL_HOURS: how long admin messages (and their Squads proposals) stay executable.
+  adminMessageTtlHours: number;
   findDisputeResolution: (spotAddress: string, decisionHash: string) => Promise<DisputeResolution | null>;
 }
 
@@ -62,6 +66,7 @@ export function createChainContext(options: {
   reviewerKeypairPath: string;
   privyAuthorizationKey?: string;
   squadsMultisig?: string;
+  squadsProposalTtlHours?: number;
 }): ChainContext {
   const connection = new Connection(options.rpcUrl, "confirmed");
   const program = createProgram(connection);
@@ -123,6 +128,14 @@ export function createChainContext(options: {
     },
 
     readTxEvent,
+    adminMessageTtlHours: options.squadsProposalTtlHours ?? 24,
+
+    // Clock sysvar: slot, epoch_start_timestamp, epoch, leader_schedule_epoch (8 bytes each), then unix_timestamp.
+    async readClusterTime() {
+      const clock = await connection.getAccountInfo(SYSVAR_CLOCK_PUBKEY, "confirmed");
+      if (!clock || clock.data.length < 40) throw new Error("could not read the cluster clock");
+      return Number(clock.data.readBigInt64LE(32));
+    },
 
     async readVaultBalance(vault) {
       const { value } = await connection.getTokenAccountBalance(vault, "confirmed");

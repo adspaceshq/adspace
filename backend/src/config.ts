@@ -19,12 +19,20 @@ export interface AppConfig {
     reviewerWalletPath?: string;
     /** Squads v4 multisig whose vault 0 is the config authority; the reviewer key proposes to it. */
     squadsMultisig?: string;
+    /** How long admin messages proposed to the multisig stay executable (valid_until), 1-168 hours. */
+    squadsProposalTtlHours: number;
   };
 }
 
 function positiveInteger(name: string, value: string | undefined, fallback: number): number {
   const parsed = Number(value ?? fallback);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`);
+  return parsed;
+}
+
+function boundedInteger(name: string, value: string | undefined, fallback: number, min: number, max: number): number {
+  const parsed = value === undefined || value.trim() === "" ? fallback : Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) throw new Error(`${name} must be an integer from ${min} to ${max}`);
   return parsed;
 }
 
@@ -88,6 +96,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       websocketUrl: env.SOLANA_WEBSOCKET_URL ? absoluteUrl("SOLANA_WEBSOCKET_URL", env.SOLANA_WEBSOCKET_URL) : undefined,
       reviewerWalletPath: env.ADSPACES_REVIEWER_KEYPAIR?.trim() || env.ADSPACES_REVIEWER_KEYPAIR_PATH?.trim() || undefined,
       squadsMultisig: optionalKey("SQUADS_MULTISIG", env.SQUADS_MULTISIG),
+      // The program caps valid_until at 7 days ahead of the cluster clock.
+      squadsProposalTtlHours: boundedInteger("SQUADS_PROPOSAL_TTL_HOURS", env.SQUADS_PROPOSAL_TTL_HOURS, 24, 1, 168),
     },
   };
 }

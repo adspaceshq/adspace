@@ -3,13 +3,13 @@ import { after, before, beforeEach, test } from "node:test";
 import { eq } from "drizzle-orm";
 import { Connection, Keypair, PublicKey, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import * as multisig from "@sqds/multisig";
-import { createProgram } from "../src/chain/program.js";
+import { ATA_PROGRAM_ID, associatedTokenAddress, createProgram } from "../src/chain/program.js";
 import type { ChainTxRequest } from "../src/chain/runner.js";
 import { keypairSigner } from "../src/chain/signers.js";
 import { squadsProposalInstructions, squadsVault, type SquadsProposalStatus, type SquadsProposer } from "../src/chain/squads.js";
 import type { Db } from "../src/db/client.js";
 import { chainTxs, disputes, settlements, spotEvents, spots } from "../src/db/schema.js";
-import { ChainError } from "../src/chain/errors.js";
+import { ChainError, decodeChainError } from "../src/chain/errors.js";
 import {
   BUYER_DISPUTE_MIN_LAMPORTS,
   DisputeError,
@@ -61,6 +61,8 @@ const deps = (now = new Date()): DisputeDeps => ({
   readDisputeTimeoutSeconds: async () => timeoutSeconds,
   listingBaseUrl: "https://adspaces.fun",
   now: () => now,
+  // Withdrawals in a dispute's first seconds wait; tests don't.
+  sleep: async () => {},
 });
 
 // Delivery deadline passed one hour ago; spot funded without proof.
@@ -214,9 +216,18 @@ test("with a Squads vault as config authority, resolving opens a proposal and ke
   const size = outer.serialize({ requireAllSignatures: false, verifySignatures: false }).length;
   assert.ok(size <= 1232);
   // The wrapped resolve_dispute names the vault as resolver, a signer the vault provides on execute.
-  assert.equal(proposed[0].length, 1);
-  const [resolve] = proposed[0];
+  const resolve = proposed[0].at(-1)!;
   assert.ok(resolve.keys[0].pubkey.equals(vaultKey) && resolve.keys[0].isSigner);
+  // Before it, the vault re-creates every paid leg's token account (CreateIdempotent), buyer first, so a
+  // party closing its account after approval can't make the proposal fail.
+  const guards = proposed[0].slice(0, -1);
+  assert.deepEqual(result.guardedAccounts, ["buyer", "seller", "treasury"].slice(0, guards.length));
+  assert.ok(guards.length >= 2);
+  for (const guard of guards) {
+    assert.equal(guard.programId.toBase58(), ATA_PROGRAM_ID.toBase58());
+    assert.deepEqual([...guard.data], [1]);
+    assert.ok(guard.keys[0].pubkey.equals(vaultKey) && guard.keys[0].isSigner);
+  }
 
   const [row] = await db.select().from(disputes).where(eq(disputes.spotId, spot.id));
   assert.equal(row.state, "open");
@@ -247,7 +258,8 @@ test("missing token accounts are created by the platform before the proposal", a
   await resolveDispute({ ...viaSquads(proposed), accountExists: async () => false }, reviewer.user.id, spot.id, DECISION);
   assert.deepEqual(sent.map((tx) => tx.idempotencyKey.split(":")[0]), ["squads-resolve-atas", "squads-resolve"]);
   assert.equal(sent[0].instructions.length, 3);
-  assert.equal(proposed[0].length, 1);
+  // The vault message still re-creates them at execution, in case one is closed in between.
+  assert.deepEqual(proposed[0].slice(0, -1).map((ix) => ix.programId.toBase58()), proposed[0].slice(0, -1).map(() => ATA_PROGRAM_ID.toBase58()));
 });
 
 test("without SQUADS_MULTISIG a server key that is not the config authority can't resolve", async () => {
@@ -293,6 +305,9 @@ test("the reconciler settles a dispute once the multisig executes the resolution
           buyerRefund: "50000000",
           sellerAmount: "47500000",
           fee: "2500000",
+          // Fields the program added in the final CertiK fixes (K5).
+          decisionUri: proposed.decisionUri,
+          decidedAt: "1760000000",
         },
       };
     },
@@ -314,6 +329,8 @@ test("the reconciler settles a dispute once the multisig executes the resolution
   assert.equal(resolved.sellerShareBps, 5000);
   assert.equal(resolved.decision, DECISION.decision);
   assert.equal(resolved.resolvedBy, reviewer.user.id);
+  // Closed when the multisig executed it, as the event says, not when the reconciler noticed.
+  assert.equal(resolved.closedAt?.getTime(), 1_760_000_000_000);
   const [settled] = await db.select().from(spots).where(eq(spots.id, spot.id));
   assert.equal(settled.state, "settled");
   const [settlement] = await db.select().from(settlements).where(eq(settlements.spotId, spot.id));
@@ -327,7 +344,14 @@ test("the reconciler settles a dispute once the multisig executes the resolution
   assert.equal(tx.op, "resolve_dispute");
   assert.equal(tx.status, "confirmed");
   const events = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));
-  assert.ok(events.some((event) => event.type === "dispute_resolved" && event.chainTxId === tx.id));
+  const resolvedEvent = events.find((event) => event.type === "dispute_resolved" && event.chainTxId === tx.id);
+  assert.ok(resolvedEvent);
+  assert.deepEqual(resolvedEvent.data, {
+    disputeId: proposed.id,
+    sellerShareBps: 5000,
+    decisionUri: proposed.decisionUri,
+    decidedAt: new Date(1_760_000_000_000).toISOString(),
+  });
 
   // Settled once: a later run finds nothing to do.
   assert.equal((await reconcile(reconcileDeps())).disputesResolved, 0);
@@ -378,7 +402,7 @@ test("a Squads resolve needs at least 6 hours before the on-chain timeout", asyn
   assert.ok("pending" in result && "timesOutAt" in result);
   assert.equal(result.timesOutAt.getTime(), now.getTime() + 7 * HOUR);
   // The proposed resolve names the dispute's rent payer right after the listing's rent payer.
-  assert.equal(keyAt(proposed[0][0], DISPUTE_RENT_PAYER), reviewerKey.publicKey.toBase58());
+  assert.equal(keyAt(proposed[0].at(-1)!, DISPUTE_RENT_PAYER), reviewerKey.publicKey.toBase58());
 });
 
 test("resolve, timeout and withdraw return the dispute rent to whoever the chain says paid it", async () => {
@@ -528,7 +552,7 @@ test("resolve passes the on-chain opened_at and evidence_hash, directly and in a
   const proposed: TransactionInstruction[][] = [];
   const viaMultisig = await disputedSpot();
   await resolveDispute({ ...viaSquads(proposed), readDisputeRecord: record }, viaMultisig.reviewer.user.id, viaMultisig.spot.id, DECISION);
-  const wrapped = decodeResolve(proposed[0][0]);
+  const wrapped = decodeResolve(proposed[0].at(-1)!);
   assert.equal(wrapped.expectedOpenedAt.toNumber(), 1_760_000_123);
   assert.deepEqual(Array.from(wrapped.expectedEvidenceHash), evidenceHash);
 });
@@ -634,4 +658,150 @@ test("settlement paths name the listing's on-chain rent payer; a proofless dispu
   timeoutSeconds = 0;
   await timeoutDispute({ ...deps(new Date(Date.now() + 1000)), readListingSnapshot: snapshot(former) }, timedOut.spot.id);
   assert.equal(keyAt(sent.at(-1)!.instructions.at(-1)!, RENT_PAYER), former.toBase58());
+});
+
+// ---------- final CertiK fixes: optional resolve accounts (K3), withdraw timing (K2), events (K5) ----------
+
+const SELLER_ATA = 8;
+const BUYER_ATA = 10;
+const TREASURY_ATA = 11;
+const USDC_MINT_ACCOUNT = 13;
+const adspacesProgramId = createProgram(new Connection("http://127.0.0.1:8899")).programId.toBase58();
+// Anchor passes the program id for an optional account that is left out.
+const omitted = (ix: TransactionInstruction, index: number) => keyAt(ix, index) === adspacesProgramId;
+
+test("a full refund passes no seller or treasury account, and a full award no buyer account", async () => {
+  const refund = await disputedSpot();
+  const checked: string[] = [];
+  const tracking = (): DisputeDeps => ({
+    ...deps(),
+    accountExists: async (address) => {
+      checked.push(address.toBase58());
+      return false;
+    },
+  });
+  await resolveDispute(tracking(), refund.reviewer.user.id, refund.spot.id, { sellerShareBps: 0, decision: "nothing was delivered at all" });
+  const refundIx = sent.at(-1)!.instructions.at(-1)!;
+  assert.ok(omitted(refundIx, SELLER_ATA) && omitted(refundIx, TREASURY_ATA));
+  assert.ok(!omitted(refundIx, BUYER_ATA));
+  // Only the buyer's token account is checked (and created when missing).
+  assert.equal(checked.length, 1);
+  assert.equal(sent.at(-1)!.instructions.length, 2);
+  const [refunded] = await db.select().from(settlements).where(eq(settlements.spotId, refund.spot.id));
+  assert.equal(refunded.buyerRefund, 100n * USDC);
+  assert.equal(refunded.fee, 0n);
+
+  const award = await disputedSpot();
+  await resolveDispute(deps(), award.reviewer.user.id, award.spot.id, { sellerShareBps: 10_000, decision: "delivered exactly as agreed" });
+  const awardIx = sent.at(-1)!.instructions.at(-1)!;
+  assert.ok(omitted(awardIx, BUYER_ATA));
+  assert.ok(!omitted(awardIx, SELLER_ATA) && !omitted(awardIx, TREASURY_ATA));
+});
+
+test("a Squads full refund re-creates only the buyer's account; the vault's own treasury account is never guarded", async () => {
+  const { spot, reviewer, buyer } = await disputedSpot();
+  const proposed: TransactionInstruction[][] = [];
+  const result = await resolveDispute(viaSquads(proposed), reviewer.user.id, spot.id, { sellerShareBps: 0, decision: "nothing was delivered at all" });
+  assert.ok("guardedAccounts" in result);
+  assert.deepEqual(result.guardedAccounts, ["buyer"]);
+  assert.equal(proposed[0].length, 2);
+  const [guard, resolve] = proposed[0];
+  assert.equal(keyAt(guard, 1), associatedTokenAddress(buyer!.signer.publicKey, resolve.keys[USDC_MINT_ACCOUNT].pubkey).toBase58());
+  assert.ok(omitted(resolve, SELLER_ATA) && omitted(resolve, TREASURY_ATA));
+
+  const split = await disputedSpot();
+  const vaultTreasury = (): DisputeDeps => ({
+    ...viaSquads(proposed),
+    readListingSnapshot: async () => ({ treasury: vaultKey, fees: { mode: "fixed", feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 } }),
+  });
+  const partial = await resolveDispute(vaultTreasury(), split.reviewer.user.id, split.spot.id, DECISION);
+  assert.ok("guardedAccounts" in partial);
+  assert.deepEqual(partial.guardedAccounts, ["buyer", "seller"]);
+  assert.deepEqual(partial.warnings, []);
+});
+
+test("a resolve proposal drops guards from the end until it fits one transaction, and says so", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  // A long listing link makes the decision URI (inside the vault message) close to its 200-byte cap.
+  const longBase = `https://${"a".repeat(100)}.example`;
+  const result = await resolveDispute({ ...viaSquads(), listingBaseUrl: longBase }, reviewer.user.id, spot.id, DECISION);
+  assert.ok("guardedAccounts" in result);
+  assert.ok(result.guardedAccounts.length < 3);
+  assert.match(result.warnings.join("\n"), /no room to also re-create the .*token account/);
+  const outer = new Transaction({ feePayer: reviewerKey.publicKey, recentBlockhash: PublicKey.default.toBase58() }).add(...sent.at(-1)!.instructions);
+  assert.ok(outer.serialize({ requireAllSignatures: false, verifySignatures: false }).length <= 1232);
+});
+
+test("a resolve proposal warns when the vault can't pay to re-create a closed token account", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  const result = await resolveDispute({ ...viaSquads(), readLamports: async () => [1_000_000] }, reviewer.user.id, spot.id, DECISION);
+  assert.ok("warnings" in result);
+  assert.match(result.warnings.join("\n"), /multisig vault holds 0\.0010 SOL; keep at least 0\.00\d+ SOL there/);
+});
+
+test("a withdrawal in the dispute's opening seconds waits until the program accepts it", async () => {
+  const { buyer, spot } = await disputedSpot();
+  const now = new Date();
+  const waits: number[] = [];
+  const opened = (secondsAgo: number) => async () => ({
+    rentPayer: reviewerKey.publicKey,
+    timesOutAt: new Date(now.getTime() + HOUR),
+    openedAt: Math.floor(now.getTime() / 1000) - secondsAgo,
+  });
+  const result = await withdrawDispute(
+    { ...deps(now), readDisputeRecord: opened(0), sleep: async (ms) => void waits.push(ms) },
+    buyer!.user.id,
+    buyer!.signer,
+    spot.id,
+  );
+  assert.equal(result.spot.state, "funded");
+  assert.equal(waits.length, 1);
+  assert.ok(waits[0] > 1000 && waits[0] <= 2000, String(waits[0]));
+  assert.equal(sent.at(-1)!.op, "withdraw_dispute");
+
+  const later = await disputedSpot();
+  await withdrawDispute({ ...deps(now), readDisputeRecord: opened(10), sleep: async (ms) => void waits.push(ms) }, later.buyer!.user.id, later.buyer!.signer, later.spot.id);
+  assert.equal(waits.length, 1);
+});
+
+test("DisputeWithdrawTooSoon from the chain reads as try again in a moment", async () => {
+  const { buyer, spot } = await disputedSpot();
+  const tooSoon = (): DisputeDeps => ({
+    ...deps(),
+    runTx: async () => {
+      throw decodeChainError(new Error("custom program error: 0x17a9"));
+    },
+  });
+  await assert.rejects(withdrawDispute(tooSoon(), buyer!.user.id, buyer!.signer, spot.id), /opened a moment ago; try withdrawing again in a few seconds/);
+  const [still] = await db.select().from(spots).where(eq(spots.id, spot.id));
+  assert.equal(still.state, "disputed");
+});
+
+test("raise records the snapshotted timeout and evidence link from DisputeRaised, and the fallback deadline uses it", async () => {
+  const { buyer, spot } = await overdueSpot();
+  const withEvent = (now?: Date): DisputeDeps => ({
+    ...deps(now),
+    readTxEvent: async (_signature, name) => (name === "DisputeRaised" ? { timeoutSeconds: "60", evidenceUri: "https://adspaces.fun/a/b#dispute-1" } : null),
+  });
+  await raiseDispute(withEvent(), buyer!.user.id, buyer!.signer, spot.id, { reason: REASON });
+  const [raised] = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));
+  assert.equal((raised.data as { timeoutSeconds?: number }).timeoutSeconds, 60);
+  assert.equal((raised.data as { evidenceUri?: string }).evidenceUri, "https://adspaces.fun/a/b#dispute-1");
+  // The config says 3 days now, but this dispute was raised with 60 seconds.
+  const result = await timeoutDispute(withEvent(new Date(Date.now() + 61_000)), spot.id);
+  assert.equal(result.spot.state, "refunded");
+});
+
+test("a direct resolve closes the dispute at the event's decided_at and keeps the decision link", async () => {
+  const { spot, reviewer } = await disputedSpot();
+  const withEvent: DisputeDeps = {
+    ...deps(),
+    readTxEvent: async () => ({ buyerRefund: "50000000", sellerAmount: "47500000", fee: "2500000", decisionUri: "https://adspaces.fun/x#decision-1", decidedAt: "1760000500" }),
+  };
+  await resolveDispute(withEvent, reviewer.user.id, spot.id, DECISION);
+  const [closed] = await db.select().from(disputes).where(eq(disputes.spotId, spot.id));
+  assert.equal(closed.closedAt?.getTime(), 1_760_000_500_000);
+  const events = await db.select().from(spotEvents).where(eq(spotEvents.spotId, spot.id));
+  const resolved = events.find((event) => event.type === "dispute_resolved")!;
+  assert.equal((resolved.data as { decisionUri?: string }).decisionUri, "https://adspaces.fun/x#decision-1");
 });

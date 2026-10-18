@@ -26,3 +26,16 @@ export function calculateDisputeSplit(fees: FeeSnapshot, spotPrice: bigint, bala
   const fee = applyBps(calculateFee(fees, spotPrice, balance), sellerShareBps);
   return { sellerNet: sellerGross - fee, buyerRefund, fee };
 }
+
+// Which resolve_dispute destinations must be passed: the program requires a token account only for a
+// leg above zero (ResolveAccountRequired) and accepts none otherwise. Decided from the share and fee
+// rates as well as the computed split, so tokens landing in the vault before execution (which can turn a
+// floored-to-zero amount positive) never leave a paid leg without its account.
+export function disputeLegs(fees: FeeSnapshot, sellerShareBps: number, split: { sellerNet: bigint; buyerRefund: bigint; fee: bigint }) {
+  const feeRate = fees.mode === "fixed" ? fees.feeBps > 0 : (fees.feeBps > 0 || fees.upliftFeeBps > 0) && fees.maxFeeBps > 0;
+  return {
+    seller: split.sellerNet > 0n || sellerShareBps > 0,
+    buyer: split.buyerRefund > 0n || sellerShareBps < 10_000,
+    treasury: split.fee > 0n || (sellerShareBps > 0 && feeRate),
+  };
+}
