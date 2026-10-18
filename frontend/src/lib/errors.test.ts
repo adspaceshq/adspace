@@ -53,6 +53,16 @@ describe('userErrorMessage', () => {
     expect(userErrorMessage(new ApiError('The vault holds funds; pass the seller token account to sweep them.', 409))).toMatch(/creator's token account/)
   })
 
+  it('maps the final-scan program errors (6055-6058)', () => {
+    expect(userErrorMessage(new ApiError('Admin message has expired, or its valid_until is more than 7 days ahead.', 409))).toMatch(/expired. rebuild it/)
+    expect(userErrorMessage(new ApiError('this admin action has expired (or its expiry is more than 7 days ahead); rebuild it from the current settings', 409))).toMatch(/expired. rebuild it/)
+    expect(userErrorMessage(new ApiError('The current value differs from the one this admin message was built from.', 409))).toMatch(/settings changed since this action was built/)
+    expect(userErrorMessage(new ApiError('A dispute cannot be withdrawn in the second it was opened.', 409))).toMatch(/try withdrawing again in a few seconds/)
+    expect(userErrorMessage(new ApiError('this dispute was opened a moment ago; try withdrawing again in a few seconds', 409))).toMatch(/opened a moment ago/)
+    expect(userErrorMessage(new ApiError('Every nonzero resolution amount needs its destination token account.', 409))).toMatch(/decide again to rebuild it/)
+    expect(userErrorMessage(new ApiError('ResolveAccountRequired', 409))).toMatch(/no token account yet/)
+  })
+
   it('explains reviewer key rotation errors', () => {
     const key = '8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5'
     expect(userErrorMessage(new ApiError(`this listing's rent payer is ${key}, not the server key ${key}; adopt listings in ops first (after a reviewer key rotation)`, 409))).toMatch(/adopt listings in ops first, then close it/)
