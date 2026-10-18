@@ -29,6 +29,7 @@ async function start() {
         reviewerKeypairPath: config.solana.reviewerWalletPath,
         privyAuthorizationKey: process.env.PRIVY_AUTHORIZATION_PRIVATE_KEY,
         squadsMultisig: config.solana.squadsMultisig,
+        squadsProposalTtlHours: config.solana.squadsProposalTtlHours,
       })
     : undefined;
   const v2Router = createV2Router({
