@@ -444,6 +444,18 @@ export async function acceptTermsAndPublish(deps: PublishDeps, sellerId: string,
   });
 
   for (const spot of listingSpots) {
+    // K6 (CertiK scan 3 #12): add_spot checks the listing's current deadline, which a late bid can extend
+    // (anti-snipe), so the program would accept new spots after the deadline the reviewer approved. The
+    // platform refuses to co-sign one from that original deadline on. listings.deadline is that original
+    // value here: it only moves with bids our API records, and bids need a published listing, which this
+    // loop finishes first.
+    const at = deps.now?.() ?? new Date();
+    if (at >= listing.deadline) {
+      throw new ListingError(
+        "this listing's deadline has passed, so the platform no longer co-signs new spots for it; spots already on-chain are not affected",
+        409,
+      );
+    }
     const spotKey = addresses.spot(listingKey, spot.index);
     const addSpot = await deps.program.methods
       .addSpot(bn(spot.price))

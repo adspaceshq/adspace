@@ -325,6 +325,9 @@ export interface SquadsPending {
   vaultTransaction: string;
   proposal: string;
   url: string;
+  // When the program stops accepting it (admin proposals); null for dispute resolutions, which are bound
+  // to their dispute and its timeout instead. Older servers leave it out.
+  validUntil?: string | null;
 }
 
 export interface ChainResult<T> {

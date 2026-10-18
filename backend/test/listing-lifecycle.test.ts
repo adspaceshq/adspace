@@ -256,6 +256,21 @@ test("a publish that fails midway resumes without re-sending finished steps", as
   assert.deepEqual(sent.map((tx) => tx.idempotencyKey), [`add_spot:${secondSpot.id}`]);
 });
 
+test("the platform won't co-sign add_spot from the listing's approved deadline on, even mid-publish", async () => {
+  const { seller, listing, sellerSigner } = await approvedListing();
+  // The listing account lands just before the deadline; by the first add_spot it has passed. On-chain a
+  // late bid could have extended the deadline, so the program alone would still accept the spot.
+  let calls = 0;
+  const clock = () => (calls++ === 0 ? new Date(listing.deadline.getTime() - 1000) : new Date(listing.deadline.getTime()));
+  await assert.rejects(
+    acceptTermsAndPublish({ ...publishDeps(), now: clock }, seller.id, listing.id, sellerSigner),
+    (error: Error & { status?: number }) => error.status === 409 && /deadline has passed, so the platform no longer co-signs new spots/.test(error.message),
+  );
+  assert.deepEqual(sent.map((tx) => tx.idempotencyKey.split(":")[0]), ["publish"]);
+  const stored = await db.select().from(spots).where(eq(spots.listingId, listing.id));
+  assert.ok(stored.every((spot) => !spot.chainAddress));
+});
+
 test("a retry must use the same seller wallet", async () => {
   const { seller, listing, sellerSigner } = await approvedListing();
   failOnKey = `publish:${listing.id}`;
