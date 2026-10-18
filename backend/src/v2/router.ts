@@ -751,6 +751,8 @@ export function createV2Router(options: {
       squads: context.squads,
       runTx: context.runTx,
       readProtocolStatus: context.readProtocolStatus,
+      readClusterTime: context.readClusterTime,
+      adminMessageTtlHours: context.adminMessageTtlHours,
     };
   };
   router.get("/admin/team", requireUser, requireAdmin, handle(async (_req, res) => send(res, await listStaff(db, admins))));

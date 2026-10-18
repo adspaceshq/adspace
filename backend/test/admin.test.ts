@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import { eq } from "drizzle-orm";
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram, Transaction, type TransactionInstruction } from "@solana/web3.js";
 import { createProgram } from "../src/chain/program.js";
 import { prepareChainTx, submitPreparedChainTx, type ChainTxRequest } from "../src/chain/runner.js";
 import * as multisig from "@sqds/multisig";
@@ -137,6 +137,82 @@ test("a dispute timeout proposal refuses a multisig that isn't the config author
   status = { ...status, authority: Keypair.generate().publicKey };
   await assert.rejects(setDisputeTimeout({ ...deps(), squads }, user.id, 2 * 24 * 60 * 60), /is not the SQUADS_MULTISIG vault/);
   assert.equal(sent.length, 0);
+});
+
+// ---------- expiring, compare-and-set admin messages (K1) ----------
+
+const CLUSTER_NOW = 1_800_000_000;
+const program = createProgram(new Connection("http://127.0.0.1:8899"));
+const decoded = (data: Buffer) => program.coder.instruction.decode(data) as { name: string; data: Record<string, { toString(): string } | boolean> };
+const recordingSquads = (proposed: Array<{ instructions: TransactionInstruction[]; memo: string }>): SquadsProposer => ({
+  ...squads,
+  propose: async (instructions, memo) => {
+    proposed.push({ instructions, memo });
+    return squadsProposalInstructions({ multisig: multisigKey, proposer: authority.publicKey, transactionIndex: 9n, instructions, memo });
+  },
+});
+
+test("direct admin messages carry valid_until from the cluster clock and the expected current value", async () => {
+  const { user } = await seedUser(db, "admin");
+  // The server clock is ignored: the program checks valid_until against the cluster's.
+  await setPaused({ ...deps(), readClusterTime: async () => CLUSTER_NOW }, user.id, true);
+  const pause = decoded(sent[0].instructions[0].data);
+  assert.equal(pause.name, "pauseProtocol");
+  assert.equal(pause.data.paused, true);
+  assert.equal(pause.data.validUntil.toString(), String(CLUSTER_NOW + 24 * 3600));
+
+  await setDisputeTimeout({ ...deps(), readClusterTime: async () => CLUSTER_NOW, adminMessageTtlHours: 2 }, user.id, 2 * 24 * 60 * 60);
+  const timeout = decoded(sent[1].instructions[0].data);
+  assert.equal(timeout.name, "setDisputeTimeout");
+  assert.equal(timeout.data.seconds.toString(), String(2 * 24 * 60 * 60));
+  assert.equal(timeout.data.expectedSeconds.toString(), String(3 * 24 * 60 * 60));
+  assert.equal(timeout.data.validUntil.toString(), String(CLUSTER_NOW + 2 * 3600));
+});
+
+test("valid_until never exceeds the program's 7-day cap", async () => {
+  const { user } = await seedUser(db, "admin");
+  await setPaused({ ...deps(), readClusterTime: async () => CLUSTER_NOW, adminMessageTtlHours: 1000 }, user.id, true);
+  assert.equal(decoded(sent[0].instructions[0].data).data.validUntil.toString(), String(CLUSTER_NOW + 7 * 24 * 3600));
+});
+
+test("a resume proposal expires 24 hours after the cluster time and reports its expiry", async () => {
+  const { user } = await seedUser(db, "admin");
+  status = { ...status, authority: vaultKey, paused: true };
+  const proposed: Array<{ instructions: TransactionInstruction[]; memo: string }> = [];
+  const result = await setPaused({ ...deps(), squads: recordingSquads(proposed), readClusterTime: async () => CLUSTER_NOW }, user.id, false);
+  const [message] = proposed;
+  const resume = decoded(message.instructions[0].data);
+  assert.equal(resume.name, "pauseProtocol");
+  assert.equal(resume.data.paused, false);
+  assert.equal(resume.data.validUntil.toString(), String(CLUSTER_NOW + 24 * 3600));
+  assert.equal(result.pending?.validUntil, new Date((CLUSTER_NOW + 24 * 3600) * 1000).toISOString());
+  assert.equal(message.memo, "adspaces: resume protocol (expires 2027-01-16T08:00:00Z)");
+});
+
+test("resume is only proposed while paused: an unpause while running would fail with ConfigMismatch", async () => {
+  const { user } = await seedUser(db, "admin");
+  status = { ...status, authority: vaultKey, paused: false };
+  const proposed: Array<{ instructions: TransactionInstruction[]; memo: string }> = [];
+  const result = await setPaused({ ...deps(), squads: recordingSquads(proposed) }, user.id, false);
+  assert.equal(result.signature, null);
+  assert.equal(result.pending, undefined);
+  assert.equal(proposed.length, 0);
+  assert.equal(sent.length, 0);
+});
+
+test("a dispute timeout proposal binds the value read from chain and expires with the configured TTL", async () => {
+  const { user } = await seedUser(db, "admin");
+  status = { ...status, authority: vaultKey, disputeTimeoutSeconds: 5 * 24 * 60 * 60 };
+  const proposed: Array<{ instructions: TransactionInstruction[]; memo: string }> = [];
+  const result = await setDisputeTimeout(
+    { ...deps(), squads: recordingSquads(proposed), readClusterTime: async () => CLUSTER_NOW, adminMessageTtlHours: 48 },
+    user.id,
+    2 * 24 * 60 * 60,
+  );
+  const message = decoded(proposed[0].instructions[0].data);
+  assert.equal(message.data.expectedSeconds.toString(), String(5 * 24 * 60 * 60));
+  assert.equal(message.data.validUntil.toString(), String(CLUSTER_NOW + 48 * 3600));
+  assert.equal(result.pending?.validUntil, new Date((CLUSTER_NOW + 48 * 3600) * 1000).toISOString());
 });
 
 // ---------- emergency pause by the guardian's own wallet ----------

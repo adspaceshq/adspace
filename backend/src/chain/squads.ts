@@ -1,5 +1,5 @@
 import * as multisig from "@sqds/multisig";
-import { PublicKey, TransactionMessage, type Connection, type TransactionInstruction } from "@solana/web3.js";
+import { PublicKey, Transaction, TransactionMessage, type Connection, type TransactionInstruction } from "@solana/web3.js";
 import type { TxSigner } from "./signers.js";
 
 export type SquadsProposalStatus = "draft" | "active" | "rejected" | "approved" | "executing" | "executed" | "cancelled";
@@ -20,7 +20,7 @@ export interface SquadsProposer {
   // Vault index 0, the program's config authority.
   vault: PublicKey;
   proposer: TxSigner;
-  propose: (instructions: TransactionInstruction[], memo: string) => Promise<SquadsProposal>;
+  propose: (instructions: TransactionInstruction[], memo?: string) => Promise<SquadsProposal>;
   proposalStatus: (transactionIndex: bigint) => Promise<SquadsProposalStatus | null>;
 }
 
@@ -34,15 +34,19 @@ export interface SquadsPending {
   vaultTransaction: string;
   proposal: string;
   url: string;
+  // ISO time after which the program rejects the message (admin setters' valid_until); null when it
+  // has no expiry (dispute resolutions are bound to their dispute and its timeout instead).
+  validUntil: string | null;
 }
 
-export function squadsPending(proposal: Omit<SquadsProposal, "instructions">): SquadsPending {
+export function squadsPending(proposal: Omit<SquadsProposal, "instructions">, validUntil?: number): SquadsPending {
   return {
     multisig: proposal.multisig.toBase58(),
     transactionIndex: Number(proposal.transactionIndex),
     vaultTransaction: proposal.vaultTransaction.toBase58(),
     proposal: proposal.proposal.toBase58(),
     url: SQUADS_APP_URL,
+    validUntil: validUntil === undefined ? null : new Date(validUntil * 1000).toISOString(),
   };
 }
 
@@ -82,6 +86,26 @@ export function squadsProposalInstructions(input: {
       multisig.instructions.proposalCreate({ ...common, isDraft: false }),
     ],
   };
+}
+
+// Largest serialized Solana transaction (legacy, as the runner sends it).
+export const MAX_TRANSACTION_BYTES = 1232;
+
+// Serialized size of the transaction that creates the proposal (vault_transaction_create carries the whole
+// vault message, plus proposal_create). The transaction index is a fixed-size u64, so any index measures alike.
+export function squadsProposalSize(input: {
+  multisig: PublicKey;
+  proposer: PublicKey;
+  feePayer: PublicKey;
+  instructions: TransactionInstruction[];
+  memo?: string;
+}): number {
+  const proposal = squadsProposalInstructions({ ...input, transactionIndex: 1n });
+  const message = new Transaction({ feePayer: input.feePayer, recentBlockhash: PublicKey.default.toBase58() })
+    .add(...proposal.instructions)
+    .compileMessage();
+  // Signature count (one byte below 128) and 64 bytes per required signature, then the message.
+  return 1 + 64 * message.header.numRequiredSignatures + message.serialize().length;
 }
 
 export function createSquadsProposer(connection: Connection, multisigAddress: PublicKey, proposer: TxSigner): SquadsProposer {

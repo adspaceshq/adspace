@@ -1,17 +1,17 @@
-import { eventAmount, type TxEventReader } from "../chain/events.js";
+import { eventAmount, eventString, type TxEventReader } from "../chain/events.js";
 import { createHash } from "node:crypto";
 import anchor from "@coral-xyz/anchor";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { PublicKey, SystemProgram, type TransactionInstruction } from "@solana/web3.js";
 import type { Db } from "../db/client.js";
 import { chainTxs, disputeEvidence, disputes, listings, mediaAssets, settlements, spotEvents, spots, users } from "../db/schema.js";
-import { calculateDisputeSplit } from "../domain/fees.js";
+import { calculateDisputeSplit, disputeLegs } from "../domain/fees.js";
 import { nextSpotState } from "../domain/spot-state.js";
 import { associatedTokenAddress, pdas, TOKEN_PROGRAM_ID, type AdspacesProgram } from "../chain/program.js";
 import type { ChainTxRequest, ChainTxResult } from "../chain/runner.js";
 import { ChainError } from "../chain/errors.js";
 import { cosigners, type TxSigner } from "../chain/signers.js";
-import { squadsPending, type SquadsProposer } from "../chain/squads.js";
+import { MAX_TRANSACTION_BYTES, squadsPending, squadsProposalSize, type SquadsProposer } from "../chain/squads.js";
 import type { ChainSpotStatus } from "./reconciler.js";
 import { createAtaIdempotent, payoutAvailableAt, type ListingSnapshot } from "./settlement.js";
 
@@ -53,6 +53,8 @@ export interface DisputeDeps {
   readLamports?: (addresses: PublicKey[]) => Promise<Array<number | null>>;
   listingBaseUrl: string;
   now?: () => Date;
+  // Waits before a withdrawal in the dispute's opening seconds; a real timer when not given.
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface ChainDisputeRecord {
@@ -67,6 +69,9 @@ export interface ChainDisputeRecord {
 // Rent for a DisputeRecord (8 + 628 bytes), and that plus a margin for the network fee when the buyer pays.
 export const DISPUTE_RENT_LAMPORTS = 5_261_760;
 export const BUYER_DISPUTE_MIN_LAMPORTS = DISPUTE_RENT_LAMPORTS + 10_000;
+// The program refuses a withdrawal in the second the dispute was opened (DisputeWithdrawTooSoon), which
+// makes opened_at a strict per-dispute id. Withdrawals this soon after opening wait until it has passed.
+export const WITHDRAW_MIN_AGE_MS = 2_000;
 // Multisig members need time to approve and execute, and resolve_dispute fails once the timeout passes.
 export const SQUADS_RESOLVE_MIN_LEAD_MS = 6 * 60 * 60 * 1000;
 
@@ -114,10 +119,13 @@ async function disputeOnChain(deps: DisputeDeps, spotKey: PublicKey, dispute: { 
     .from(spotEvents)
     .where(and(eq(spotEvents.spotId, dispute.spotId), eq(spotEvents.type, "dispute_raised")));
   const recorded = raised
-    .map((row) => row.data as { disputeId?: string; rentPayer?: string } | null)
+    .map((row) => row.data as { disputeId?: string; rentPayer?: string; timeoutSeconds?: number } | null)
     .find((data) => data?.disputeId === dispute.id);
   const rentPayer = recorded?.rentPayer ? new PublicKey(recorded.rentPayer) : deps.rentPayer.publicKey;
-  const timesOutAt = new Date(dispute.openedAt.getTime() + (await deps.readDisputeTimeoutSeconds()) * 1000);
+  // The timeout the program snapshotted at raise (DisputeRaised.timeout_seconds); the config's current
+  // value only for disputes recorded before the event carried it.
+  const timeoutSeconds = recorded?.timeoutSeconds ?? (await deps.readDisputeTimeoutSeconds());
+  const timesOutAt = new Date(dispute.openedAt.getTime() + timeoutSeconds * 1000);
   return { rentPayer, timesOutAt };
 }
 
@@ -271,6 +279,10 @@ export async function raiseDispute(
       feePayer: buyer,
     });
   }
+  // The event carries the timeout the program snapshotted (clamped to its bounds) and the evidence link.
+  const raisedEvent = await deps.readTxEvent?.(tx.signature, "DisputeRaised").catch(() => null);
+  const snapshotTimeout = raisedEvent ? eventAmount(raisedEvent, "timeoutSeconds", "timeout_seconds") : null;
+  const evidenceUri = raisedEvent ? eventString(raisedEvent, "evidenceUri", "evidence_uri") : null;
 
   return deps.db.transaction(async (trx) => {
     const to = nextSpotState(spot.state, "dispute_raised");
@@ -292,7 +304,12 @@ export async function raiseDispute(
       actorId: buyerId,
       chainTxId: tx.chainTxId,
       // Who paid the dispute's rent: it goes back there on withdraw, resolve or timeout.
-      data: { disputeId: dispute.id, rentPayer: rentPayer.toBase58() },
+      data: {
+        disputeId: dispute.id,
+        rentPayer: rentPayer.toBase58(),
+        ...(snapshotTimeout !== null ? { timeoutSeconds: Number(snapshotTimeout) } : {}),
+        ...(evidenceUri ? { evidenceUri } : {}),
+      },
     });
     return { spot: updated, dispute, signature: tx.signature, buyerPaidRent: rentPayer.equals(buyer.publicKey) };
   });
@@ -304,10 +321,18 @@ export async function withdrawDispute(deps: DisputeDeps, buyerId: string, buyer:
   const dispute = await openDispute(deps.db, spotId);
   if (dispute.buyerId !== buyerId) throw new DisputeError("only the sponsor can withdraw this dispute", 403);
   const spotKey = new PublicKey(spot.chainAddress!);
-  const { rentPayer, timesOutAt } = await disputeOnChain(deps, spotKey, dispute);
+  const record = await disputeOnChain(deps, spotKey, dispute);
+  const { rentPayer, timesOutAt } = record;
   // The program refuses a withdrawal from the timeout on: the buyer's full refund has matured by then.
   if (now >= timesOutAt) {
     throw new DisputeError("this dispute has timed out, so it can't be withdrawn anymore. take the full refund instead");
+  }
+  // On-chain opened_at when readable (the block time of the raise), else when the row was written.
+  const openedAtMs = record.openedAt !== undefined ? record.openedAt * 1000 : dispute.openedAt.getTime();
+  const age = now.getTime() - openedAtMs;
+  if (age < WITHDRAW_MIN_AGE_MS) {
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    await sleep(WITHDRAW_MIN_AGE_MS - Math.max(0, age));
   }
   const instruction = await deps.program.methods
     .withdrawDispute()
@@ -434,6 +459,66 @@ const decisionHash = (disputeId: string, sellerShareBps: number, decision: strin
 
 type Recorded = { buyerRefund: bigint; sellerNet: bigint; fee: bigint };
 
+type Leg = "buyer" | "seller" | "treasury";
+const RESOLVE_MEMO = "adspaces: resolve dispute";
+// Rent of a token account (165 bytes): what the vault pays if it must re-create one at execution.
+export const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
+
+export interface SquadsResolveMessage {
+  instructions: TransactionInstruction[];
+  memo?: string;
+  // Paid legs whose ATA the vault message re-creates before resolving (CreateIdempotent).
+  guarded: Leg[];
+  // Paid legs left unguarded because the proposal would not fit one transaction.
+  unguarded: Leg[];
+}
+
+// The vault message for a Squads resolve: CreateIdempotent for each paid leg's ATA, then resolve_dispute.
+// The buyer comes first (it is the party that gains from blocking: a missed timeout refunds it in full),
+// then the seller. The treasury is skipped when it is the vault itself, whose accounts only the multisig
+// controls. vault_transaction_create carries the whole message in one transaction, so guards (and then
+// the memo) are dropped from the end until it fits. A token account whose owner was reassigned still
+// fails CreateIdempotent; that case needs a rebuilt decision (runbook section 2, rule 6).
+export function squadsResolveMessage(
+  squads: Pick<SquadsProposer, "multisig" | "vault" | "proposer">,
+  feePayer: PublicKey,
+  resolveInstruction: TransactionInstruction,
+  paid: readonly Leg[],
+  owners: Record<Leg, PublicKey>,
+  mint: PublicKey,
+): SquadsResolveMessage {
+  const guardable = paid.filter((leg) => !owners[leg].equals(squads.vault));
+  for (let count = guardable.length; count >= 0; count -= 1) {
+    const guarded = guardable.slice(0, count);
+    const instructions = [...guarded.map((leg) => createAtaIdempotent(squads.vault, owners[leg], mint)), resolveInstruction];
+    for (const memo of [RESOLVE_MEMO, undefined]) {
+      const size = squadsProposalSize({ multisig: squads.multisig, proposer: squads.proposer.publicKey, feePayer, instructions, memo });
+      if (size <= MAX_TRANSACTION_BYTES) return { instructions, memo, guarded, unguarded: guardable.slice(count) };
+    }
+  }
+  return { instructions: [resolveInstruction], memo: RESOLVE_MEMO, guarded: [], unguarded: guardable };
+}
+
+// What the reviewer should know about a resolve proposal before members approve it.
+async function squadsResolveWarnings(deps: DisputeDeps, squads: SquadsProposer, message: SquadsResolveMessage): Promise<string[]> {
+  const warnings: string[] = [];
+  if (message.unguarded.length) {
+    warnings.push(
+      `the proposal had no room to also re-create the ${message.unguarded.join(" and ")} token account at execution; if execution fails because that account was closed, decide again to rebuild it`,
+    );
+  }
+  if (message.guarded.length && deps.readLamports) {
+    const [lamports] = await deps.readLamports([squads.vault]).catch(() => [null]);
+    const needed = message.guarded.length * TOKEN_ACCOUNT_RENT_LAMPORTS;
+    if ((lamports ?? 0) < needed) {
+      warnings.push(
+        `the multisig vault holds ${sol(lamports ?? 0)} SOL; keep at least ${sol(needed)} SOL there so a closed token account can be re-created when the proposal executes`,
+      );
+    }
+  }
+  return warnings;
+}
+
 // Amounts the program reported in DisputeResolved, or null when the event is missing or incomplete.
 function resolvedAmounts(event: Record<string, unknown> | null | undefined): Recorded | null {
   if (!event) return null;
@@ -441,6 +526,17 @@ function resolvedAmounts(event: Record<string, unknown> | null | undefined): Rec
   const sellerNet = eventAmount(event, "sellerAmount", "seller_amount");
   const fee = eventAmount(event, "fee", "fee");
   return buyerRefund !== null && sellerNet !== null && fee !== null ? { buyerRefund, sellerNet, fee } : null;
+}
+
+// DisputeResolved.decided_at and decision_uri (programs from the final CertiK fixes on); null when the
+// event predates them.
+function resolvedDecision(event: Record<string, unknown> | null | undefined) {
+  if (!event) return { decidedAt: null, decisionUri: null };
+  const decidedAt = eventAmount(event, "decidedAt", "decided_at");
+  return {
+    decidedAt: decidedAt !== null && decidedAt > 0n ? new Date(Number(decidedAt) * 1000) : null,
+    decisionUri: eventString(event, "decisionUri", "decision_uri"),
+  };
 }
 
 // The DB side of a confirmed resolve_dispute, shared by the direct path and the Squads reconciler.
@@ -456,9 +552,13 @@ async function recordResolution(
     chainTx: string | ((trx: Db) => Promise<string>);
     recorded: Recorded;
     now: Date;
+    // From the DisputeResolved event: the chain's decision time (the dispute closes then) and link.
+    decidedAt?: Date | null;
+    decisionUri?: string | null;
   },
 ) {
   const { spotId, disputeId, sellerShareBps, decision, resolvedBy, recorded, now } = input;
+  const closedAt = input.decidedAt ?? now;
   return db.transaction(async (trx) => {
     const chainTxId = typeof input.chainTx === "string" ? input.chainTx : await input.chainTx(trx as unknown as Db);
     const to = nextSpotState("disputed", "dispute_resolved");
@@ -470,7 +570,7 @@ async function recordResolution(
     if (!updated) throw new DisputeError("spot changed while resolving; reconciling", 500);
     await trx
       .update(disputes)
-      .set({ state: "resolved", sellerShareBps, decision, resolvedBy, closedAt: now })
+      .set({ state: "resolved", sellerShareBps, decision, resolvedBy, closedAt })
       .where(eq(disputes.id, disputeId));
     const [settlement] = await trx
       .insert(settlements)
@@ -491,7 +591,12 @@ async function recordResolution(
       type: "dispute_resolved",
       actorId: resolvedBy,
       chainTxId,
-      data: { disputeId, sellerShareBps },
+      data: {
+        disputeId,
+        sellerShareBps,
+        ...(input.decisionUri ? { decisionUri: input.decisionUri } : {}),
+        ...(input.decidedAt ? { decidedAt: input.decidedAt.toISOString() } : {}),
+      },
     });
     return { spot: updated, settlement };
   });
@@ -555,15 +660,21 @@ export async function resolveDispute(
   const balance = await deps.readVaultBalance(vault);
   if (balance <= 0n) throw new DisputeError("vault is empty; reconciling");
   const split = calculateDisputeSplit(snapshot.fees, spot.price, balance, sellerShareBps);
+  const legs = disputeLegs(snapshot.fees, sellerShareBps, split);
+  const owners = { seller, buyer, treasury: snapshot.treasury };
+  const paid = (["buyer", "seller", "treasury"] as const).filter((leg) => legs[leg]);
 
   const addresses = pdas(deps.program.programId);
   const proofKey = addresses.proof(spotKey);
+  // Only the destinations of paid legs are passed (and created when missing): a party whose leg is zero
+  // can't block the resolution by closing or reassigning its token account.
   const atas: TransactionInstruction[] = [];
-  for (const owner of [seller, buyer, snapshot.treasury]) {
-    if (!(await deps.accountExists(associatedTokenAddress(owner, deps.mint)))) {
-      atas.push(createAtaIdempotent(deps.feePayer.publicKey, owner, deps.mint));
+  for (const leg of paid) {
+    if (!(await deps.accountExists(associatedTokenAddress(owners[leg], deps.mint)))) {
+      atas.push(createAtaIdempotent(deps.feePayer.publicKey, owners[leg], deps.mint));
     }
   }
+  const destination = (leg: keyof typeof owners) => (legs[leg] ? associatedTokenAddress(owners[leg], deps.mint) : null);
   const hash = decisionHash(dispute.id, sellerShareBps, decision);
   const uri = listingUri(deps.listingBaseUrl, handle, listing.slug, `decision-${spot.index + 1}`);
   const resolveInstruction = await deps.program.methods
@@ -579,10 +690,10 @@ export async function resolveDispute(
       spot: spotKey,
       dispute: addresses.dispute(spotKey),
       vault,
-      sellerAta: associatedTokenAddress(seller, deps.mint),
+      sellerAta: destination("seller"),
       seller,
-      buyerAta: associatedTokenAddress(buyer, deps.mint),
-      treasuryAta: associatedTokenAddress(snapshot.treasury, deps.mint),
+      buyerAta: destination("buyer"),
+      treasuryAta: destination("treasury"),
       proof: spot.proofSubmittedAt ? proofKey : null,
       usdcMint: deps.mint,
       tokenProgram: TOKEN_PROGRAM_ID,
@@ -590,7 +701,7 @@ export async function resolveDispute(
     .instruction();
 
   if (squads) {
-    // Token accounts are created by the platform now: the vault transaction carries only the decision.
+    // Missing token accounts are created by the platform now, so the proposal can execute as built.
     if (atas.length) {
       await deps.runTx({
         op: "squads_proposal",
@@ -602,7 +713,12 @@ export async function resolveDispute(
         feePayer: deps.feePayer,
       });
     }
-    const proposal = await squads.propose([resolveInstruction], "adspaces: resolve dispute");
+    // A party could still close its token account between proposal and execution, which would make the
+    // approved proposal fail and force a re-approval (TRIAGE-3 K3). So the vault message itself first
+    // re-creates each paid leg's ATA (CreateIdempotent, paid by the vault; a no-op while it exists).
+    const guard = squadsResolveMessage(squads, deps.feePayer.publicKey, resolveInstruction, paid, owners, deps.mint);
+    const warnings = await squadsResolveWarnings(deps, squads, guard);
+    const proposal = await squads.propose(guard.instructions, guard.memo);
     const tx = await deps.runTx({
       op: "squads_proposal",
       // Per index: a retry after another proposal took this index builds a fresh one.
@@ -632,7 +748,7 @@ export async function resolveDispute(
       .where(and(eq(disputes.id, dispute.id), eq(disputes.state, "open")))
       .returning();
     if (!updated) throw new DisputeError("dispute changed while proposing; reconciling", 500);
-    return { spot, dispute: updated, pending, signature: tx.signature, timesOutAt };
+    return { spot, dispute: updated, pending, signature: tx.signature, timesOutAt, guardedAccounts: guard.guarded, warnings };
   }
 
   const tx = await deps.runTx({
@@ -657,6 +773,7 @@ export async function resolveDispute(
     chainTx: tx.chainTxId,
     recorded,
     now,
+    ...resolvedDecision(resolved),
   });
   return { ...result, signature: tx.signature };
 }
@@ -701,6 +818,8 @@ export async function settleSquadsResolutions(deps: SquadsSettleDeps): Promise<n
         resolvedBy: dispute.proposedBy!,
         recorded,
         now,
+        // When the multisig executed it, which can be long after the proposal.
+        ...resolvedDecision(resolution.event),
         // A multisig member sent the executing transaction; record it like one of ours.
         chainTx: async (trx) => {
           await trx

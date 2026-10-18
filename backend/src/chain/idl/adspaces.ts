@@ -1199,6 +1199,10 @@ export const ADSPACES_IDL = {
         {
           "name": "paused",
           "type": "bool"
+        },
+        {
+          "name": "valid_until",
+          "type": "i64"
         }
       ]
     },
@@ -1387,6 +1391,10 @@ export const ADSPACES_IDL = {
         {
           "name": "proposed_authority",
           "type": "pubkey"
+        },
+        {
+          "name": "valid_until",
+          "type": "i64"
         }
       ]
     },
@@ -1732,7 +1740,13 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "seller_ata",
-          "writable": true
+          "docs": [
+            "The three destinations are optional: each is required only when its amount is above zero, so a",
+            "party whose leg is zero cannot block the resolution by closing or reassigning its token account.",
+            "When present, each is checked as before."
+          ],
+          "writable": true,
+          "optional": true
         },
         {
           "name": "seller",
@@ -1742,11 +1756,13 @@ export const ADSPACES_IDL = {
         },
         {
           "name": "buyer_ata",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "treasury_ata",
-          "writable": true
+          "writable": true,
+          "optional": true
         },
         {
           "name": "proof",
@@ -1855,6 +1871,14 @@ export const ADSPACES_IDL = {
       "args": [
         {
           "name": "seconds",
+          "type": "i64"
+        },
+        {
+          "name": "expected_seconds",
+          "type": "i64"
+        },
+        {
+          "name": "valid_until",
           "type": "i64"
         }
       ]
@@ -2157,6 +2181,18 @@ export const ADSPACES_IDL = {
         {
           "name": "fee_bps",
           "type": "u16"
+        },
+        {
+          "name": "expected_treasury",
+          "type": "pubkey"
+        },
+        {
+          "name": "expected_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "valid_until",
+          "type": "i64"
         }
       ]
     },
@@ -2234,6 +2270,14 @@ export const ADSPACES_IDL = {
         {
           "name": "guardian",
           "type": "pubkey"
+        },
+        {
+          "name": "expected_guardian",
+          "type": "pubkey"
+        },
+        {
+          "name": "valid_until",
+          "type": "i64"
         }
       ]
     },
@@ -2313,6 +2357,14 @@ export const ADSPACES_IDL = {
         {
           "name": "new_authority",
           "type": "pubkey"
+        },
+        {
+          "name": "expected_authority",
+          "type": "pubkey"
+        },
+        {
+          "name": "valid_until",
+          "type": "i64"
         }
       ]
     },
@@ -3233,6 +3285,26 @@ export const ADSPACES_IDL = {
       "code": 6054,
       "name": "SellerAccountRequired",
       "msg": "The vault holds funds; pass the seller token account to sweep them."
+    },
+    {
+      "code": 6055,
+      "name": "AdminMessageExpired",
+      "msg": "Admin message has expired, or its valid_until is more than 7 days ahead."
+    },
+    {
+      "code": 6056,
+      "name": "ConfigMismatch",
+      "msg": "The current value differs from the one this admin message was built from."
+    },
+    {
+      "code": 6057,
+      "name": "DisputeWithdrawTooSoon",
+      "msg": "A dispute cannot be withdrawn in the second it was opened."
+    },
+    {
+      "code": 6058,
+      "name": "ResolveAccountRequired",
+      "msg": "Every nonzero resolution amount needs its destination token account."
     }
   ],
   "types": [
@@ -3495,6 +3567,17 @@ export const ADSPACES_IDL = {
           {
             "name": "raised_at",
             "type": "i64"
+          },
+          {
+            "name": "evidence_uri",
+            "type": "string"
+          },
+          {
+            "name": "timeout_seconds",
+            "docs": [
+              "Timeout snapshotted for this dispute; it times out at `raised_at + timeout_seconds`."
+            ],
+            "type": "i64"
           }
         ]
       }
@@ -3635,7 +3718,18 @@ export const ADSPACES_IDL = {
           },
           {
             "name": "treasury_ata",
+            "docs": [
+              "`Pubkey::default()` when the fee is zero and no treasury account was passed."
+            ],
             "type": "pubkey"
+          },
+          {
+            "name": "decision_uri",
+            "type": "string"
+          },
+          {
+            "name": "decided_at",
+            "type": "i64"
           }
         ]
       }
@@ -4296,6 +4390,16 @@ export const ADSPACES_IDL = {
       "name": "LISTING_SEED",
       "type": "bytes",
       "value": "[108, 105, 115, 116, 105, 110, 103]"
+    },
+    {
+      "name": "MAX_ADMIN_MESSAGE_TTL_SECONDS",
+      "docs": [
+        "Longest an admin message (a config-authority setter) stays executable: its `valid_until` must lie",
+        "between now and now + 7 days, so an approved but unexecuted multisig proposal dies within 7 days",
+        "and cannot overwrite newer state later."
+      ],
+      "type": "i64",
+      "value": "604800"
     },
     {
       "name": "MAX_BID_INCREMENT",

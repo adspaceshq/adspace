@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { calculateDisputeSplit, calculateFee, type FeeSnapshot } from "../src/domain/fees.js";
+import { calculateDisputeSplit, calculateFee, disputeLegs, type FeeSnapshot } from "../src/domain/fees.js";
 
 const fixed: FeeSnapshot = { mode: "fixed", feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 };
 const auction: FeeSnapshot = { mode: "auction", feeBps: 250, upliftFeeBps: 2000, maxFeeBps: 1000 };
@@ -44,4 +44,21 @@ test("dispute splits always add up to the balance", () => {
     assert.equal(split.sellerNet + split.buyerRefund + split.fee, balance);
   }
   assert.deepEqual(calculateDisputeSplit(fixed, 100n, 1_000n, 0), { sellerNet: 0n, buyerRefund: 1_000n, fee: 0n });
+});
+
+test("resolve destinations are needed only for legs that can be paid", () => {
+  const fixed: FeeSnapshot = { mode: "fixed", feeBps: 500, upliftFeeBps: 0, maxFeeBps: 500 };
+  const legs = (fees: FeeSnapshot, share: number, balance = 100_000_000n) => disputeLegs(fees, share, calculateDisputeSplit(fees, 100_000_000n, balance, share));
+  // Full refund: no seller and no treasury account.
+  assert.deepEqual(legs(fixed, 0), { seller: false, buyer: true, treasury: false });
+  // Full award: no buyer account.
+  assert.deepEqual(legs(fixed, 10_000), { seller: true, buyer: false, treasury: true });
+  assert.deepEqual(legs(fixed, 5_000), { seller: true, buyer: true, treasury: true });
+  // A zero fee rate never needs the treasury, even with a seller share.
+  assert.deepEqual(legs({ ...fixed, feeBps: 0, maxFeeBps: 0 }, 5_000), { seller: true, buyer: true, treasury: false });
+  // A fee that floors to zero today still gets its account: the vault can grow before execution.
+  const tiny = legs(fixed, 1, 10n);
+  assert.equal(calculateDisputeSplit(fixed, 100_000_000n, 10n, 1).fee, 0n);
+  assert.equal(tiny.treasury, true);
+  assert.equal(tiny.seller, true);
 });

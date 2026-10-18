@@ -51,6 +51,10 @@ test("the CertiK-fix program errors decode to friendly copy", () => {
     [6052, "SelfOutbid", /already the top bidder/],
     [6053, "DisputeMismatch", /made for an earlier dispute/],
     [6054, "SellerAccountRequired", /needs the creator's token account/],
+    [6055, "AdminMessageExpired", /has expired .*rebuild it/],
+    [6056, "ConfigMismatch", /settings changed since this admin action was built/],
+    [6057, "DisputeWithdrawTooSoon", /opened a moment ago; try withdrawing again/],
+    [6058, "ResolveAccountRequired", /missing a token account; rebuild the decision/],
   ];
   for (const [code, name, copy] of cases) {
     const hex = decodeChainError(new Error(`custom program error: 0x${code.toString(16)}`));

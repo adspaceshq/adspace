@@ -34,6 +34,21 @@ export interface AdminDeps {
   squads?: SquadsProposer;
   runTx: (request: ChainTxRequest) => Promise<ChainTxResult>;
   readProtocolStatus: () => Promise<ProtocolStatus>;
+  // The cluster clock (unix seconds) that the program checks valid_until against; local time when missing.
+  readClusterTime?: () => Promise<number>;
+  // How long an admin message (and so a Squads proposal) stays executable; default 24 hours, at most 7 days.
+  adminMessageTtlHours?: number;
+}
+
+// The program accepts an admin message only while valid_until lies within [now, now + 7 days] of the
+// cluster clock (MAX_ADMIN_MESSAGE_TTL_SECONDS), so an approved but unexecuted proposal dies on its own.
+export const MAX_ADMIN_MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const DEFAULT_ADMIN_MESSAGE_TTL_HOURS = 24;
+
+async function adminMessageValidUntil(deps: Pick<AdminDeps, "readClusterTime" | "adminMessageTtlHours">): Promise<number> {
+  const now = deps.readClusterTime ? await deps.readClusterTime() : Math.floor(Date.now() / 1000);
+  const hours = deps.adminMessageTtlHours ?? DEFAULT_ADMIN_MESSAGE_TTL_HOURS;
+  return now + Math.min(Math.max(1, Math.floor(hours)) * 3600, MAX_ADMIN_MESSAGE_TTL_SECONDS);
 }
 
 // Mirrors the program's bounds (production build); devnet allows shorter values on-chain.
@@ -46,6 +61,7 @@ export async function setPaused(
   paused: boolean,
 ): Promise<{ status: ProtocolStatus; signature: string | null; pending?: SquadsPending }> {
   const status = await deps.readProtocolStatus();
+  // Also keeps an unpause from ever being sent while running: the program rejects it (ConfigMismatch).
   if (status.paused === paused) return { status, signature: null };
   if (!status.authority.equals(deps.authority.publicKey)) {
     // The multisig can pause too, but an emergency shouldn't wait for 2 of 3: that's the guardian's job.
@@ -55,8 +71,9 @@ export async function setPaused(
     }
     return proposeResume(deps, adminId, status);
   }
+  const validUntil = await adminMessageValidUntil(deps);
   const instruction = await deps.program.methods
-    .pauseProtocol(paused)
+    .pauseProtocol(paused, new anchor.BN(validUntil))
     .accountsStrict({ authority: deps.authority.publicKey, config: pdas(deps.program.programId).config() })
     .instruction();
   // Admin toggles are deliberate one-offs; a fresh key per request keeps repeated toggles possible.
@@ -71,13 +88,16 @@ export async function setPaused(
 }
 
 // Only the config authority can resume, so with the multisig in charge the server opens a Squads proposal.
+// The program only unpauses from paused (ConfigMismatch otherwise), and the message expires at valid_until.
 async function proposeResume(deps: AdminDeps, adminId: string, status: ProtocolStatus) {
+  if (!status.paused) throw new AdminError("the protocol is not paused, so there is nothing to resume", 409);
   const vault = multisigAuthority(deps, status, "resuming");
+  const validUntil = await adminMessageValidUntil(deps);
   const instruction = await deps.program.methods
-    .pauseProtocol(false)
+    .pauseProtocol(false, new anchor.BN(validUntil))
     .accountsStrict({ authority: vault, config: pdas(deps.program.programId).config() })
     .instruction();
-  return { status, ...(await proposeToMultisig(deps, adminId, instruction, "adspaces: resume protocol", "squads-resume")) };
+  return { status, ...(await proposeToMultisig(deps, adminId, instruction, "adspaces: resume protocol", "squads-resume", validUntil)) };
 }
 
 // The Squads vault must be the config authority, or the proposal could never execute.
@@ -91,9 +111,17 @@ function multisigAuthority(deps: AdminDeps, status: ProtocolStatus, action: stri
 }
 
 // Opens a Squads proposal for one config-authority instruction; members approve and execute it in the Squads app.
-async function proposeToMultisig(deps: AdminDeps, adminId: string, instruction: TransactionInstruction, memo: string, keyPrefix: string) {
+async function proposeToMultisig(
+  deps: AdminDeps,
+  adminId: string,
+  instruction: TransactionInstruction,
+  memo: string,
+  keyPrefix: string,
+  validUntil: number,
+) {
   const squads = deps.squads!;
-  const proposal = await squads.propose([instruction], memo);
+  // Members see the expiry in the Squads app next to the memo.
+  const proposal = await squads.propose([instruction], `${memo} (expires ${new Date(validUntil * 1000).toISOString().replace(/\.\d+Z$/, "Z")})`);
   const tx = await deps.runTx({
     op: "squads_proposal",
     idempotencyKey: `${keyPrefix}:${proposal.transactionIndex}:${randomUUID()}`,
@@ -102,7 +130,7 @@ async function proposeToMultisig(deps: AdminDeps, adminId: string, instruction: 
     feePayer: deps.authority,
     signers: cosigners(deps.authority, squads.proposer),
   });
-  return { signature: tx.signature, pending: squadsPending(proposal) };
+  return { signature: tx.signature, pending: squadsPending(proposal, validUntil) };
 }
 
 // The program captures the timeout on each dispute when it is raised, so a change only applies to
@@ -118,13 +146,20 @@ export async function setDisputeTimeout(
   const status = await deps.readProtocolStatus();
   if (status.disputeTimeoutSeconds === seconds) return { status, signature: null };
   const config = pdas(deps.program.programId).config();
+  // Compare-and-set: the message only applies over the value read now (ConfigMismatch otherwise), so an
+  // older approved proposal executed late can't overwrite a newer timeout.
+  const expected = new anchor.BN(status.disputeTimeoutSeconds);
+  const validUntil = await adminMessageValidUntil(deps);
   if (!status.authority.equals(deps.authority.publicKey)) {
     const vault = multisigAuthority(deps, status, "changing the dispute timeout");
-    const instruction = await deps.program.methods.setDisputeTimeout(new anchor.BN(seconds)).accountsStrict({ authority: vault, config }).instruction();
-    return { status, ...(await proposeToMultisig(deps, adminId, instruction, "adspaces: set dispute timeout", "squads-dispute-timeout")) };
+    const instruction = await deps.program.methods
+      .setDisputeTimeout(new anchor.BN(seconds), expected, new anchor.BN(validUntil))
+      .accountsStrict({ authority: vault, config })
+      .instruction();
+    return { status, ...(await proposeToMultisig(deps, adminId, instruction, "adspaces: set dispute timeout", "squads-dispute-timeout", validUntil)) };
   }
   const instruction = await deps.program.methods
-    .setDisputeTimeout(new anchor.BN(seconds))
+    .setDisputeTimeout(new anchor.BN(seconds), expected, new anchor.BN(validUntil))
     .accountsStrict({ authority: deps.authority.publicKey, config })
     .instruction();
   const tx = await deps.runTx({

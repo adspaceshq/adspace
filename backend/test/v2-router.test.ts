@@ -6,6 +6,7 @@ import { Connection, Keypair, Transaction, type PublicKey } from "@solana/web3.j
 import { createProgram } from "../src/chain/program.js";
 import { prepareChainTx, submitPreparedChainTx, type ChainTxRequest } from "../src/chain/runner.js";
 import { keypairSigner } from "../src/chain/signers.js";
+import { squadsProposalInstructions, squadsVault } from "../src/chain/squads.js";
 import { createApp } from "../src/index.js";
 import { AppAuthRepository } from "../src/repositories/app-auth.js";
 import type { Db } from "../src/db/client.js";
@@ -384,6 +385,66 @@ test("guardian pause prepare and submit are admin-only and send what the guardia
   assert.equal(submitted.body.paused, true);
   assert.equal(typeof submitted.body.signature, "string");
   assert.equal(sentRaw.length, 1);
+});
+
+test("multisig admin proposals report when they expire, from the cluster clock and SQUADS_PROPOSAL_TTL_HOURS", async () => {
+  const platform = keypairSigner(Keypair.generate());
+  const multisigKey = Keypair.generate().publicKey;
+  const vault = squadsVault(multisigKey);
+  const sent: ChainTxRequest[] = [];
+  const memos: Array<string | undefined> = [];
+  let paused = true;
+  const CLUSTER_NOW = 1_800_000_000;
+  const chain = {
+    program: createProgram(new Connection("http://127.0.0.1:8899")),
+    reviewer: platform,
+    runTx: fakeRunTx(db, sent),
+    readProtocolStatus: async () => ({
+      authority: vault,
+      treasury: vault,
+      feeBps: 250,
+      paused,
+      disputeTimeoutSeconds: 3 * 24 * 60 * 60,
+      pauseGuardian: null,
+    }),
+    readClusterTime: async () => CLUSTER_NOW,
+    adminMessageTtlHours: 12,
+    squads: {
+      multisig: multisigKey,
+      vault,
+      proposer: platform,
+      propose: async (instructions: Parameters<typeof squadsProposalInstructions>[0]["instructions"], memo?: string) => {
+        memos.push(memo);
+        return squadsProposalInstructions({ multisig: multisigKey, proposer: platform.publicKey, transactionIndex: 3n, instructions, memo });
+      },
+      proposalStatus: async () => "active",
+    },
+  } as unknown as ChainContext;
+  const adminApp = createApp({
+    v2Router: createV2Router({ db, chain, reviewers: [], admins: ["did:privy:ttl_admin"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
+  });
+  const admin = await signIn("ttl_admin");
+  const post = (path: string, body: object) => request(adminApp).post(path).set("Cookie", admin.cookie).set("X-CSRF-Token", admin.csrf).send(body);
+  const expiry = new Date((CLUSTER_NOW + 12 * 3600) * 1000).toISOString();
+
+  const resume = await post("/api/v2/admin/pause", { paused: false });
+  assert.equal(resume.status, 200);
+  assert.equal(resume.body.paused, true);
+  assert.equal(resume.body.pending.transactionIndex, 3);
+  assert.equal(resume.body.pending.validUntil, expiry);
+  assert.match(memos[0] ?? "", /resume protocol \(expires /);
+
+  const timeout = await post("/api/v2/admin/dispute-timeout", { seconds: 2 * 24 * 60 * 60 });
+  assert.equal(timeout.status, 200);
+  assert.equal(timeout.body.pending.validUntil, expiry);
+
+  // Running: no resume proposal is built (the program would reject an unpause with ConfigMismatch).
+  paused = false;
+  const running = await post("/api/v2/admin/pause", { paused: false });
+  assert.equal(running.status, 200);
+  assert.equal(running.body.pending, null);
+  assert.equal(running.body.signature, null);
+  assert.equal(sent.length, 2);
 });
 
 test("listings delivering more than 90 days out need an admin to approve over the API", async () => {
