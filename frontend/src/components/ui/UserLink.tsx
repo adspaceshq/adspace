@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { profileHref } from "@/lib/listing-display";
 
 const clean = (handle: string) => handle.trim().replace(/^@+/, "");
 
@@ -10,7 +11,7 @@ const clean = (handle: string) => handle.trim().replace(/^@+/, "");
 export function UserLink({ handle, nested = false, className = "" }: { handle: string; nested?: boolean; className?: string }) {
   const router = useRouter();
   const name = clean(handle);
-  const href = `/${name}`;
+  const href = profileHref(name);
   const style = `hover:text-accent hover:underline ${className}`;
   if (!nested) {
     return (
