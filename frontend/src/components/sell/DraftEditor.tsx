@@ -57,9 +57,16 @@ export function DraftEditor({ listingId }: { listingId: string }) {
         <div role="note" className="rounded-card border border-warning/30 bg-warning-soft px-4 py-3 text-body">
           <p className="font-semibold">the reviewer asked for changes</p>
           <p className="text-muted">&ldquo;{listing.reviewNote}&rdquo;</p>
+          <p className="mt-1 text-small text-muted">tap the step it&apos;s about to edit it, then submit again.</p>
         </div>
       )}
-      <SellWizard surface={listing.surface} listingId={listing.id} initial={fromOwnedListing(listing)} />
+      <SellWizard
+        surface={listing.surface}
+        listingId={listing.id}
+        initial={fromOwnedListing(listing)}
+        // After a review, open on the summary: the creator jumps to the step the note is about.
+        initialStep={listing.state === "changes_requested" ? "submit" : "basics"}
+      />
     </div>
   );
 }

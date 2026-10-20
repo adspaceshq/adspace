@@ -319,6 +319,8 @@ export async function spotDetail(
       brand: spot.brand,
       proofSubmittedAt: spot.proofSubmittedAt,
       chainAddress: spot.chainAddress,
+      // The token account holding this spot's USDC, so people can check the escrow themselves.
+      vaultAddress: spot.vaultAddress,
       buyerIsYou: spot.buyerId === actor.id,
     },
     listing: {

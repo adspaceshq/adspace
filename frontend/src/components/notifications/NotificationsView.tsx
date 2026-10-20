@@ -6,7 +6,7 @@ import Link from "next/link";
 import { api } from "@/lib/api/v2";
 import { queryKeys } from "@/lib/query";
 import { useNow } from "@/lib/use-now";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { NotificationItem } from "./NotificationItem";
@@ -42,7 +42,7 @@ export function NotificationsView() {
               mark all read
             </Button>
           )}
-          <Link href="/settings#notifications" className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-1.5 text-small font-medium hover:border-line-strong">
+          <Link href="/settings#notifications" className={buttonClasses("secondary", "sm")}>
             <Settings className="size-4" aria-hidden /> email settings
           </Link>
         </div>

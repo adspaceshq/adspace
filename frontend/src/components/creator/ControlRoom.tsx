@@ -17,7 +17,7 @@ import { cx } from "@/lib/cx";
 import { feeFor, listingFeePolicy } from "@/lib/fees";
 import { formatUsd } from "@/lib/money";
 import { SUPPORT_EMAIL } from "@/components/legal/LegalPage";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -224,7 +224,7 @@ function ViewPublicLink({ slug }: { slug: string }) {
   const { session } = useSession();
   if (!session) return null;
   return (
-    <Link href={listingHref(session.handle, slug)} className="inline-flex items-center gap-1.5 self-start rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
+    <Link href={listingHref(session.handle, slug)} className={buttonClasses("secondary", "sm", "self-start")}>
       view public page <ExternalLink className="size-3.5" aria-hidden />
     </Link>
   );

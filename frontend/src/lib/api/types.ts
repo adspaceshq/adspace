@@ -373,6 +373,7 @@ export interface SpotDetail {
     brand: SponsorBrand | null;
     proofSubmittedAt: IsoDate | null;
     chainAddress: string | null;
+    vaultAddress: string | null;
     buyerIsYou: boolean;
   };
   listing: {

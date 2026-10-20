@@ -3,7 +3,8 @@
 import { safeHref } from "@/lib/safe-href";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, BadgeCheck, ExternalLink, MailCheck } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BadgeCheck, ExternalLink, MailCheck, ShieldCheck } from "lucide-react";
+import type { SpotState } from "@/lib/api/types";
 import { api } from "@/lib/api/v2";
 import { isNotFound, userErrorMessage } from "@/lib/errors";
 import { useSession } from "@/lib/session";
@@ -22,6 +23,11 @@ import { SponsorActions } from "./SponsorActions";
 import { DisputeEvidence } from "./DisputeEvidence";
 import { SpotActivity } from "./SpotActivity";
 import { XHandleLink } from "@/components/ui/UserLink";
+import { Address } from "@/components/ui/Address";
+import { Money } from "@/components/ui/Money";
+
+// States where the spot's USDC still sits in its vault.
+const ESCROW_HELD: SpotState[] = ["funded", "delivered", "disputed"];
 
 export function SponsorSpotView({ spotId }: { spotId: string }) {
   const now = useNow(15_000);
@@ -108,6 +114,15 @@ export function SponsorSpotView({ spotId }: { spotId: string }) {
                   {hostnameOf(spot.brand.link)} <ExternalLink className="size-3" aria-hidden />
                 </a>
               )}
+            </div>
+          )}
+          {spot.vaultAddress && spot.amount && ESCROW_HELD.includes(spot.state) && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border border-line bg-surface px-4 py-3 text-small">
+              <ShieldCheck className="size-4 text-success" aria-hidden />
+              <span>
+                <Money value={spot.amount} /> held in escrow on Solana
+              </span>
+              <Address value={spot.vaultAddress} className="text-muted" />
             </div>
           )}
           {detail.dispute && (

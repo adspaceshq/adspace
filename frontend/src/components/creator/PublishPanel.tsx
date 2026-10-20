@@ -5,7 +5,7 @@ import { useState } from "react";
 import { BadgeCheck, CalendarClock, PackageCheck, ShieldCheck } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { OwnedListing } from "@/lib/api/types";
-import { DEFAULT_FEES, feeFor } from "@/lib/fees";
+import { feeFor, listingFeePolicy } from "@/lib/fees";
 import { formatUsd } from "@/lib/money";
 import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
@@ -35,16 +35,12 @@ export function PublishPanel({ listing }: { listing: OwnedListing }) {
   const resuming = listing.state === "publishing";
   const auction = listing.mode === "auction";
 
-  // The reviewer's policy, falling back to the defaults for the mode; same integer math as the program.
-  const defaults = DEFAULT_FEES[listing.mode];
-  const policy = {
-    feeBps: listing.feeBps ?? defaults.feeBps,
-    upliftFeeBps: listing.upliftFeeBps ?? defaults.upliftFeeBps,
-    maxFeeBps: listing.maxFeeBps ?? defaults.maxFeeBps,
-  };
+  // The reviewer's policy, recorded at approval; same integer math as the program. Never guessed:
+  // without it there is no deal to accept, so the panel says so instead.
+  const policy = listingFeePolicy(listing);
   const rows = listing.spots.map((spot) => {
     const price = BigInt(spot.price);
-    const fee = feeFor(listing.mode, policy, price, price);
+    const fee = policy ? feeFor(listing.mode, policy, price, price) : 0n;
     return { id: spot.id, index: spot.index, label: spot.label, price, fee, net: price - fee };
   });
   const total = rows.reduce((sum, row) => ({ price: sum.price + row.price, net: sum.net + row.net }), { price: 0n, net: 0n });
@@ -124,7 +120,9 @@ export function PublishPanel({ listing }: { listing: OwnedListing }) {
             </table>
           </div>
           <p className="text-small text-muted">
-            {auction
+            {!policy
+              ? ""
+              : auction
               ? `fee: ${pct(policy.feeBps)} up to the starting bid, ${pct(policy.upliftFeeBps)} on anything bid above it, never more than ${pct(policy.maxFeeBps)} in total. higher bids pay you more.`
               : `fee: ${pct(policy.feeBps)} of the price, taken when you're paid.`}
           </p>
@@ -149,8 +147,15 @@ export function PublishPanel({ listing }: { listing: OwnedListing }) {
           </ol>
         </div>
 
-        {!wallet.delegated ? (
-          <GaslessPrompt action="publish" />
+        {!policy ? (
+          <p role="alert" className="rounded-control border border-danger/30 bg-danger-soft px-3 py-2 text-small text-ink">
+            this listing has no fee set yet, so it can&apos;t be published. contact support and we&apos;ll fix it.
+          </p>
+        ) : !wallet.delegated ? (
+          <div className="flex flex-col gap-2 border-t border-line pt-5">
+            <p className="text-small font-medium text-muted">step 1 of 2: turn on gasless, then accept and publish</p>
+            <GaslessPrompt action="publish" />
+          </div>
         ) : (
           <div className="flex flex-col gap-3 border-t border-line pt-5">
             {!resuming && (

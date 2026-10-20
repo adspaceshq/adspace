@@ -1,4 +1,4 @@
-import type { DraftInput, OwnedListing, PricingMode, SpotLayout, Surface } from "@/lib/api/types";
+import type { DraftInput, ListingSeller, OwnedListing, PricingMode, PublicListing, SpotLayout, Surface } from "@/lib/api/types";
 import type { MacPreset, MockupChoice } from "@/lib/mac-mockup";
 import { toBaseUnits, toInputValue } from "@/lib/money";
 import { normalizeView } from "@/lib/spot-views";
@@ -78,7 +78,7 @@ export function templateSpots(surface: Surface, price = "10"): WizardSpot[] {
   return spots;
 }
 
-const localDateTime = (time: number) => {
+export const localDateTime = (time: number) => {
   const date = new Date(time);
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 16);
@@ -200,5 +200,69 @@ export function fromOwnedListing(listing: OwnedListing): WizardState {
     doubleUp: listing.doubleUp,
     deadline: localDateTime(deadline),
     deliveryDays: String(deliveryDays),
+  };
+}
+
+const priceOrZero = (value: string) => {
+  try {
+    return toBaseUnits(value);
+  } catch {
+    return "0";
+  }
+};
+
+// The wizard as sponsors will see it on browse: a PublicListing for ListingCard. Nothing is sold
+// yet, so every spot is open; ids are local keys and never reach the API.
+export function previewListing(state: WizardState, seller: ListingSeller): PublicListing {
+  const deadline = new Date(state.deadline);
+  const valid = !Number.isNaN(deadline.getTime());
+  const iso = (time: number) => new Date(time).toISOString();
+  const closes = valid ? deadline.getTime() : Date.now() + 7 * DAY;
+  return {
+    id: "preview",
+    slug: "preview",
+    sellerId: seller.id,
+    surface: state.surface,
+    title: state.title || "untitled",
+    description: state.description,
+    audience: {
+      ...(Number(state.followers) > 0 ? { followers: Number(state.followers) } : {}),
+      ...(state.event.trim() ? { event: state.event.trim() } : {}),
+      ...(state.location.trim() ? { location: state.location.trim() } : {}),
+    },
+    mode: state.mode,
+    state: "published",
+    deadline: iso(closes),
+    artworkDueAt: iso(closes),
+    deliveryDueAt: iso(closes + (Number(state.deliveryDays) || 1) * DAY),
+    reviewWindowSeconds: 0,
+    minIncrement: priceOrZero(state.minIncrement),
+    doubleUp: state.doubleUp,
+    feeBps: null,
+    upliftFeeBps: null,
+    maxFeeBps: null,
+    reviewNote: null,
+    reviewedAt: null,
+    termsVersion: null,
+    termsAcceptedAt: null,
+    chainAddress: null,
+    sellerWallet: null,
+    publishedAt: null,
+    closedAt: null,
+    createdAt: iso(Date.now()),
+    updatedAt: iso(Date.now()),
+    photos: state.photos.map((photo) => ({ url: photo.url, width: null, height: null })),
+    spots: state.spots.map((spot, index) => ({
+      id: spot.key,
+      index,
+      label: spot.label,
+      price: priceOrZero(spot.price),
+      layout: spot.layout,
+      state: "open",
+      amount: null,
+      taken: false,
+      brand: null,
+    })),
+    seller,
   };
 }

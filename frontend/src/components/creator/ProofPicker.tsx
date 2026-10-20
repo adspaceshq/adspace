@@ -12,6 +12,7 @@ import { Modal } from "@/components/ui/Modal";
 import { TxStatus } from "@/components/ui/TxStatus";
 import { GaslessPrompt } from "@/components/app/GaslessPrompt";
 import { useToast } from "@/components/ToastProvider";
+import { PostComposer } from "./PostComposer";
 
 // Creator tags posts as delivery proof for one spot; their hash goes on-chain.
 export function ProofPicker({
@@ -73,7 +74,11 @@ export function ProofPicker({
       ) : posts.isPending ? (
         <p className="text-small text-muted">loading posts…</p>
       ) : (posts.data ?? []).length === 0 ? (
-        <p className="text-small text-muted">post an update with a photo or link of the brand in place first.</p>
+        // No posts yet: write one here instead of leaving for the updates tab; it is ticked once posted.
+        <div className="flex flex-col gap-2">
+          <p className="text-small text-muted">you haven&apos;t posted yet. add a photo or link that shows the brand in place.</p>
+          <PostComposer listingId={listingId} title="post your proof" onPosted={(id) => setPicked([id])} />
+        </div>
       ) : (
         <div className="flex flex-col gap-2">
           {(posts.data ?? []).map((post) => {

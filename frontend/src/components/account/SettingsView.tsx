@@ -9,12 +9,13 @@ import type { Session } from "@/lib/api/types";
 import { userErrorMessage } from "@/lib/errors";
 import { useSession } from "@/lib/session";
 import { Address } from "@/components/ui/Address";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Textarea } from "@/components/ui/Field";
 import { ProfileFields, useProfileForm } from "@/components/account/ProfileFields";
 import { NotificationPrefs } from "@/components/notifications/NotificationPrefs";
 import { RoleEditor } from "@/components/onboarding/OnboardingFlow";
+import { profileHref } from "@/lib/listing-display";
 
 const SECTIONS = [
   { id: "profile", label: "profile", icon: UserRound },
@@ -241,10 +242,10 @@ function AccountSection({ session }: { session: Session }) {
         <Address value={session.id} full explorer={false} className="text-small" />
       </div>
       <div className="flex flex-wrap gap-2">
-        <Link href={`/${session.handle.replace(/^@/, "")}`} className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-2 text-small font-medium hover:border-line-strong">
+        <Link href={profileHref(session.handle)} className={buttonClasses("secondary", "sm")}>
           view public profile <ExternalLink className="size-3.5" aria-hidden />
         </Link>
-        <Link href="/wallet" className="inline-flex items-center gap-1.5 rounded-control border border-line px-3 py-2 text-small font-medium hover:border-line-strong">
+        <Link href="/wallet" className={buttonClasses("secondary", "sm")}>
           wallet
         </Link>
         <Button variant="ghost" size="sm" onClick={() => void signOut()}>
