@@ -477,6 +477,10 @@ export interface ReviewSummary {
     buyerHandle: string;
     // When the dispute refunds the sponsor in full if not resolved. The list is sorted by it.
     timeoutAt: IsoDate;
+    // A resolve proposal is still waiting in Squads, so a new one would be refused. Optional for older APIs.
+    proposalLive?: boolean;
+    // The Squads proposal's state ("active", "approved", "executed", ...), null when unknown.
+    proposalStatus?: string | null;
   }>;
   payoutsReady: Array<{ spotId: string; spotIndex: number; amount: BaseUnits | null; listingId: string; listingTitle: string }>;
   failedTxs: Array<{ id: string; op: string; error: string | null; signature: string | null; updatedAt: IsoDate; spotId: string | null }>;
