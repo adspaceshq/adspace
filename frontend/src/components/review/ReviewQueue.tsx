@@ -171,6 +171,11 @@ function PayoutRow({ item }: { item: ReviewSummary["payoutsReady"][number] }) {
 
 // Sorted by the server, soonest timeout first. A timed-out dispute refunds the sponsor in full, and a
 // multisig decision needs 2 of 3 members to approve and execute, so the deadline leads each row.
+// A proposal still waiting in Squads: the server refuses a second one, so don't offer it. An API
+// without `proposalLive` keeps the old rule (any recorded proposal counts as pending).
+const pendingProposal = (item: ReviewSummary["disputes"][number]) =>
+  item.dispute.squadsTransactionIndex !== null && item.proposalLive !== false;
+
 function DisputesTab({ disputes, stale }: { disputes: ReviewSummary["disputes"]; stale: NonNullable<ReviewSummary["staleProposals"]> }) {
   const [resolving, setResolving] = useState<ReviewSummary["disputes"][number] | null>(null);
   const now = useNow(60_000);
@@ -221,11 +226,21 @@ function DisputesTab({ disputes, stale }: { disputes: ReviewSummary["disputes"];
                 <UserLink handle={item.buyerHandle} /> disputes <UserLink handle={item.sellerHandle} /> · opened {new Date(item.dispute.openedAt).toLocaleString()}
               </p>
               <blockquote className="rounded-control bg-canvas px-3 py-2 text-body">&ldquo;{item.dispute.reason}&rdquo;</blockquote>
-              {item.dispute.squadsTransactionIndex !== null && (
-                <SquadsPendingNote index={item.dispute.squadsTransactionIndex}>
-                  proposed: creator gets {(item.dispute.proposedSellerShareBps ?? 0) / 100}%. propose again only if the multisig rejects it.
-                </SquadsPendingNote>
-              )}
+              {item.dispute.squadsTransactionIndex !== null &&
+                (pendingProposal(item) ? (
+                  <SquadsPendingNote index={item.dispute.squadsTransactionIndex}>
+                    proposed: creator gets {(item.dispute.proposedSellerShareBps ?? 0) / 100}%.{" "}
+                    {item.proposalStatus === "approved"
+                      ? "approved: a member now has to execute it in Squads."
+                      : item.proposalStatus === "executed" || item.proposalStatus === "executing"
+                        ? "executed: this updates within a few minutes."
+                        : "approve and execute it in Squads, or reject it there to propose a different split."}
+                  </SquadsPendingNote>
+                ) : (
+                  <p className="rounded-control border border-line bg-canvas px-3 py-2 text-small text-muted">
+                    Squads #{item.dispute.squadsTransactionIndex} was rejected or cancelled. propose a new decision.
+                  </p>
+                ))}
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/dashboard/spots/${item.spotId}`}
@@ -233,9 +248,12 @@ function DisputesTab({ disputes, stale }: { disputes: ReviewSummary["disputes"];
                 >
                   view spot & messages
                 </Link>
-                <Button size="sm" onClick={() => setResolving(item)}>
-                  {viaMultisig ? "propose to the multisig" : "resolve"}
-                </Button>
+                {/* After the timeout the program only accepts the sponsor's full refund, so no decision. */}
+                {!pendingProposal(item) && left > 0 && (
+                  <Button size="sm" onClick={() => setResolving(item)}>
+                    {viaMultisig ? "propose to the multisig" : "resolve"}
+                  </Button>
+                )}
               </div>
             </li>
           );
