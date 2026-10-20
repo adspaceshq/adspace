@@ -207,6 +207,50 @@ test("review summary takes each dispute's deadline from the chain and sorts soon
   assert.deepEqual(sorted, [...sorted].sort((a, b) => a - b));
 });
 
+test("review summary marks disputes whose Squads proposal is still live, like resolveDispute does", async () => {
+  const cases = [
+    { index: null, status: null, live: false },
+    { index: 21, status: "active", live: true },
+    { index: 22, status: "approved", live: true },
+    { index: 23, status: "rejected", live: false },
+    { index: 24, status: null, live: false }, // proposal account missing: a new one is allowed
+    { index: 25, status: "throws", live: true }, // unreadable: never offer a second proposal
+  ];
+  const seeded = [];
+  for (const entry of cases) {
+    const { buyer, spot } = await seedListing(db, { deadline: new Date(Date.now() - 48 * HOUR), deliveryDueAt: new Date(Date.now() - HOUR), funded: true });
+    // A recorded proposal carries all of its Squads fields (disputes_squads_proposal_complete).
+    const proposal =
+      entry.index === null
+        ? {}
+        : {
+            squadsMultisig: "multisig",
+            squadsTransactionIndex: entry.index,
+            squadsVaultTransaction: `vault-tx-${entry.index}`,
+            squadsProposal: `proposal-${entry.index}`,
+            proposedSellerShareBps: 5_000,
+            proposedDecision: "split the escrow evenly",
+            decisionHash: "00".repeat(32),
+            decisionUri: "https://adspaces.fun/decision",
+            proposedAt: new Date(),
+          };
+    await db.insert(disputes).values({ spotId: spot.id, buyerId: buyer!.user.id, reason: "never delivered at all", ...proposal });
+    seeded.push({ ...entry, spotId: spot.id });
+  }
+  const summary = await reviewSummary(db, new Date(), { timeoutSeconds: TIMEOUT }, {
+    proposalStatus: async (index) => {
+      const entry = cases.find((item) => item.index === Number(index));
+      if (entry?.status === "throws") throw new Error("rpc down");
+      return entry?.status ?? null;
+    },
+  });
+  for (const entry of seeded) {
+    const item = summary.disputes.find((row) => row.spotId === entry.spotId)!;
+    assert.equal(item.proposalLive, entry.live, `index ${entry.index} status ${entry.status}`);
+    assert.equal(item.proposalStatus, entry.status === "throws" ? null : entry.status);
+  }
+});
+
 test("spot detail carries the sponsor's evidence and the listing's fee snapshot", async () => {
   const { buyer, spot } = await seedListing(db, { deadline: new Date(Date.now() - 48 * HOUR), deliveryDueAt: new Date(Date.now() - HOUR), funded: true });
   const [dispute] = await db.insert(disputes).values({ spotId: spot.id, buyerId: buyer!.user.id, reason: "the photo shows no logo" }).returning();

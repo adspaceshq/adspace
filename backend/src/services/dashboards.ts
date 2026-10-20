@@ -17,7 +17,7 @@ import {
   users,
 } from "../db/schema.js";
 import { payoutAvailableAt } from "./settlement.js";
-import { staleSquadsProposals } from "./disputes.js";
+import { LIVE_PROPOSAL, staleSquadsProposals } from "./disputes.js";
 
 export class DashboardError extends Error {
   constructor(message: string, readonly status = 403) {
@@ -504,8 +504,22 @@ export async function reviewSummary(
     openDisputes.map((row) => ({ openedAt: row.dispute.openedAt, spotAddress: row.spotAddress })),
     deadlines,
   );
+  // Same rule as resolveDispute: a proposal still live in Squads blocks a new one; a rejected, cancelled
+  // or missing one frees the dispute. A failed status read counts as live, so nobody double-proposes.
+  const proposals = await Promise.all(
+    openDisputes.map(async (row) => {
+      const index = row.dispute.squadsTransactionIndex;
+      if (index === null) return { live: false, status: null };
+      if (!options.proposalStatus) return { live: true, status: null };
+      const status = await options.proposalStatus(BigInt(index)).then(
+        (value) => value,
+        () => "unreadable",
+      );
+      return { live: status === "unreadable" || (status !== null && LIVE_PROPOSAL.has(status)), status: status === "unreadable" ? null : status };
+    }),
+  );
   const disputesByDeadline = openDisputes
-    .map(({ spotAddress: _spotAddress, ...row }, index) => ({ ...row, timeoutAt: timeouts[index] }))
+    .map(({ spotAddress: _spotAddress, ...row }, index) => ({ ...row, timeoutAt: timeouts[index], proposalLive: proposals[index].live, proposalStatus: proposals[index].status }))
     .sort((a, b) => a.timeoutAt.getTime() - b.timeoutAt.getTime());
   const staleProposals = await staleSquadsProposals(db, { proposalStatus: options.proposalStatus, now });
   return {
