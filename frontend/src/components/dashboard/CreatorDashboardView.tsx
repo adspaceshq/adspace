@@ -7,7 +7,7 @@ import { AlertTriangle, Plus, Store, Trash2 } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { CreatorDashboard, ListingState } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -204,7 +204,7 @@ export function CreatorDashboardView() {
               <h2 id="your-listings" className="text-lead font-semibold">
                 your listings
               </h2>
-              <Link href="/sell" className="inline-flex items-center gap-1.5 rounded-control bg-ink px-3 py-1.5 text-small font-medium text-white hover:bg-ink-soft">
+              <Link href="/sell" className={buttonClasses("primary", "sm")}>
                 <Plus className="size-4" aria-hidden /> new listing
               </Link>
             </div>
@@ -214,7 +214,7 @@ export function CreatorDashboardView() {
                 title="list your first space"
                 description="a laptop lid, a car door, a backpack. set your spots and prices; we review it within a day."
                 action={
-                  <Link href="/sell" className="rounded-control bg-ink px-4 py-2 text-body font-medium text-white hover:bg-ink-soft">
+                  <Link href="/sell" className={buttonClasses()}>
                     start listing
                   </Link>
                 }

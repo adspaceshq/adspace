@@ -10,7 +10,8 @@ import { spotsOnView } from "@/lib/spot-views";
 import { SellerAvatar } from "./SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
 
-export function ListingCard({ listing }: { listing: PublicListing }) {
+// preview: the sell wizard's look at the card before the listing exists; nothing links or saves.
+export function ListingCard({ listing, preview = false }: { listing: PublicListing; preview?: boolean }) {
   const price = priceSummary(listing);
   const left = spotsLeft(listing);
   const withBids = spotsWithBids(listing);
@@ -23,15 +24,12 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
   const cover = listing.photos[0]?.url;
   return (
     <div className="relative">
-    <Link
-      href={listingHref(listing.seller.handle, listing.slug)}
-      className="group flex flex-col gap-3 rounded-panel p-2 transition-colors hover:bg-surface focus-visible:bg-surface"
-    >
+    <div className="group relative flex flex-col gap-3 rounded-panel p-2 transition-colors hover:bg-surface has-[a:focus-visible]:bg-surface has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-accent-ring">
       {cover ? (
         // With a second surface, the two sit side by side and hovering slides the strip to the second one.
         <div className="relative overflow-hidden rounded-card">
           {second ? (
-            <div className="flex transition-transform duration-500 ease-out group-hover:-translate-x-full group-focus-visible:-translate-x-full motion-reduce:transition-none">
+            <div className="flex transition-transform duration-500 ease-out group-hover:-translate-x-full group-has-[a:focus-visible]:-translate-x-full motion-reduce:transition-none">
               <div className="w-full shrink-0">
                 <SpotMockup photoUrl={cover} alt={listing.title} size="thumb" spots={mockupSpots(0)} />
               </div>
@@ -44,7 +42,7 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           )}
           {over > 0 && (
             <span className="absolute bottom-2 left-2 rounded-full bg-success px-2 py-0.5 text-caption font-semibold text-white shadow-card">
-              +{over}% oversubscribed
+              +{over}% above start
             </span>
           )}
         </div>
@@ -54,11 +52,20 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
       <div className="flex flex-col gap-1.5 px-1 pb-1">
         <div className="flex items-center gap-2 text-small text-muted">
           <SellerAvatar seller={listing.seller} size={20} />
-          <UserLink handle={listing.seller.handle} nested className="truncate" />
+          {preview ? <span className="truncate">@{listing.seller.handle}</span> : <UserLink handle={listing.seller.handle} nested className="truncate" />}
           {listing.seller.verified && <BadgeCheck className="size-3.5 shrink-0 text-accent" aria-label="verified" />}
           <span className="ml-auto shrink-0">{SURFACE_LABELS[listing.surface]}</span>
         </div>
-        <h3 className="line-clamp-2 text-lead font-semibold leading-snug">{listing.title}</h3>
+        <h3 className="line-clamp-2 text-lead font-semibold leading-snug">
+          {preview ? (
+            listing.title
+          ) : (
+            // Stretched over the whole card; the seller link and watch button sit above it.
+            <Link href={listingHref(listing.seller.handle, listing.slug)} className="after:absolute after:inset-0 after:rounded-panel focus-visible:outline-none">
+              {listing.title}
+            </Link>
+          )}
+        </h3>
         {(followers || place) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-muted">
             {followers && (
@@ -94,8 +101,8 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           </div>
         </div>
       </div>
-    </Link>
-    <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="absolute right-4 top-4" />
+    </div>
+    {!preview && <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="absolute right-4 top-4 z-10" />}
     </div>
   );
 }

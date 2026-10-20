@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { Bookmark, LayoutDashboard, LogOut, MoreHorizontal, Settings, ShieldCheck, User } from "lucide-react";
 import type { Session } from "@/lib/api/types";
 import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { cx } from "@/lib/cx";
+import { profileHref } from "@/lib/listing-display";
 
 function Avatar({ session }: { session: Session }) {
   return session.avatar ? (
@@ -22,6 +23,7 @@ function Avatar({ session }: { session: Session }) {
 // `card`: X-style account card at the bottom of the sidebar (avatar, name, handle), menu opens upward.
 export function AccountMenu({ session, onSignOut, variant = "avatar" }: { session: Session; onSignOut: () => void; variant?: "avatar" | "card" }) {
   const [open, setOpen] = useState(false);
+  const menuId = useId();
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
   }, [open]);
 
   const item = "flex min-h-11 items-center gap-2 rounded-control px-3 text-body text-ink hover:bg-ink/5 sm:min-h-9";
-  const profileHref = `/${session.handle.startsWith("@") ? session.handle : `@${session.handle}`}`;
+  const profileLink = profileHref(session.handle);
 
   return (
     <div ref={ref} className="relative">
@@ -46,7 +48,7 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          aria-haspopup="menu"
+          aria-controls={open ? menuId : undefined}
           aria-expanded={open}
           aria-label="account menu"
           className={cx("flex w-full cursor-pointer items-center gap-3 rounded-card p-2 text-left transition-colors hover:bg-ink/5", open && "bg-ink/5")}
@@ -70,7 +72,7 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          aria-haspopup="menu"
+          aria-controls={open ? menuId : undefined}
           aria-expanded={open}
           aria-label="account menu"
           className="flex size-11 cursor-pointer items-center justify-center rounded-full"
@@ -80,7 +82,7 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
       )}
       {open && (
         <div
-          role="menu"
+          id={menuId}
           className={cx(
             "absolute z-50 w-60 rounded-card border border-line bg-surface p-1.5 shadow-pop",
             variant === "card" ? "bottom-full left-0 mb-2" : "right-0 top-11",
@@ -91,25 +93,25 @@ export function AccountMenu({ session, onSignOut, variant = "avatar" }: { sessio
             <p className="truncate text-small text-muted">{session.email ?? session.handle}</p>
           </div>
           <div className="my-1 border-t border-line" />
-          <Link role="menuitem" href="/dashboard" className={item} onClick={() => setOpen(false)}>
+          <Link href="/dashboard" className={item} onClick={() => setOpen(false)}>
             <LayoutDashboard className="size-4 text-muted" aria-hidden /> dashboard
           </Link>
-          <Link role="menuitem" href={profileHref} className={item} onClick={() => setOpen(false)}>
+          <Link href={profileLink} className={item} onClick={() => setOpen(false)}>
             <User className="size-4 text-muted" aria-hidden /> public profile
           </Link>
-          <Link role="menuitem" href="/watchlist" className={item} onClick={() => setOpen(false)}>
+          <Link href="/watchlist" className={item} onClick={() => setOpen(false)}>
             <Bookmark className="size-4 text-muted" aria-hidden /> saved
           </Link>
           {(session.isReviewer || session.isAdmin) && (
-            <Link role="menuitem" href="/review" className={item} onClick={() => setOpen(false)}>
+            <Link href="/review" className={item} onClick={() => setOpen(false)}>
               <ShieldCheck className="size-4 text-muted" aria-hidden /> review
             </Link>
           )}
-          <Link role="menuitem" href="/settings" className={item} onClick={() => setOpen(false)}>
+          <Link href="/settings" className={item} onClick={() => setOpen(false)}>
             <Settings className="size-4 text-muted" aria-hidden /> settings
           </Link>
           <div className="my-1 border-t border-line" />
-          <button type="button" role="menuitem" className={cx(item, "w-full cursor-pointer")} onClick={onSignOut}>
+          <button type="button" className={cx(item, "w-full cursor-pointer")} onClick={onSignOut}>
             <LogOut className="size-4 text-muted" aria-hidden /> sign out
           </button>
         </div>

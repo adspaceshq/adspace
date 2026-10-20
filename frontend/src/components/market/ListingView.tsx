@@ -307,6 +307,7 @@ function PurchasePanel({
         {listing.mode === "auction" && spot.amount && available && (
           <p className="mt-1 text-small text-muted">
             next bid at least <Money value={headline.next} />
+            {listing.doubleUp && " (each bid must double the last)"}
           </p>
         )}
       </div>

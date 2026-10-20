@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { OwnedListing } from "@/lib/api/types";
-import { deliveryNotice, emptyWizard, fromOwnedListing, templateSpots, toDraftInput, validateStep } from "./sell-draft";
+import { deliveryNotice, emptyWizard, fromOwnedListing, previewListing, templateSpots, toDraftInput, validateStep } from "./sell-draft";
 
 const NOW = Date.UTC(2026, 9, 8, 12);
 
@@ -92,5 +92,27 @@ describe("sell draft", () => {
     expect(state.spots[0].price).toBe("25");
     expect(state.minIncrement).toBe("0.5");
     expect(state.deliveryDays).toBe("7");
+  });
+});
+
+describe("previewListing", () => {
+  const seller = { id: "u1", handle: "lena", displayName: "Lena", avatarUrl: null, hasX: false, verified: false };
+
+  it("shows every spot open at its price and keeps the audience", () => {
+    const state = { ...emptyWizard("laptop"), title: "lid at Token2049", followers: "1200", event: "Token2049" };
+    state.spots = [{ key: "a", label: "", price: "12.5", layout: state.spots[0]?.layout ?? { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } }];
+    const listing = previewListing(state, seller);
+    expect(listing.spots).toEqual([expect.objectContaining({ id: "a", price: "12500000", state: "open", taken: false, brand: null })]);
+    expect(listing.audience).toEqual({ followers: 1200, event: "Token2049" });
+    expect(listing.seller.handle).toBe("lena");
+  });
+
+  it("never throws on half-typed prices or dates", () => {
+    const state = { ...emptyWizard("car"), deadline: "", minIncrement: "abc" };
+    state.spots = [{ key: "b", label: "", price: "1.", layout: { x: 0, y: 0, w: 0.1, h: 0.1 } }];
+    const listing = previewListing(state, seller);
+    expect(listing.title).toBe("untitled");
+    expect(Number.isNaN(new Date(listing.deadline).getTime())).toBe(false);
+    expect(listing.minIncrement).toBe("0");
   });
 });

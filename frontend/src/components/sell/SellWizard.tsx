@@ -8,7 +8,8 @@ import { api } from "@/lib/api/v2";
 import type { Surface } from "@/lib/api/types";
 import { mockupChoiceFor, mockupPresets, mockupUploaded, photoSourceFor, presetFile, restorePresets } from "@/lib/mac-mockup";
 import { uploadImage } from "@/lib/upload";
-import { deliveryNotice, emptyWizard, STEPS, toDraftInput, validateStep, type StepErrors, type WizardState, type WizardStep } from "@/lib/sell-draft";
+import { deliveryNotice, emptyWizard, localDateTime, previewListing, STEPS, toDraftInput, validateStep, type StepErrors, type WizardState, type WizardStep } from "@/lib/sell-draft";
+import { DEFAULT_FEES, feeFor } from "@/lib/fees";
 import { ADMIN_APPROVAL_AFTER_DAYS, MAX_DELIVERY_DAYS } from "@/lib/listing-rules";
 import { SURFACE_LABELS } from "@/lib/listing-display";
 import { viewLabel } from "@/lib/spot-views";
@@ -23,9 +24,31 @@ import { Timeline } from "@/components/ui/Timeline";
 import { MacMockupPicker } from "./MacMockupPicker";
 import { PhotoUploader } from "./PhotoUploader";
 import { SpotEditor } from "./SpotEditor";
+import { ListingCard } from "@/components/market/ListingCard";
 import { userErrorMessage } from "@/lib/errors";
 
 const storageKey = (listingId?: string, surface?: string) => `adspaces:sell:${listingId ?? `new:${surface}`}`;
+
+// The local backup is a convenience: private mode or a full quota must not break the wizard.
+const writeSaved = (key: string, state: WizardState | null) => {
+  try {
+    if (state) window.localStorage.setItem(key, JSON.stringify(state));
+    else window.localStorage.removeItem(key);
+  } catch {
+    // keep going without the local copy
+  }
+};
+
+const pct = (bps: number) => `${(bps / 100).toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+
+// "UTC+5:30" for the browser's zone, so the deadline field says whose clock it uses.
+const utcOffsetLabel = () => {
+  const minutes = -new Date().getTimezoneOffset();
+  const sign = minutes >= 0 ? "+" : "-";
+  const hours = Math.floor(Math.abs(minutes) / 60);
+  const rest = Math.abs(minutes) % 60;
+  return `UTC${sign}${hours}${rest ? `:${String(rest).padStart(2, "0")}` : ""}`;
+};
 
 const readSaved = (key: string): WizardState | undefined => {
   try {
@@ -36,7 +59,17 @@ const readSaved = (key: string): WizardState | undefined => {
   }
 };
 
-export function SellWizard({ surface, listingId: initialId, initial }: { surface: Surface; listingId?: string; initial?: WizardState }) {
+export function SellWizard({
+  surface,
+  listingId: initialId,
+  initial,
+  initialStep = "basics",
+}: {
+  surface: Surface;
+  listingId?: string;
+  initial?: WizardState;
+  initialStep?: WizardStep;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { session } = useSession();
@@ -49,7 +82,9 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
     }
     return (typeof window !== "undefined" && readSaved(storageKey(undefined, surface))) || emptyWizard(surface);
   });
-  const [step, setStep] = useState<WizardStep>("basics");
+  const [step, setStep] = useState<WizardStep>(initialStep);
+  // Fixed when the wizard opens: the earliest close the server accepts (an hour out) and the local zone.
+  const [deadlineField] = useState(() => ({ min: localDateTime(Date.now() + 60 * 60 * 1000), zone: utcOffsetLabel() }));
   const [errors, setErrors] = useState<StepErrors>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
@@ -60,7 +95,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
   const mockup = mockupChoiceFor(state);
 
   useEffect(() => {
-    window.localStorage.setItem(storageKey(listingId, surface), JSON.stringify(state));
+    writeSaved(storageKey(listingId, surface), state);
   }, [state, listingId, surface]);
 
   const set = <K extends keyof WizardState>(key: K, value: WizardState[K]) => setState((current) => ({ ...current, [key]: value }));
@@ -76,7 +111,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
         await api.listings.update(listingId, input);
       } else {
         const created = await api.listings.createDraft(input);
-        window.localStorage.removeItem(storageKey(undefined, surface));
+        writeSaved(storageKey(undefined, surface), null);
         setListingId(created.listing.id);
         window.history.replaceState(null, "", `/sell/drafts/${created.listing.id}`);
       }
@@ -169,7 +204,7 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
     setSaving(true);
     try {
       await api.listings.submit(listingId!);
-      window.localStorage.removeItem(storageKey(listingId, surface));
+      writeSaved(storageKey(listingId, surface), null);
       await queryClient.invalidateQueries({ queryKey: queryKeys.creatorDashboard });
       router.push("/dashboard/creator?submitted=1");
     } catch (cause) {
@@ -320,6 +355,8 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
             <Input
               label={state.mode === "auction" ? "bidding closes" : "claims close"}
               type="datetime-local"
+              min={deadlineField.min}
+              hint={`your local time (${deadlineField.zone})`}
               value={state.deadline}
               onChange={(event) => set("deadline", event.target.value)}
               error={errors.deadline}
@@ -373,14 +410,29 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
               })}
             />
           )}
-          <div className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-5 shadow-card">
-            <p className="text-caption font-medium uppercase tracking-wide text-subtle">preview</p>
-            <h2 className="text-title font-semibold leading-tight">{state.title || "untitled"}</h2>
-            <p className="text-small text-muted">@{session?.handle.replace(/^@/, "") ?? "you"}</p>
-            {state.description && <p className="whitespace-pre-line text-body text-muted">{state.description}</p>}
-            <p className="text-body">
-              {state.spots.length} spot{state.spots.length === 1 ? "" : "s"} · {state.mode === "auction" ? "auction" : "fixed price"}
-            </p>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <p className="text-caption font-medium uppercase tracking-wide text-muted">on browse</p>
+              <div className="rounded-panel border border-line bg-canvas p-2">
+                <ListingCard
+                  preview
+                  listing={previewListing(state, {
+                    id: session?.id ?? "you",
+                    handle: session?.handle.replace(/^@/, "") ?? "you",
+                    displayName: session?.name ?? session?.handle ?? "you",
+                    avatarUrl: session?.avatar ?? null,
+                    hasX: session?.hasX ?? false,
+                    verified: false,
+                  })}
+                />
+              </div>
+            </div>
+            {state.description && (
+              <div className="flex flex-col gap-1 rounded-panel border border-line bg-surface p-4 shadow-card">
+                <p className="text-caption font-medium uppercase tracking-wide text-muted">on your listing page</p>
+                <p className="whitespace-pre-line text-body text-muted">{state.description}</p>
+              </div>
+            )}
           </div>
         </section>
       )}
@@ -414,11 +466,36 @@ export function SellWizard({ surface, listingId: initialId, initial }: { surface
               <dt className="text-small text-muted">photos</dt>
               <dd className="font-medium">{state.photos.length}</dd>
             </div>
+            {(() => {
+              let prices: bigint[];
+              try {
+                prices = state.spots.map((spot) => BigInt(toBaseUnits(spot.price)));
+              } catch {
+                return null;
+              }
+              const fees = DEFAULT_FEES[state.mode];
+              const total = prices.reduce((sum, price) => sum + price, 0n);
+              const fee = prices.reduce((sum, price) => sum + feeFor(state.mode, fees, price, price), 0n);
+              return (
+                <div className="sm:col-span-2 border-t border-line pt-3">
+                  <dt className="text-small text-muted">expected fee{state.mode === "auction" ? " at the starting bids" : ""}</dt>
+                  <dd className="font-medium">
+                    {pct(fees.feeBps)} · you&apos;d get {formatUsd(total - fee)} of {formatUsd(total)}
+                  </dd>
+                  <p className="mt-1 text-small text-muted">
+                    {state.mode === "auction"
+                      ? `bids above the start pay ${pct(fees.upliftFeeBps)} on the extra, never more than ${pct(fees.maxFeeBps)} in total. `
+                      : ""}
+                    the final fee is set at review, and you see it before you publish.
+                  </p>
+                </div>
+              );
+            })()}
           </dl>
           <div className="flex flex-col gap-2 rounded-card bg-canvas p-4 text-small text-muted">
             <p className="font-medium text-ink">what happens next</p>
             <p className="flex gap-2">
-              <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> the adspaces team reviews it, usually within a day, and sets the platform fee.
+              <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> the adspaces team reviews it, usually within a day, and confirms the fee.
             </p>
             <p className="flex gap-2">
               <Check className="mt-0.5 size-4 shrink-0 text-success" aria-hidden /> you see the exact fee and dates, then accept and publish.

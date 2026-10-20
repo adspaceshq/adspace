@@ -9,7 +9,7 @@ import { queryKeys } from "@/lib/query";
 import { cx } from "@/lib/cx";
 import { spotView } from "@/lib/spot-views";
 import { isFinished, nextStepOf, outcomeOf, progressOf, PROGRESS_STEPS, spentOn, type SponsorSpot } from "@/lib/sponsor-spot";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -113,7 +113,12 @@ function SpotCard({ spot }: { spot: SponsorSpot }) {
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="line-clamp-2 text-body font-semibold">{spot.listing.title}</p>
+            <p className="line-clamp-2 text-body font-semibold">
+              {/* Stretched over the whole card; the seller link sits above it. */}
+              <Link href={`/dashboard/spots/${spot.id}`} className="after:absolute after:inset-0 after:rounded-card focus-visible:outline-none">
+                {spot.listing.title}
+              </Link>
+            </p>
             <SpotStateBadge state={spot.state} perspective="sponsor" />
           </div>
           <p className="truncate text-small text-muted">
@@ -215,7 +220,7 @@ export function SponsorDashboardView() {
                 title="find your first spot"
                 description="sponsor a laptop at a conference, a car across a city, or a bag through airports."
                 action={
-                  <Link href="/browse" className="rounded-control bg-ink px-4 py-2 text-body font-medium text-white hover:bg-ink-soft">
+                  <Link href="/browse" className={buttonClasses()}>
                     browse spaces
                   </Link>
                 }

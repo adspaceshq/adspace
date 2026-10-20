@@ -18,7 +18,8 @@ const detect = (url: string) => {
   return url ? "link" : null;
 };
 
-export function PostComposer({ listingId }: { listingId: string }) {
+// onPosted: called with the new post's id, e.g. so the proof picker can tick it.
+export function PostComposer({ listingId, onPosted, title = "post an update" }: { listingId: string; onPosted?: (postId: string) => void; title?: string }) {
   const queryClient = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
   const [url, setUrl] = useState("");
@@ -34,11 +35,12 @@ export function PostComposer({ listingId }: { listingId: string }) {
         body: body.trim() || undefined,
         mediaAssetIds: media.map((item) => item.id),
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
       setUrl("");
       setBody("");
       setMedia([]);
       void queryClient.invalidateQueries({ queryKey: queryKeys.posts(listingId) });
+      onPosted?.(created.id);
     },
   });
 
@@ -65,7 +67,7 @@ export function PostComposer({ listingId }: { listingId: string }) {
 
   return (
     <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
-      <p className="text-body font-semibold">post an update</p>
+      <p className="text-body font-semibold">{title}</p>
       <label className="relative block">
         <span className="sr-only">link</span>
         <Link2 className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />

@@ -4,12 +4,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { BookOpen, CheckCircle2, Settings2 } from "lucide-react";
+import { BookOpen, CheckCircle2, ChevronRight, Settings2 } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { ReviewSummary } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
 import { useTx } from "@/lib/use-tx";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -43,10 +43,10 @@ export function ReviewQueue() {
           <p className="text-body text-muted">approve listings, settle disputes, keep money moving.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/review/ledger" className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
+          <Link href="/review/ledger" className={buttonClasses("secondary", "sm")}>
             <BookOpen className="size-4" aria-hidden /> ledger
           </Link>
-          <Link href="/review/ops" className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
+          <Link href="/review/ops" className={buttonClasses("secondary", "sm")}>
             <Settings2 className="size-4" aria-hidden /> ops
           </Link>
         </div>
@@ -75,7 +75,7 @@ function ListingsTab() {
     <ul className="flex flex-col gap-2">
       {items.map((listing) => (
         <li key={listing.id}>
-          <Link href={`/review/listings/${listing.id}`} className="flex items-center gap-4 rounded-card border border-line bg-surface p-3 shadow-card hover:border-line-strong">
+          <div className="relative flex items-center gap-4 rounded-card border border-line bg-surface p-3 shadow-card hover:border-line-strong has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-accent-ring">
             {listing.photos[0] ? (
               // eslint-disable-next-line @next/next/no-img-element -- queue thumbnail
               <img src={listing.photos[0].url} alt="" className="size-16 shrink-0 rounded-control object-cover" />
@@ -84,7 +84,10 @@ function ListingsTab() {
             )}
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 text-body font-semibold">
-                <span className="truncate">{listing.title}</span>
+                {/* Stretched over the whole row; the seller link sits above it. */}
+                <Link href={`/review/listings/${listing.id}`} className="truncate after:absolute after:inset-0 after:rounded-card focus-visible:outline-none">
+                  {listing.title}
+                </Link>
                 {listing.needsAdminApproval && <Badge tone="warning">admin approval · over {listing.adminApprovalAfterDays ?? 90} days</Badge>}
               </p>
               <p className="flex items-center gap-1.5 truncate text-small text-muted">
@@ -95,7 +98,7 @@ function ListingsTab() {
             <span className="shrink-0 text-small text-muted">
               submitted {new Date(listing.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
             </span>
-          </Link>
+          </div>
         </li>
       ))}
     </ul>
@@ -118,11 +121,27 @@ function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings">; data: Review
   return (
     <ul className="flex flex-col divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
       {data.failedTxs.map((tx) => (
-        <li key={tx.id} className="flex items-center gap-3 px-4 py-3 text-small">
-          <span className="w-36 shrink-0 font-mono">{tx.op}</span>
-          <span className="min-w-0 flex-1 truncate text-muted">{tx.error ?? "unknown error"}</span>
-          <span className="shrink-0 text-subtle">{new Date(tx.updatedAt).toLocaleString()}</span>
-          {tx.signature && <Address value={tx.signature} kind="tx" className="text-subtle" />}
+        // Staff view: the full raw error is useful here, so rows open to show it.
+        <li key={tx.id} className="text-small">
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 hover:bg-canvas">
+              <ChevronRight className="size-4 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden />
+              <span className="w-36 shrink-0 font-mono">{tx.op}</span>
+              <span className="min-w-0 flex-1 truncate text-muted">{tx.error ?? "unknown error"}</span>
+              <span className="shrink-0 text-muted">{new Date(tx.updatedAt).toLocaleString()}</span>
+            </summary>
+            <div className="flex flex-col gap-2 border-t border-line bg-canvas px-4 py-3">
+              <pre className="whitespace-pre-wrap break-words font-mono text-caption text-ink">{tx.error ?? "unknown error"}</pre>
+              <div className="flex flex-wrap items-center gap-4">
+                {tx.signature && <Address value={tx.signature} kind="tx" />}
+                {tx.spotId && (
+                  <Link href={`/dashboard/spots/${tx.spotId}`} className="font-medium text-accent hover:underline">
+                    open spot
+                  </Link>
+                )}
+              </div>
+            </div>
+          </details>
         </li>
       ))}
     </ul>

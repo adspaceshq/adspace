@@ -3,6 +3,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { AppShell } from "@/components/app/AppShell";
 import { ProfileView } from "@/components/profile/ProfileView";
 import { fetchProfilePage } from "@/lib/api/server";
+import { profileHref } from "@/lib/listing-display";
 
 type Params = Promise<{ handle: string }>;
 
@@ -25,16 +26,18 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
   return {
     title: `${profile.displayName} (@${profile.handle})`,
     description,
-    alternates: { canonical: `/${profile.handle}` },
-    openGraph: { type: "profile", title: `${profile.displayName} on adspaces`, description, url: `/${profile.handle}` },
+    alternates: { canonical: profileHref(profile.handle) },
+    openGraph: { type: "profile", title: `${profile.displayName} on adspaces`, description, url: profileHref(profile.handle) },
   };
 }
 
 export default async function ProfilePage({ params }: { params: Params }) {
-  const handle = clean((await params).handle);
+  const raw = decodeURIComponent((await params).handle).trim();
+  const handle = clean(raw);
   const profile = await fetchProfilePage(handle);
   if (!profile) notFound();
-  if (handle !== profile.handle) permanentRedirect(`/${profile.handle}`);
+  // One shape everywhere, the same as listings: /@handle.
+  if (raw !== `@${profile.handle}`) permanentRedirect(profileHref(profile.handle));
   return (
     <AppShell variant="public">
       <ProfileView profile={profile} />
