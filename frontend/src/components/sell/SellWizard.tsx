@@ -8,7 +8,7 @@ import { api } from "@/lib/api/v2";
 import type { Surface } from "@/lib/api/types";
 import { mockupChoiceFor, mockupPresets, mockupUploaded, photoSourceFor, presetFile, restorePresets } from "@/lib/mac-mockup";
 import { uploadImage } from "@/lib/upload";
-import { deliveryNotice, emptyWizard, localDateTime, STEPS, toDraftInput, validateStep, type StepErrors, type WizardState, type WizardStep } from "@/lib/sell-draft";
+import { deliveryNotice, emptyWizard, localDateTime, previewListing, STEPS, toDraftInput, validateStep, type StepErrors, type WizardState, type WizardStep } from "@/lib/sell-draft";
 import { DEFAULT_FEES, feeFor } from "@/lib/fees";
 import { ADMIN_APPROVAL_AFTER_DAYS, MAX_DELIVERY_DAYS } from "@/lib/listing-rules";
 import { SURFACE_LABELS } from "@/lib/listing-display";
@@ -24,6 +24,7 @@ import { Timeline } from "@/components/ui/Timeline";
 import { MacMockupPicker } from "./MacMockupPicker";
 import { PhotoUploader } from "./PhotoUploader";
 import { SpotEditor } from "./SpotEditor";
+import { ListingCard } from "@/components/market/ListingCard";
 import { userErrorMessage } from "@/lib/errors";
 
 const storageKey = (listingId?: string, surface?: string) => `adspaces:sell:${listingId ?? `new:${surface}`}`;
@@ -409,14 +410,29 @@ export function SellWizard({
               })}
             />
           )}
-          <div className="flex flex-col gap-3 rounded-panel border border-line bg-surface p-5 shadow-card">
-            <p className="text-caption font-medium uppercase tracking-wide text-subtle">preview</p>
-            <h2 className="text-title font-semibold leading-tight">{state.title || "untitled"}</h2>
-            <p className="text-small text-muted">@{session?.handle.replace(/^@/, "") ?? "you"}</p>
-            {state.description && <p className="whitespace-pre-line text-body text-muted">{state.description}</p>}
-            <p className="text-body">
-              {state.spots.length} spot{state.spots.length === 1 ? "" : "s"} · {state.mode === "auction" ? "auction" : "fixed price"}
-            </p>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <p className="text-caption font-medium uppercase tracking-wide text-muted">on browse</p>
+              <div className="rounded-panel border border-line bg-canvas p-2">
+                <ListingCard
+                  preview
+                  listing={previewListing(state, {
+                    id: session?.id ?? "you",
+                    handle: session?.handle.replace(/^@/, "") ?? "you",
+                    displayName: session?.name ?? session?.handle ?? "you",
+                    avatarUrl: session?.avatar ?? null,
+                    hasX: session?.hasX ?? false,
+                    verified: false,
+                  })}
+                />
+              </div>
+            </div>
+            {state.description && (
+              <div className="flex flex-col gap-1 rounded-panel border border-line bg-surface p-4 shadow-card">
+                <p className="text-caption font-medium uppercase tracking-wide text-muted">on your listing page</p>
+                <p className="whitespace-pre-line text-body text-muted">{state.description}</p>
+              </div>
+            )}
           </div>
         </section>
       )}

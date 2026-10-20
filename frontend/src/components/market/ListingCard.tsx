@@ -10,7 +10,8 @@ import { spotsOnView } from "@/lib/spot-views";
 import { SellerAvatar } from "./SellerAvatar";
 import { UserLink } from "@/components/ui/UserLink";
 
-export function ListingCard({ listing }: { listing: PublicListing }) {
+// preview: the sell wizard's look at the card before the listing exists; nothing links or saves.
+export function ListingCard({ listing, preview = false }: { listing: PublicListing; preview?: boolean }) {
   const price = priceSummary(listing);
   const left = spotsLeft(listing);
   const withBids = spotsWithBids(listing);
@@ -51,15 +52,19 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
       <div className="flex flex-col gap-1.5 px-1 pb-1">
         <div className="flex items-center gap-2 text-small text-muted">
           <SellerAvatar seller={listing.seller} size={20} />
-          <UserLink handle={listing.seller.handle} nested className="truncate" />
+          {preview ? <span className="truncate">@{listing.seller.handle}</span> : <UserLink handle={listing.seller.handle} nested className="truncate" />}
           {listing.seller.verified && <BadgeCheck className="size-3.5 shrink-0 text-accent" aria-label="verified" />}
           <span className="ml-auto shrink-0">{SURFACE_LABELS[listing.surface]}</span>
         </div>
         <h3 className="line-clamp-2 text-lead font-semibold leading-snug">
-          {/* Stretched over the whole card; the seller link and watch button sit above it. */}
-          <Link href={listingHref(listing.seller.handle, listing.slug)} className="after:absolute after:inset-0 after:rounded-panel focus-visible:outline-none">
-            {listing.title}
-          </Link>
+          {preview ? (
+            listing.title
+          ) : (
+            // Stretched over the whole card; the seller link and watch button sit above it.
+            <Link href={listingHref(listing.seller.handle, listing.slug)} className="after:absolute after:inset-0 after:rounded-panel focus-visible:outline-none">
+              {listing.title}
+            </Link>
+          )}
         </h3>
         {(followers || place) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-muted">
@@ -97,7 +102,7 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
         </div>
       </div>
     </div>
-    <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="absolute right-4 top-4 z-10" />
+    {!preview && <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="absolute right-4 top-4 z-10" />}
     </div>
   );
 }
