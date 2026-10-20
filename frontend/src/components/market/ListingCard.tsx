@@ -44,7 +44,7 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           )}
           {over > 0 && (
             <span className="absolute bottom-2 left-2 rounded-full bg-success px-2 py-0.5 text-caption font-semibold text-white shadow-card">
-              +{over}% oversubscribed
+              +{over}% above start
             </span>
           )}
         </div>
