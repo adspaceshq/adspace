@@ -7,7 +7,8 @@ export const metadata: Metadata = { title: "set up your account", robots: { inde
 
 export default function OnboardingPage() {
   return (
-    <AppShell variant="app">
+    // Focused: no sidebar, every link of which would lead back to "finish setup".
+    <AppShell variant="public" mobileTabs={false}>
       <Suspense>
         <OnboardingFlow />
       </Suspense>
