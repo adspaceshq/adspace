@@ -75,7 +75,7 @@ function ListingsTab() {
     <ul className="flex flex-col gap-2">
       {items.map((listing) => (
         <li key={listing.id}>
-          <Link href={`/review/listings/${listing.id}`} className="flex items-center gap-4 rounded-card border border-line bg-surface p-3 shadow-card hover:border-line-strong">
+          <div className="relative flex items-center gap-4 rounded-card border border-line bg-surface p-3 shadow-card hover:border-line-strong has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-accent-ring">
             {listing.photos[0] ? (
               // eslint-disable-next-line @next/next/no-img-element -- queue thumbnail
               <img src={listing.photos[0].url} alt="" className="size-16 shrink-0 rounded-control object-cover" />
@@ -84,7 +84,10 @@ function ListingsTab() {
             )}
             <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 text-body font-semibold">
-                <span className="truncate">{listing.title}</span>
+                {/* Stretched over the whole row; the seller link sits above it. */}
+                <Link href={`/review/listings/${listing.id}`} className="truncate after:absolute after:inset-0 after:rounded-card focus-visible:outline-none">
+                  {listing.title}
+                </Link>
                 {listing.needsAdminApproval && <Badge tone="warning">admin approval · over {listing.adminApprovalAfterDays ?? 90} days</Badge>}
               </p>
               <p className="flex items-center gap-1.5 truncate text-small text-muted">
@@ -95,7 +98,7 @@ function ListingsTab() {
             <span className="shrink-0 text-small text-muted">
               submitted {new Date(listing.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
             </span>
-          </Link>
+          </div>
         </li>
       ))}
     </ul>

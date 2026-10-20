@@ -113,7 +113,12 @@ function SpotCard({ spot }: { spot: SponsorSpot }) {
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-1.5 py-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="line-clamp-2 text-body font-semibold">{spot.listing.title}</p>
+            <p className="line-clamp-2 text-body font-semibold">
+              {/* Stretched over the whole card; the seller link sits above it. */}
+              <Link href={`/dashboard/spots/${spot.id}`} className="after:absolute after:inset-0 after:rounded-card focus-visible:outline-none">
+                {spot.listing.title}
+              </Link>
+            </p>
             <SpotStateBadge state={spot.state} perspective="sponsor" />
           </div>
           <p className="truncate text-small text-muted">

@@ -23,15 +23,12 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
   const cover = listing.photos[0]?.url;
   return (
     <div className="relative">
-    <Link
-      href={listingHref(listing.seller.handle, listing.slug)}
-      className="group flex flex-col gap-3 rounded-panel p-2 transition-colors hover:bg-surface focus-visible:bg-surface"
-    >
+    <div className="group relative flex flex-col gap-3 rounded-panel p-2 transition-colors hover:bg-surface has-[a:focus-visible]:bg-surface has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-accent-ring">
       {cover ? (
         // With a second surface, the two sit side by side and hovering slides the strip to the second one.
         <div className="relative overflow-hidden rounded-card">
           {second ? (
-            <div className="flex transition-transform duration-500 ease-out group-hover:-translate-x-full group-focus-visible:-translate-x-full motion-reduce:transition-none">
+            <div className="flex transition-transform duration-500 ease-out group-hover:-translate-x-full group-has-[a:focus-visible]:-translate-x-full motion-reduce:transition-none">
               <div className="w-full shrink-0">
                 <SpotMockup photoUrl={cover} alt={listing.title} size="thumb" spots={mockupSpots(0)} />
               </div>
@@ -58,7 +55,12 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           {listing.seller.verified && <BadgeCheck className="size-3.5 shrink-0 text-accent" aria-label="verified" />}
           <span className="ml-auto shrink-0">{SURFACE_LABELS[listing.surface]}</span>
         </div>
-        <h3 className="line-clamp-2 text-lead font-semibold leading-snug">{listing.title}</h3>
+        <h3 className="line-clamp-2 text-lead font-semibold leading-snug">
+          {/* Stretched over the whole card; the seller link and watch button sit above it. */}
+          <Link href={listingHref(listing.seller.handle, listing.slug)} className="after:absolute after:inset-0 after:rounded-panel focus-visible:outline-none">
+            {listing.title}
+          </Link>
+        </h3>
         {(followers || place) && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-muted">
             {followers && (
@@ -94,8 +96,8 @@ export function ListingCard({ listing }: { listing: PublicListing }) {
           </div>
         </div>
       </div>
-    </Link>
-    <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="absolute right-4 top-4" />
+    </div>
+    <WatchButton listingId={listing.id} sellerId={listing.seller.id} className="absolute right-4 top-4 z-10" />
     </div>
   );
 }
