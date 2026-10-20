@@ -452,7 +452,7 @@ export async function staleSquadsProposals(
 }
 
 // Proposals that still count: anything not rejected, cancelled or gone blocks a second one.
-const LIVE_PROPOSAL = new Set(["draft", "active", "approved", "executing", "executed"]);
+export const LIVE_PROPOSAL = new Set(["draft", "active", "approved", "executing", "executed"]);
 
 const decisionHash = (disputeId: string, sellerShareBps: number, decision: string) =>
   sha256(`adspaces-decision-v1\n${disputeId}\n${sellerShareBps}\n${decision}`);
