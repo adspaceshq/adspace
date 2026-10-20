@@ -11,7 +11,7 @@ import { BROWSE_PAGE_SIZE, BROWSE_SORTS, BROWSE_SURFACES, readBrowseFilters } fr
 import { SURFACE_LABELS } from "@/lib/listing-display";
 import { queryKeys } from "@/lib/query";
 import { cx } from "@/lib/cx";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ListingCard, ListingCardSkeleton } from "./ListingCard";
 
@@ -170,7 +170,7 @@ export function BrowseView({ initialPage }: { initialPage?: { filters: BrowseFil
           description="be the first. put a sponsor's logo on your laptop, car or shopfront: sponsors pay in usdc, held in escrow until you post proof."
           action={
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <Link href="/sell" className="inline-flex h-10 items-center rounded-control bg-ink px-4 text-body font-medium text-white transition-colors hover:bg-ink-soft">
+              <Link href="/sell" className={buttonClasses()}>
                 list your space
               </Link>
               <a href="https://adspaces.fun/#how" className="text-body font-medium text-accent hover:underline">

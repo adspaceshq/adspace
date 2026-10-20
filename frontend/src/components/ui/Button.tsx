@@ -18,6 +18,18 @@ const sizes: Record<Size, string> = {
   lg: "h-12 px-6 text-lead",
 };
 
+// The same look for a Link or <a> that acts as a button, so heights and padding never drift.
+export function buttonClasses(variant: Variant = "primary", size: Size = "md", className?: string) {
+  return cx(
+    // Touch screens get a 44px minimum target whatever the size.
+    "inline-flex cursor-pointer items-center justify-center gap-2 rounded-control font-medium transition-colors pointer-coarse:min-h-11",
+    "disabled:cursor-not-allowed disabled:opacity-50",
+    variants[variant],
+    sizes[size],
+    className,
+  );
+}
+
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: Variant;
   size?: Size;
@@ -33,14 +45,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       disabled={disabled || loading}
       aria-busy={loading || undefined}
-      className={cx(
-        // Touch screens get a 44px minimum target whatever the size.
-        "inline-flex cursor-pointer items-center justify-center gap-2 rounded-control font-medium transition-colors pointer-coarse:min-h-11",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        variants[variant],
-        sizes[size],
-        className,
-      )}
+      className={buttonClasses(variant, size, className)}
       {...rest}
     >
       {loading && <Loader2 className="size-4 animate-spin" aria-hidden />}

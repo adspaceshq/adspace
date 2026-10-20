@@ -9,7 +9,7 @@ import { api } from "@/lib/api/v2";
 import type { ReviewSummary } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
 import { useTx } from "@/lib/use-tx";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -43,10 +43,10 @@ export function ReviewQueue() {
           <p className="text-body text-muted">approve listings, settle disputes, keep money moving.</p>
         </div>
         <div className="flex gap-2">
-          <Link href="/review/ledger" className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
+          <Link href="/review/ledger" className={buttonClasses("secondary", "sm")}>
             <BookOpen className="size-4" aria-hidden /> ledger
           </Link>
-          <Link href="/review/ops" className="inline-flex items-center gap-1.5 rounded-control border border-line bg-surface px-3 py-2 text-small font-medium hover:border-line-strong">
+          <Link href="/review/ops" className={buttonClasses("secondary", "sm")}>
             <Settings2 className="size-4" aria-hidden /> ops
           </Link>
         </div>

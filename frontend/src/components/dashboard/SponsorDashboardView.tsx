@@ -9,7 +9,7 @@ import { queryKeys } from "@/lib/query";
 import { cx } from "@/lib/cx";
 import { spotView } from "@/lib/spot-views";
 import { isFinished, nextStepOf, outcomeOf, progressOf, PROGRESS_STEPS, spentOn, type SponsorSpot } from "@/lib/sponsor-spot";
-import { Button } from "@/components/ui/Button";
+import { Button, buttonClasses } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Countdown } from "@/components/ui/Countdown";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -215,7 +215,7 @@ export function SponsorDashboardView() {
                 title="find your first spot"
                 description="sponsor a laptop at a conference, a car across a city, or a bag through airports."
                 action={
-                  <Link href="/browse" className="rounded-control bg-ink px-4 py-2 text-body font-medium text-white hover:bg-ink-soft">
+                  <Link href="/browse" className={buttonClasses()}>
                     browse spaces
                   </Link>
                 }
