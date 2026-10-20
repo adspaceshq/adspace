@@ -78,7 +78,7 @@ export function templateSpots(surface: Surface, price = "10"): WizardSpot[] {
   return spots;
 }
 
-const localDateTime = (time: number) => {
+export const localDateTime = (time: number) => {
   const date = new Date(time);
   date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
   return date.toISOString().slice(0, 16);
