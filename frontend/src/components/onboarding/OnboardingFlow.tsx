@@ -109,8 +109,8 @@ function ProfileStep({ session, onDone }: { session: Session; onDone: () => void
 }
 
 const ROLES: Array<{ id: Role; title: string; description: string; icon: typeof Store }> = [
-  { id: "creator", title: "I sell ad space", description: "list your laptop, car, bag or anything people see. get paid in USDC.", icon: Store },
-  { id: "sponsor", title: "I sponsor", description: "put your brand on real things in the real world. pay only on delivery.", icon: Megaphone },
+  { id: "creator", title: "i sell ad space", description: "list your laptop, car, bag or anything people see. get paid in USDC.", icon: Store },
+  { id: "sponsor", title: "i sponsor brands", description: "put your brand on real things in the real world. pay only on delivery.", icon: Megaphone },
   { id: "both", title: "both", description: "sell space and sponsor others from one account.", icon: Users },
 ];
 

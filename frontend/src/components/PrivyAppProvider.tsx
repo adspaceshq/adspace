@@ -46,7 +46,7 @@ export default function PrivyAppProvider({ children }: { children: React.ReactNo
         appearance: {
           theme: 'light',
           accentColor: '#4166fb',
-          landingHeader: 'Log in to Adspaces',
+          landingHeader: 'sign in to adspaces',
           loginMessage: 'Continue with Google, X, or email.',
           showWalletLoginFirst: false,
         },
