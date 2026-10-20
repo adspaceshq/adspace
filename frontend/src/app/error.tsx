@@ -11,7 +11,14 @@ export default function Error({ reset }: { error: Error & { digest?: string }; r
       <EmptyState
         icon={AlertTriangle}
         title="something went wrong"
-        description="your funds are safe in escrow. try again, or come back in a minute."
+        description={
+          <>
+            funds held in escrow are not affected. try again, or come back in a minute. still stuck?{" "}
+            <a href="mailto:support@adspaces.fun" className="font-medium text-ink underline">
+              contact support
+            </a>
+          </>
+        }
         action={<Button onClick={reset}>try again</Button>}
       />
     </AppShell>
