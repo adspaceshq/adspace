@@ -42,8 +42,8 @@ export function LedgerView() {
         <ArrowLeft className="size-4" aria-hidden /> queue
       </Link>
       <div>
-        <h1 className="text-title font-semibold">ledger</h1>
-        <p className="text-small text-muted">every transaction on a listing, the USDC it moved, and whether each escrow balances.</p>
+        <h1 className="text-title font-semibold sm:text-display">ledger</h1>
+        <p className="text-body text-muted">every transaction on a listing, the USDC it moved, and whether each escrow balances.</p>
       </div>
       {listingId ? (
         <>
