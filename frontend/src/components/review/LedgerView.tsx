@@ -36,21 +36,25 @@ export function LedgerView() {
   const params = useSearchParams();
   const router = useRouter();
   const listingId = params.get("listing");
+  // One screen on desktop: the page stays put and the table (or a listing's ledger) scrolls inside,
+  // with a scrollbar that only shows on hover. Phones scroll the page as usual.
   return (
-    <div className="flex flex-col gap-6">
-      <Link href="/review" className="inline-flex items-center gap-1.5 self-start text-small text-muted hover:text-ink">
-        <ArrowLeft className="size-4" aria-hidden /> queue
-      </Link>
-      <div>
-        <h1 className="text-title font-semibold sm:text-display">ledger</h1>
-        <p className="text-body text-muted">every transaction on a listing, the USDC it moved, and whether each escrow balances.</p>
+    <div className="flex flex-col gap-4 lg:h-[calc(100dvh-15rem)]">
+      <div className="flex flex-col gap-1">
+        <Link href="/review" className="inline-flex items-center gap-1.5 self-start text-small text-muted hover:text-ink">
+          <ArrowLeft className="size-4" aria-hidden /> queue
+        </Link>
+        <h1 className="text-title font-semibold">ledger</h1>
+        <p className="text-small text-muted">every transaction on a listing, the USDC it moved, and whether each escrow balances.</p>
       </div>
       {listingId ? (
         <>
           <button type="button" onClick={() => router.replace("/review/ledger")} className="cursor-pointer self-start text-small font-medium text-accent hover:underline">
             all listings
           </button>
-          <Ledger listingId={listingId} />
+          <div className="min-h-0 flex-1 hover-scrollbar lg:-mr-2 lg:overflow-y-auto lg:pr-2">
+            <Ledger listingId={listingId} />
+          </div>
         </>
       ) : (
         <ListingTable onPick={(id) => router.replace(`/review/ledger?listing=${id}`)} />
@@ -69,8 +73,8 @@ function ListingTable({ onPick }: { onPick: (id: string) => void }) {
   }, [text]);
   const rows = useQuery({ queryKey: ["ledger-search", query], queryFn: () => api.review.searchListings(query), placeholderData: (previous) => previous });
   return (
-    <section className="flex flex-col gap-3">
-      <div className="relative max-w-md">
+    <section className="flex min-h-0 flex-1 flex-col gap-3">
+      <div className="relative max-w-md shrink-0">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
         <input
           value={text}
@@ -85,10 +89,11 @@ function ListingTable({ onPick }: { onPick: (id: string) => void }) {
       ) : !rows.data?.length ? (
         <EmptyState icon={Search} title={query ? "no listings match" : "no listings yet"} description={query ? "try a title, a creator handle or a listing ID." : undefined} />
       ) : (
-        <div className="overflow-x-auto rounded-card border border-line bg-surface">
+        <div className="min-h-0 flex-1 overflow-auto rounded-card border border-line bg-surface hover-scrollbar">
           <table className="w-full min-w-[640px] text-small">
-            <thead className="text-left text-caption text-muted">
-              <tr className="border-b border-line">
+            {/* Pinned while the rows scroll under it. */}
+            <thead className="sticky top-0 z-10 bg-surface text-left text-caption text-muted shadow-[0_1px_0_var(--color-line)]">
+              <tr>
                 <th className="px-4 py-2 font-medium">listing</th>
                 <th className="px-4 py-2 font-medium">creator</th>
                 <th className="px-4 py-2 font-medium">mode</th>
@@ -105,8 +110,9 @@ function ListingTable({ onPick }: { onPick: (id: string) => void }) {
                       {row.title}
                     </button>
                   </td>
-                  <td className="px-4 py-2.5 text-muted">
-                    <UserLink handle={row.sellerHandle} nested />
+                  {/* The handle opens the profile; keep that click from also opening the row. */}
+                  <td className="px-4 py-2.5 text-muted" onClick={(event) => event.stopPropagation()}>
+                    <UserLink handle={row.sellerHandle} />
                   </td>
                   <td className="px-4 py-2.5 text-muted">{row.mode}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">
