@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "ledger", robots: { index: false } };
 
 export default function LedgerPage() {
   return (
-    <AppShell variant="app">
+    <AppShell variant="app" fill>
       <AuthGate require="reviewer" reason="sign in to review">
         <Suspense>
           <LedgerView />
