@@ -114,6 +114,28 @@ h1, h2, h3, h4 {
   }
 }
 
+/* One-screen dashboards: the same slim scrollbar, shown only while the pointer is over the panel. */
+@utility hover-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  &:hover {
+    scrollbar-color: color-mix(in srgb, var(--color-ink) 20%, transparent) transparent;
+  }
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: transparent;
+  }
+  &:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-ink) 20%, transparent);
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
 /* Horizontal scrollers (tabs, chips, steps) stay swipeable without a visible scrollbar. */
 @utility no-scrollbar {
   scrollbar-width: none;

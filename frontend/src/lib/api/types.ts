@@ -305,6 +305,80 @@ export interface Withdrawal {
   updatedAt: IsoDate;
 }
 
+// Admin metrics page. Money is USDC base units as strings; chain numbers are null when a read failed.
+export interface AdminMetrics {
+  generatedAt: IsoDate;
+  money: {
+    settledGross: { all: BaseUnits; last7: BaseUnits; last30: BaseUnits };
+    fees: { all: BaseUnits; last7: BaseUnits; last30: BaseUnits };
+    creatorPayouts: BaseUnits;
+    refunds: BaseUnits;
+    settlementsByKind: Partial<Record<"payout" | "refund" | "dispute_split" | "timeout_refund", number>>;
+    escrow: { amount: BaseUnits; spots: number; onChain: BaseUnits | null; matches: boolean | null };
+    treasury: BaseUnits | null;
+    escrowByState: Partial<Record<"funded" | "delivered" | "disputed", number>>;
+    escrowAmountByState: Partial<Record<"funded" | "delivered" | "disputed", BaseUnits>>;
+    byMode: Array<{ mode: PricingMode; sold: number; settled: BaseUnits; fees: BaseUnits }>;
+    feeRateBps: number | null;
+    payoutsReady: { count: number; amount: BaseUnits };
+    withdrawals: { confirmed: number; amount: BaseUnits; last30: BaseUnits; inFlight: number };
+  };
+  marketplace: {
+    listingsByState: Partial<Record<ListingState, number>>;
+    spotsByState: Partial<Record<SpotState, number>>;
+    liveListingsByMode: Partial<Record<PricingMode, number>>;
+    spotsSold: number;
+    averageSale: BaseUnits;
+    bids: number;
+    averageBidsPerAuctionSpot: number;
+    hoursToFirstSale: number | null;
+    bySurface: Array<{ surface: Surface; listings: number; sold: number; settled: BaseUnits }>;
+    priceBuckets: Array<{ bucket: string; count: number }>;
+    sellThrough: number | null;
+    spotsPerListing: number | null;
+    // Average final price over starting price for sold auction spots (1 = sold at the start).
+    auctionUplift: number | null;
+    reviewHours: number | null;
+    topCreators: Array<{ handle: string; earned: BaseUnits; spots: number }>;
+    topSponsors: Array<{ handle: string; spent: BaseUnits; spots: number }>;
+    topListings: Array<{ title: string; slug: string; handle: string; bids: number; topBid: BaseUnits }>;
+  };
+  users: {
+    total: number;
+    newLast7: number;
+    onboarded: number;
+    byIntent: Partial<Record<"sell" | "sponsor" | "both" | "browse", number>>;
+    activeLast7: number;
+    repeatSponsors: number;
+    funnel: { signedUp: number; emailVerified: number; onboarded: number; listed: number; bought: number };
+  };
+  health: {
+    disputesByState: Partial<Record<"open" | "withdrawn" | "resolved" | "timed_out", number>>;
+    failedTxsLast7: number;
+    feePayerSol: number | null;
+    feePayerLow: boolean | null;
+    minFeePayerSol: number | null;
+    // Abandoned = prepared but never signed (a closed dialog); not counted as failures.
+    txByOp: Array<{ op: string; confirmed: number; failed: number; abandoned: number }>;
+    abandonedTxsLast7: number;
+    disputes: { rate: number | null; hoursToClose: number | null; waitingOnMultisig: number };
+    reviewQueue: { waiting: number; oldestHours: number | null };
+    overdueDeliveries: { count: number; amount: BaseUnits };
+  };
+  daily: Array<{
+    day: string;
+    settledGross: BaseUnits;
+    fees: BaseUnits;
+    sales: number;
+    signups: number;
+    listings: number;
+    bids: number;
+    disputes: number;
+    failedTxs: number;
+    withdrawn: BaseUnits;
+  }>;
+}
+
 export interface ProtocolStatus {
   authority: string;
   treasury: string;

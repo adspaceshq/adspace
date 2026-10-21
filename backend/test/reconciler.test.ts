@@ -58,6 +58,24 @@ test("settles stuck and wrongly failed transactions from their signatures", asyn
   assert.ok(report.confirmedTxs >= 2);
 });
 
+test("expires transactions that were never signed or sent after an hour", async () => {
+  const insert = async (ageMs: number) =>
+    (
+      await db
+        .insert(chainTxs)
+        .values({ op: "place_bid", idempotencyKey: `op:${randomUUID()}`, status: "pending", updatedAt: new Date(Date.now() - ageMs) })
+        .returning()
+    )[0];
+  const abandoned = await insert(2 * 60 * MINUTE);
+  const waitingForUser = await insert(5 * MINUTE);
+  const report = await reconcile(deps({}));
+  const row = async (id: string) => (await db.select().from(chainTxs).where(eq(chainTxs.id, id)))[0];
+  assert.equal((await row(abandoned.id)).status, "failed");
+  assert.equal((await row(abandoned.id)).error, "never signed or sent");
+  assert.equal((await row(waitingForUser.id)).status, "pending");
+  assert.ok(report.failedTxs >= 1);
+});
+
 test("withdrawals follow their transaction's real outcome", async () => {
   const { user } = await seedUser(db);
   const [withdrawal] = await db
