@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { BookOpen, CheckCircle2, ChevronRight, Settings2 } from "lucide-react";
+import { BarChart3, BookOpen, CheckCircle2, ChevronRight, Settings2 } from "lucide-react";
+import { useSession } from "@/lib/session";
 import { api } from "@/lib/api/v2";
 import type { ReviewSummary } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
@@ -34,6 +35,7 @@ export function ReviewQueue() {
   const tab = (TABS.includes(params.get("tab") as Tab) ? params.get("tab") : "listings") as Tab;
   const summary = useQuery({ queryKey: queryKeys.reviewSummary, queryFn: () => api.review.summary(), refetchInterval: 30_000 });
   const counts = summary.data?.counts;
+  const { session } = useSession();
 
   return (
     <div className="flex flex-col gap-6">
@@ -43,6 +45,11 @@ export function ReviewQueue() {
           <p className="text-body text-muted">approve listings, settle disputes, keep money moving.</p>
         </div>
         <div className="flex gap-2">
+          {session?.isAdmin && (
+            <Link href="/review/metrics" className={buttonClasses("secondary", "sm")}>
+              <BarChart3 className="size-4" aria-hidden /> metrics
+            </Link>
+          )}
           <Link href="/review/ledger" className={buttonClasses("secondary", "sm")}>
             <BookOpen className="size-4" aria-hidden /> ledger
           </Link>
