@@ -36,6 +36,7 @@ import { listWatchlist, unwatchListing, watchListing } from "../services/watchli
 import { getPrefs, listNotifications, markRead, setPrefs } from "../services/notifications.js";
 import { reconcile } from "../services/reconciler.js";
 import { adoptListings, prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
+import { adminMetrics, readChainMetrics } from "../services/metrics.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
 
@@ -145,8 +146,11 @@ export function createV2Router(options: {
   statusCacheMs?: number;
   // Lets a buyer pay a dispute's rent from their own wallet when the platform can't co-sign.
   buyerPaidDisputes?: boolean;
+  // Below this the metrics page flags the fee and rent payer as low (MIN_FEE_PAYER_LAMPORTS).
+  minFeePayerLamports?: number;
 }) {
   const { db, chain, reviewers } = options;
+  const minFeePayerLamports = options.minFeePayerLamports ?? 1_000_000_000;
   const badRoles = invalidRoleEntries([...reviewers, ...(options.admins ?? [])]);
   if (badRoles.length) console.warn(`PLATFORM_REVIEWERS/PLATFORM_ADMINS entries must be user ids or Privy DIDs; ignoring: ${badRoles.join(", ")}`);
   const auth = new AppAuthRepository(db);
@@ -840,6 +844,16 @@ export function createV2Router(options: {
     handle(async (_req, res) => {
       const context = requireChain();
       send(res, await rentReport({ db, readLamports: context.readLamports, readListingRentPayers: context.readListingRentPayers, serverRentPayer: context.rentPayer.publicKey }));
+    }),
+  );
+  // Admin numbers: money, marketplace, users and health, from the database plus a few live chain reads.
+  router.get(
+    "/admin/metrics",
+    requireUser,
+    requireAdmin,
+    handle(async (_req, res) => {
+      const chainNumbers = chain ? await readChainMetrics(db, chain, minFeePayerLamports) : null;
+      send(res, await adminMetrics(db, chainNumbers));
     }),
   );
   // Reviewer key rotation: once the review authority is the server's new key, move every live listing

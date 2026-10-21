@@ -42,6 +42,7 @@ async function start() {
     cluster: config.solana.cluster,
     metadataBaseUrl: config.frontendUrl,
     buyerPaidDisputes: process.env.BUYER_PAID_DISPUTES === "true",
+    minFeePayerLamports: Number(process.env.MIN_FEE_PAYER_LAMPORTS ?? 1_000_000_000),
     withdrawalDailyLimit: BigInt(Math.round(Number(process.env.WITHDRAWAL_DAILY_LIMIT_USDC ?? 1000) * 1_000_000)),
   });
   const reconcileEveryMs = Number(process.env.RECONCILE_INTERVAL_MS ?? 5 * 60 * 1000);

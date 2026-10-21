@@ -46,5 +46,6 @@ export const queryKeys = {
   reviewSummary: ["review", "summary"] as const,
   adminStatus: ["admin", "status"] as const,
   adminRent: ["admin", "rent"] as const,
+  adminMetrics: ["admin", "metrics"] as const,
   profile: (handle: string) => ["profile", handle] as const,
 };
