@@ -9,6 +9,8 @@ export interface AppDependencies {
   chain?: { cluster: SolanaCluster; programId: string };
   /** The API on the app schema, mounted at /api/v2. */
   v2Router?: Router;
+  /** Chain activity webhooks (Helius), mounted at /api/webhooks. */
+  webhooks?: Router;
 }
 
 export function createApp({
@@ -16,6 +18,7 @@ export function createApp({
   trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : undefined,
   chain = { cluster: "devnet", programId: adspacesProgramId },
   v2Router,
+  webhooks,
 }: AppDependencies = {}) {
   const app = express();
   if (trustProxy !== undefined) app.set("trust proxy", trustProxy);
@@ -41,6 +44,7 @@ export function createApp({
   });
 
   if (v2Router) app.use("/api/v2", v2Router);
+  if (webhooks) app.use("/api/webhooks", webhooks);
 
   app.get("/health", (_req, res) => res.json({
     status: "ok",

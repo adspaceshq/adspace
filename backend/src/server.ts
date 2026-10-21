@@ -10,6 +10,7 @@ import { usdcMintFor } from "./payout.js";
 import { TERMS_VERSION } from "./types.js";
 import { createChainContext } from "./v2/chain-context.js";
 import { createV2Router } from "./v2/router.js";
+import { coalesce, heliusWebhook } from "./webhooks.js";
 import { reconcile } from "./services/reconciler.js";
 import { expireUnsignedWithdrawals } from "./services/wallet.js";
 import { deliverEmails, detectDeposits, processSpotEvents, scheduleReminders, scheduleSettlementNotices, scheduleWalletNotices } from "./services/notifications.js";
@@ -45,6 +46,8 @@ async function start() {
   });
   const reconcileEveryMs = Number(process.env.RECONCILE_INTERVAL_MS ?? 5 * 60 * 1000);
   let lastReconcile: MonitorInput["lastReconcile"];
+  // One reconcile at a time, shared by the timer and the Helius webhook.
+  let requestReconcile: (() => Promise<void>) | undefined;
   if (v2Chain && reconcileEveryMs > 0) {
     const run = () =>
       reconcile({
@@ -64,8 +67,16 @@ async function start() {
           lastReconcile = { at: new Date(), error: message };
           console.error("reconcile failed:", message);
         });
-    setInterval(run, reconcileEveryMs).unref();
+    requestReconcile = coalesce(run);
+    setInterval(() => void requestReconcile?.(), reconcileEveryMs).unref();
   }
+  // Helius pings us when a transaction touches the program (a Squads execute, a permissionless refund),
+  // so those land in seconds instead of waiting for the next timer run. The timer stays as the backstop.
+  const heliusSecret = process.env.HELIUS_WEBHOOK_SECRET?.trim();
+  const webhooks = heliusSecret && requestReconcile
+    ? heliusWebhook({ secret: heliusSecret, onActivity: () => void requestReconcile?.() })
+    : undefined;
+  if (heliusSecret && !requestReconcile) console.warn("HELIUS_WEBHOOK_SECRET is set but the reconciler is off; webhook not mounted");
   // Notifications run without the chain: they read what services already recorded.
   const resendKey = process.env.RESEND_API_KEY?.trim();
   const sendEmail = resendKey ? resendSender(resendKey, process.env.NOTIFICATIONS_FROM_EMAIL || undefined) : undefined;
@@ -131,7 +142,8 @@ async function start() {
     trustProxy: config.trustProxy,
     chain: { cluster: config.solana.cluster, programId: config.solana.programId },
     v2Router,
-  }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on)`));
+    webhooks,
+  }).listen(config.port, () => console.log(`adspaces api listening on :${config.port} (postgres persistence on${webhooks ? ", helius webhook on" : ""})`));
 }
 
 start().catch((error) => { console.error(error); process.exit(1); });
