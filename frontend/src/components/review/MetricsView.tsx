@@ -48,9 +48,12 @@ export function MetricsView() {
             {query.data && ` · updated ${new Date(query.data.generatedAt).toLocaleTimeString()}`}
           </p>
         </div>
-        <Button variant="secondary" size="sm" onClick={() => void query.refetch()} loading={query.isFetching}>
-          <RefreshCw className="size-4" aria-hidden /> refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <NetworkSwitch />
+          <Button variant="secondary" size="sm" onClick={() => void query.refetch()} loading={query.isFetching}>
+            <RefreshCw className="size-4" aria-hidden /> refresh
+          </Button>
+        </div>
       </div>
       <Tabs active={`/review/metrics?tab=${tab}`} items={TABS.map((item) => ({ href: `/review/metrics?tab=${item}`, label: item }))} />
       <div className="min-h-0 flex-1 lg:-mr-2 lg:overflow-y-auto lg:pr-2 hover-scrollbar">
@@ -73,6 +76,36 @@ export function MetricsView() {
           <TabBody tab={tab} data={query.data} />
         )}
       </div>
+    </div>
+  );
+}
+
+// Which network's numbers you are looking at. Each deployment serves one network today, so the other side
+// is shown but disabled until mainnet launches; switching will then open the other deployment's metrics.
+function NetworkSwitch() {
+  const current = ADSPACES_CLUSTER === "mainnet-beta" ? "mainnet" : "devnet";
+  return (
+    <div role="radiogroup" aria-label="network" className="flex rounded-control border border-line bg-surface p-0.5 text-small">
+      {(["devnet", "mainnet"] as const).map((network) => {
+        const active = network === current;
+        return (
+          <button
+            key={network}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            disabled={!active}
+            title={active ? `showing ${network}` : `${network} metrics: coming soon, after launch`}
+            className={cx(
+              "inline-flex h-7 items-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] px-2.5 font-medium pointer-coarse:min-h-10",
+              active ? "bg-ink text-white" : "cursor-not-allowed text-muted",
+            )}
+          >
+            {network}
+            {!active && <span className="rounded-full bg-ink/5 px-1.5 text-caption font-normal">soon</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }
