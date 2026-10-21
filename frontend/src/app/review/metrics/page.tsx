@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "metrics", robots: { index: false } }
 
 export default function MetricsPage() {
   return (
-    <AppShell variant="app">
+    <AppShell variant="app" fill>
       <AuthGate require="admin" reason="sign in to see metrics">
         <Suspense>
           <MetricsView />

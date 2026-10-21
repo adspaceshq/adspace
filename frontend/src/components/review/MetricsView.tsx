@@ -28,23 +28,24 @@ const hours = (value: number | null) => (value === null ? "n/a" : value < 1 ? `$
 const sumOf = (record: Partial<Record<string, number>>) => Object.values(record).reduce<number>((total, value) => total + (value ?? 0), 0);
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
-// Admin numbers on one screen per tab: the page itself never scrolls on desktop; each tab's panel does,
-// with a scrollbar that only shows while hovered. Phones get a normal scrolling page.
+// Every tab has the same shape on desktop: a stat strip, a row of charts, then a row of cards that
+// stretches to the bottom edge, where each card scrolls on its own. The page itself never scrolls
+// (AppShell fill). Phones stack everything and scroll the page as usual.
 export function MetricsView() {
   const params = useSearchParams();
   const tab = (TABS.includes(params.get("tab") as Tab) ? params.get("tab") : "overview") as Tab;
   const query = useQuery({ queryKey: queryKeys.adminMetrics, queryFn: () => api.admin.metrics(), refetchInterval: 60_000 });
 
   return (
-    <div className="flex flex-col gap-4 lg:h-[calc(100dvh-15rem)]">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <Link href="/review" className="inline-flex items-center gap-1.5 self-start text-small text-muted hover:text-ink">
-            <ArrowLeft className="size-4" aria-hidden /> queue
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <Link href="/review" aria-label="back to the review queue" className="self-center text-muted hover:text-ink">
+            <ArrowLeft className="size-5" aria-hidden />
           </Link>
           <h1 className="text-title font-semibold">metrics</h1>
           <p className="text-small text-muted">
-            {ADSPACES_CLUSTER === "mainnet-beta" ? "mainnet" : `${ADSPACES_CLUSTER}: test money, includes seeded demo data`}
+            {ADSPACES_CLUSTER === "mainnet-beta" ? "real money" : "test money, includes seeded demo data"}
             {query.data && ` · updated ${new Date(query.data.generatedAt).toLocaleTimeString()}`}
           </p>
         </div>
@@ -54,15 +55,19 @@ export function MetricsView() {
             <RefreshCw className="size-4" aria-hidden /> refresh
           </Button>
         </div>
-      </div>
+      </header>
       <Tabs active={`/review/metrics?tab=${tab}`} items={TABS.map((item) => ({ href: `/review/metrics?tab=${item}`, label: item }))} />
-      <div className="min-h-0 flex-1 lg:-mr-2 lg:overflow-y-auto lg:pr-2 hover-scrollbar">
+      {/* Only a fallback: on very short screens the rows can't fit and this area scrolls. */}
+      <div className="flex min-h-0 flex-1 flex-col hover-scrollbar lg:overflow-y-auto">
         {query.isPending ? (
           <SkeletonGroup label="loading metrics">
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
-                <Skeleton key={key} className="h-24" />
-              ))}
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-20 w-full" />
+              <div className="grid gap-3 lg:grid-cols-3">
+                {[0, 1, 2].map((key) => (
+                  <Skeleton key={key} className="h-36" />
+                ))}
+              </div>
             </div>
           </SkeletonGroup>
         ) : query.isError ? (
@@ -80,8 +85,8 @@ export function MetricsView() {
   );
 }
 
-// Which network's numbers you are looking at. Each deployment serves one network today, so the other side
-// is shown but disabled until mainnet launches; switching will then open the other deployment's metrics.
+// Which network's numbers these are. One deployment serves one network today, so the other side is
+// shown but disabled until mainnet launches; switching will then open the other deployment's metrics.
 function NetworkSwitch() {
   const current = ADSPACES_CLUSTER === "mainnet-beta" ? "mainnet" : "devnet";
   return (
@@ -118,33 +123,55 @@ function TabBody({ tab, data }: { tab: Tab; data: AdminMetrics }) {
   return <OverviewTab data={data} />;
 }
 
-// ---------- building blocks ----------
+// ---------- layout ----------
+
+// A tab: rows stacked, the last one takes the remaining height.
+const Page = ({ children }: { children: React.ReactNode }) => <div className="flex flex-col gap-3 lg:min-h-0 lg:flex-1">{children}</div>;
+
+const cols = { 2: "lg:grid-cols-2", 3: "lg:grid-cols-3", 4: "lg:grid-cols-4" } as const;
+
+// A row of fixed-height panels (charts, short lists).
+const Row = ({ n = 3, children }: { n?: keyof typeof cols; children: React.ReactNode }) => (
+  <div className={cx("grid shrink-0 gap-3 sm:grid-cols-2", cols[n])}>{children}</div>
+);
+
+// The last row: stretches to the bottom edge; each card inside scrolls on its own.
+const FillRow = ({ n = 4, children }: { n?: keyof typeof cols; children: React.ReactNode }) => (
+  <div className={cx("grid gap-3 sm:grid-cols-2 lg:min-h-48 lg:flex-1 lg:grid-rows-[minmax(0,1fr)]", cols[n])}>{children}</div>
+);
+// Class for a card inside a FillRow.
+const scroll = "lg:h-full lg:min-h-0 lg:overflow-y-auto hover-scrollbar";
+
+// Stats in one card, cells split by hairlines (the 1px gap shows the line colour behind them).
+const StatStrip = ({ children }: { children: React.ReactNode }) => (
+  <div className="grid shrink-0 gap-px overflow-hidden rounded-card border border-line bg-line shadow-card sm:grid-cols-2 lg:grid-cols-4">{children}</div>
+);
 
 type Status = { ok: boolean; text: string };
 
-function Tile({ label, value, detail, status }: { label: string; value: string; detail?: React.ReactNode; status?: Status }) {
+function Stat({ label, value, detail, status }: { label: string; value: string; detail?: React.ReactNode; status?: Status }) {
   return (
-    <div className="flex flex-col gap-0.5 rounded-card border border-line bg-surface p-3 shadow-card">
+    <div className="flex min-w-0 flex-col gap-0.5 bg-surface px-4 py-3">
       <span className="text-small text-muted">{label}</span>
       <span className="text-lead font-semibold tabular-nums">{value}</span>
-      {detail && <span className="text-caption text-muted">{detail}</span>}
+      {detail && <span className="truncate text-caption text-muted">{detail}</span>}
       {status && (
-        <span className={cx("mt-0.5 inline-flex items-center gap-1 text-caption font-medium", status.ok ? "text-success" : "text-danger")}>
-          {status.ok ? <CheckCircle2 className="size-3.5" aria-hidden /> : <AlertTriangle className="size-3.5" aria-hidden />}
-          {status.text}
+        <span className={cx("inline-flex items-center gap-1 text-caption font-medium", status.ok ? "text-success" : "text-danger")}>
+          {status.ok ? <CheckCircle2 className="size-3.5 shrink-0" aria-hidden /> : <AlertTriangle className="size-3.5 shrink-0" aria-hidden />}
+          <span className="truncate">{status.text}</span>
         </span>
       )}
     </div>
   );
 }
 
-function Breakdown({ title, rows, className }: { title: string; rows: Array<[React.ReactNode, number | string]>; className?: string }) {
+function List({ title, rows, className }: { title: string; rows: Array<[React.ReactNode, number | string]>; className?: string }) {
   return (
     <div className={cx("rounded-card border border-line bg-surface p-3 shadow-card", className)}>
       <h3 className="mb-1 text-small font-medium text-muted">{title}</h3>
       <dl className="flex flex-col divide-y divide-line">
         {rows.map(([label, value], index) => (
-          <div key={index} className="flex items-center justify-between gap-3 py-1 text-small">
+          <div key={index} className="flex items-center justify-between gap-3 py-1.5 text-small">
             <dt className="min-w-0 truncate">{label}</dt>
             <dd className="shrink-0 font-semibold tabular-nums">{value}</dd>
           </div>
@@ -153,10 +180,6 @@ function Breakdown({ title, rows, className }: { title: string; rows: Array<[Rea
     </div>
   );
 }
-
-const Grid = ({ cols = 4, children }: { cols?: 2 | 3 | 4; children: React.ReactNode }) => (
-  <div className={cx("grid gap-3 sm:grid-cols-2", cols === 4 ? "lg:grid-cols-4" : cols === 3 ? "lg:grid-cols-3" : "lg:grid-cols-2")}>{children}</div>
-);
 
 type Day = AdminMetrics["daily"][number];
 const daily = (data: AdminMetrics, pick: (day: Day) => number, label: (value: number) => string): DailyPoint[] =>
@@ -190,15 +213,15 @@ const profileLink = (handle: string) => (
 function OverviewTab({ data }: { data: AdminMetrics }) {
   const { money, marketplace, users, health } = data;
   return (
-    <div className="flex flex-col gap-3">
-      <Grid>
-        <Tile label="settled sales" value={formatUsd(money.settledGross.all)} detail={`7 days ${formatUsd(money.settledGross.last7)}`} />
-        <Tile label="platform fees" value={formatUsd(money.fees.all)} detail={`7 days ${formatUsd(money.fees.last7)}`} />
-        <Tile label="in escrow now" value={formatUsd(money.escrow.amount)} detail={plural(money.escrow.spots, "spot")} status={escrowStatus(data)} />
-        <Tile label="treasury (on-chain)" value={usd(money.treasury)} detail="fees in the multisig treasury" />
-        <Tile label="spots sold" value={String(marketplace.spotsSold)} detail={`sell-through ${pct(marketplace.sellThrough)}`} />
-        <Tile label="users" value={String(users.total)} detail={`${users.newLast7} new · ${users.activeLast7} active in 7 days`} />
-        <Tile
+    <Page>
+      <StatStrip>
+        <Stat label="settled sales" value={formatUsd(money.settledGross.all)} detail={`7 days ${formatUsd(money.settledGross.last7)}`} />
+        <Stat label="platform fees" value={formatUsd(money.fees.all)} detail={`7 days ${formatUsd(money.fees.last7)}`} />
+        <Stat label="in escrow now" value={formatUsd(money.escrow.amount)} detail={plural(money.escrow.spots, "spot")} status={escrowStatus(data)} />
+        <Stat label="treasury (on-chain)" value={usd(money.treasury)} detail="fees in the multisig treasury" />
+        <Stat label="spots sold" value={String(marketplace.spotsSold)} detail={`sell-through ${pct(marketplace.sellThrough)}`} />
+        <Stat label="users" value={String(users.total)} detail={`${users.newLast7} new · ${users.activeLast7} active in 7 days`} />
+        <Stat
           label="open disputes"
           value={String(health.disputesByState.open ?? 0)}
           detail={
@@ -207,14 +230,15 @@ function OverviewTab({ data }: { data: AdminMetrics }) {
             </Link>
           }
         />
-        <Tile label="fee and rent payer" value={health.feePayerSol === null ? "unavailable" : `${health.feePayerSol.toFixed(2)} SOL`} status={feePayerStatus(data)} />
-      </Grid>
-      <Grid cols={3}>
-        <DailyBars compact title="settled sales, 30 days" total={totalUsd(data, (day) => day.settledGross)} points={dailyUsd(data, (day) => day.settledGross)} />
-        <DailyBars compact title="spots sold, 30 days" total={String(total(data, (day) => day.sales))} points={daily(data, (day) => day.sales, (n) => plural(n, "sale"))} />
-        <DailyBars compact title="sign-ups, 30 days" total={String(total(data, (day) => day.signups))} points={daily(data, (day) => day.signups, (n) => plural(n, "sign-up"))} />
-      </Grid>
-    </div>
+        <Stat label="fee and rent payer" value={health.feePayerSol === null ? "unavailable" : `${health.feePayerSol.toFixed(2)} SOL`} status={feePayerStatus(data)} />
+      </StatStrip>
+      {/* The charts take the rest of the screen. */}
+      <FillRow n={3}>
+        <DailyBars fill title="settled sales, 30 days" total={totalUsd(data, (day) => day.settledGross)} points={dailyUsd(data, (day) => day.settledGross)} />
+        <DailyBars fill title="spots sold, 30 days" total={String(total(data, (day) => day.sales))} points={daily(data, (day) => day.sales, (n) => plural(n, "sale"))} />
+        <DailyBars fill title="sign-ups, 30 days" total={String(total(data, (day) => day.signups))} points={daily(data, (day) => day.signups, (n) => plural(n, "sign-up"))} />
+      </FillRow>
+    </Page>
   );
 }
 
@@ -228,25 +252,26 @@ function MoneyTab({ data }: { data: AdminMetrics }) {
     hint: plural(money.escrowByState[key] ?? 0, "spot"),
   });
   return (
-    <div className="flex flex-col gap-3">
-      <Grid>
-        <Tile label="settled sales" value={formatUsd(money.settledGross.all)} detail={`7 days ${formatUsd(money.settledGross.last7)} · 30 days ${formatUsd(money.settledGross.last30)}`} />
-        <Tile
+    <Page>
+      <StatStrip>
+        <Stat label="settled sales" value={formatUsd(money.settledGross.all)} detail={`7 days ${formatUsd(money.settledGross.last7)} · 30 days ${formatUsd(money.settledGross.last30)}`} />
+        <Stat
           label="platform fees"
           value={formatUsd(money.fees.all)}
           detail={`effective rate ${money.feeRateBps === null ? "n/a" : `${(money.feeRateBps / 100).toFixed(2)}%`} · 30 days ${formatUsd(money.fees.last30)}`}
         />
-        <Tile label="in escrow now" value={formatUsd(money.escrow.amount)} detail={plural(money.escrow.spots, "spot")} status={escrowStatus(data)} />
-        <Tile label="payouts ready" value={formatUsd(money.payoutsReady.amount)} detail={`${plural(money.payoutsReady.count, "spot")} past the review window`} />
-      </Grid>
-      <Grid cols={3}>
+        <Stat label="in escrow now" value={formatUsd(money.escrow.amount)} detail={plural(money.escrow.spots, "spot")} status={escrowStatus(data)} />
+        <Stat label="payouts ready" value={formatUsd(money.payoutsReady.amount)} detail={`${plural(money.payoutsReady.count, "spot")} past the review window`} />
+      </StatStrip>
+      <Row>
         <DailyBars compact title="settled sales, 30 days" total={totalUsd(data, (day) => day.settledGross)} points={dailyUsd(data, (day) => day.settledGross)} />
         <DailyBars compact title="platform fees, 30 days" total={totalUsd(data, (day) => day.fees)} points={dailyUsd(data, (day) => day.fees)} />
         <DailyBars compact title="wallet withdrawals, 30 days" total={totalUsd(data, (day) => day.withdrawn)} points={dailyUsd(data, (day) => day.withdrawn)} />
-      </Grid>
-      <Grid>
-        <HBars title="escrow by stage" rows={[stage("paid, awaiting delivery", "funded"), stage("delivered, in review", "delivered"), stage("disputed", "disputed")]} />
+      </Row>
+      <FillRow>
+        <HBars className={scroll} title="escrow by stage" rows={[stage("paid, awaiting delivery", "funded"), stage("delivered, in review", "delivered"), stage("disputed", "disputed")]} />
         <HBars
+          className={scroll}
           title="settled by pricing"
           rows={money.byMode.map((row) => ({
             label: row.mode === "auction" ? "auction" : "fixed price",
@@ -255,29 +280,31 @@ function MoneyTab({ data }: { data: AdminMetrics }) {
             hint: `${plural(row.sold, "sale")} · fees ${formatUsd(row.fees)}`,
           }))}
         />
-        <Breakdown
+        <List
+          className={scroll}
           title="where settled money went"
           rows={[
             ["to creators", formatUsd(money.creatorPayouts)],
             ["refunded to sponsors", formatUsd(money.refunds)],
             ["platform fees", formatUsd(money.fees.all)],
-            [
-              "paid · split · refunded",
-              `${money.settlementsByKind.payout ?? 0} · ${money.settlementsByKind.dispute_split ?? 0} · ${(money.settlementsByKind.refund ?? 0) + (money.settlementsByKind.timeout_refund ?? 0)}`,
-            ],
+            ["payouts", money.settlementsByKind.payout ?? 0],
+            ["dispute splits", money.settlementsByKind.dispute_split ?? 0],
+            ["full refunds", (money.settlementsByKind.refund ?? 0) + (money.settlementsByKind.timeout_refund ?? 0)],
           ]}
         />
-        <Breakdown
+        <List
+          className={scroll}
           title="treasury and withdrawals"
           rows={[
             ["treasury (on-chain)", usd(money.treasury)],
             ["withdrawn to wallets", formatUsd(money.withdrawals.amount)],
             ["withdrawn in 30 days", formatUsd(money.withdrawals.last30)],
-            ["confirmed · in flight", `${money.withdrawals.confirmed} · ${money.withdrawals.inFlight}`],
+            ["withdrawals confirmed", money.withdrawals.confirmed],
+            ["withdrawals in flight", money.withdrawals.inFlight],
           ]}
         />
-      </Grid>
-    </div>
+      </FillRow>
+    </Page>
   );
 }
 
@@ -286,21 +313,37 @@ function MarketplaceTab({ data }: { data: AdminMetrics }) {
   const spots = marketplace.spotsByState;
   const listings = marketplace.listingsByState;
   return (
-    <div className="flex flex-col gap-3">
-      <Grid>
-        <Tile label="spots sold" value={String(marketplace.spotsSold)} detail={`sell-through ${pct(marketplace.sellThrough)} of ${sumOf(spots)} spots`} />
-        <Tile label="average sale" value={formatUsd(marketplace.averageSale)} detail={`${marketplace.spotsPerListing?.toFixed(1) ?? "n/a"} spots per listing`} />
-        <Tile
+    <Page>
+      <StatStrip>
+        <Stat label="spots sold" value={String(marketplace.spotsSold)} detail={`sell-through ${pct(marketplace.sellThrough)} of ${sumOf(spots)} spots`} />
+        <Stat label="average sale" value={formatUsd(marketplace.averageSale)} detail={`${marketplace.spotsPerListing?.toFixed(1) ?? "n/a"} spots per listing`} />
+        <Stat
           label="auctions"
           value={marketplace.auctionUplift === null ? "n/a" : `+${Math.round((marketplace.auctionUplift - 1) * 100)}%`}
-          detail={`above the starting price · ${marketplace.averageBidsPerAuctionSpot.toFixed(1)} bids per spot`}
+          detail={`above the start · ${marketplace.averageBidsPerAuctionSpot.toFixed(1)} bids per spot`}
         />
-        <Tile label="speed" value={hours(marketplace.hoursToFirstSale)} detail={`live to first sale · review ${hours(marketplace.reviewHours)}`} />
-      </Grid>
-      <Grid cols={3}>
+        <Stat label="live to first sale" value={hours(marketplace.hoursToFirstSale)} detail={`review takes ${hours(marketplace.reviewHours)}`} />
+      </StatStrip>
+      <Row>
         <DailyBars compact title="new listings, 30 days" total={String(total(data, (day) => day.listings))} points={daily(data, (day) => day.listings, (n) => plural(n, "listing"))} />
         <DailyBars compact title="bids, 30 days" total={String(total(data, (day) => day.bids))} points={daily(data, (day) => day.bids, (n) => plural(n, "bid"))} />
+        <DailyBars compact title="spots sold, 30 days" total={String(total(data, (day) => day.sales))} points={daily(data, (day) => day.sales, (n) => plural(n, "sale"))} />
+      </Row>
+      <FillRow>
         <HBars
+          className={scroll}
+          title="sales by surface"
+          rows={[...marketplace.bySurface]
+            .sort((a, b) => b.sold - a.sold)
+            .map((row) => ({
+              label: SURFACE_LABELS[row.surface] ?? row.surface,
+              value: row.sold,
+              display: String(row.sold),
+              hint: `${plural(row.listings, "listing")} · ${formatUsd(row.settled)}`,
+            }))}
+        />
+        <HBars
+          className={scroll}
           title="sold spots by price"
           rows={marketplace.priceBuckets.map((row) => ({
             label: row.bucket,
@@ -309,40 +352,25 @@ function MarketplaceTab({ data }: { data: AdminMetrics }) {
             hint: pct(marketplace.spotsSold ? row.count / marketplace.spotsSold : null),
           }))}
         />
-      </Grid>
-      <Grid>
-        <HBars
-          title="sales by surface"
-          rows={[...marketplace.bySurface]
-            .sort((a, b) => b.sold - a.sold)
-            .map((row) => ({
-              label: SURFACE_LABELS[row.surface] ?? row.surface,
-              value: row.sold,
-              display: String(row.sold),
-              hint: `${plural(row.listings, "listing")} · ${formatUsd(row.settled)} settled`,
-            }))}
-        />
-        <Breakdown
-          title="listings"
+        <List
+          className={scroll}
+          title="listings and spots"
           rows={[
-            ["in review", listings.in_review ?? 0],
-            ["live", (listings.published ?? 0) + (listings.publishing ?? 0)],
-            ["closed", listings.closed ?? 0],
-            ["drafts · changes requested", `${listings.draft ?? 0} · ${listings.changes_requested ?? 0}`],
+            ["listings in review", listings.in_review ?? 0],
+            ["listings live", (listings.published ?? 0) + (listings.publishing ?? 0)],
+            ["listings closed", listings.closed ?? 0],
+            ["drafts", listings.draft ?? 0],
             ["rejected", listings.rejected ?? 0],
-          ]}
-        />
-        <Breakdown
-          title="spots"
-          rows={[
-            ["open", spots.open ?? 0],
-            ["paid · delivered", `${spots.funded ?? 0} · ${spots.delivered ?? 0}`],
-            ["disputed", spots.disputed ?? 0],
-            ["settled", spots.settled ?? 0],
+            ["spots open", spots.open ?? 0],
+            ["spots paid", spots.funded ?? 0],
+            ["spots delivered", spots.delivered ?? 0],
+            ["spots disputed", spots.disputed ?? 0],
+            ["spots settled", spots.settled ?? 0],
             ["refunded or cancelled", (spots.refunded ?? 0) + (spots.cancelled ?? 0)],
           ]}
         />
-        <Breakdown
+        <List
+          className={scroll}
           title="most bid-on listings"
           rows={
             marketplace.topListings.length
@@ -355,8 +383,8 @@ function MarketplaceTab({ data }: { data: AdminMetrics }) {
               : [["no bids yet", ""]]
           }
         />
-      </Grid>
-    </div>
+      </FillRow>
+    </Page>
   );
 }
 
@@ -366,15 +394,21 @@ function UsersTab({ data }: { data: AdminMetrics }) {
   const step = (label: string, value: number) => ({ label, value, display: String(value), hint: `${pct(funnel.signedUp ? value / funnel.signedUp : null)} of sign-ups` });
   const intent = (label: string, value = 0) => ({ label, value, display: String(value) });
   return (
-    <div className="flex flex-col gap-3">
-      <Grid>
-        <Tile label="users" value={String(users.total)} detail={`${users.newLast7} new in 7 days`} />
-        <Tile label="finished onboarding" value={String(users.onboarded)} detail={`${pct(users.total ? users.onboarded / users.total : null)} of users`} />
-        <Tile label="active in 7 days" value={String(users.activeLast7)} detail="made an on-chain action" />
-        <Tile label="repeat sponsors" value={String(users.repeatSponsors)} detail="bought 2 or more spots" />
-      </Grid>
-      <Grid cols={3}>
+    <Page>
+      <StatStrip>
+        <Stat label="users" value={String(users.total)} detail={`${users.newLast7} new in 7 days`} />
+        <Stat label="finished onboarding" value={String(users.onboarded)} detail={`${pct(users.total ? users.onboarded / users.total : null)} of users`} />
+        <Stat label="active in 7 days" value={String(users.activeLast7)} detail="made an on-chain action" />
+        <Stat label="repeat sponsors" value={String(users.repeatSponsors)} detail="bought 2 or more spots" />
+      </StatStrip>
+      <Row>
+        <DailyBars compact title="sign-ups, 30 days" total={String(total(data, (day) => day.signups))} points={daily(data, (day) => day.signups, (n) => plural(n, "sign-up"))} />
+        <DailyBars compact title="spots sold, 30 days" total={String(total(data, (day) => day.sales))} points={daily(data, (day) => day.sales, (n) => plural(n, "sale"))} />
+        <DailyBars compact title="new listings, 30 days" total={String(total(data, (day) => day.listings))} points={daily(data, (day) => day.listings, (n) => plural(n, "listing"))} />
+      </Row>
+      <FillRow>
         <HBars
+          className={scroll}
           title="sign-up funnel"
           rows={[
             step("signed up", funnel.signedUp),
@@ -384,31 +418,31 @@ function UsersTab({ data }: { data: AdminMetrics }) {
             step("bought a spot", funnel.bought),
           ]}
         />
-        <DailyBars compact title="sign-ups, 30 days" total={String(total(data, (day) => day.signups))} points={daily(data, (day) => day.signups, (n) => plural(n, "sign-up"))} />
         <HBars
+          className={scroll}
           title="what they came for"
           rows={[intent("sell ad space", users.byIntent.sell), intent("sponsor", users.byIntent.sponsor), intent("both", users.byIntent.both), intent("just browsing", users.byIntent.browse)]}
         />
-      </Grid>
-      <Grid cols={2}>
-        <Breakdown
+        <List
+          className={scroll}
           title="top creators by earnings"
           rows={
             marketplace.topCreators.length
-              ? marketplace.topCreators.map((row) => [profileLink(row.handle), `${formatUsd(row.earned)} · ${plural(row.spots, "spot")}`])
+              ? marketplace.topCreators.map((row) => [profileLink(row.handle), `${formatUsd(row.earned)} · ${row.spots}`])
               : [["no payouts yet", ""]]
           }
         />
-        <Breakdown
+        <List
+          className={scroll}
           title="top sponsors by spend"
           rows={
             marketplace.topSponsors.length
-              ? marketplace.topSponsors.map((row) => [profileLink(row.handle), `${formatUsd(row.spent)} · ${plural(row.spots, "spot")}`])
+              ? marketplace.topSponsors.map((row) => [profileLink(row.handle), `${formatUsd(row.spent)} · ${row.spots}`])
               : [["no purchases yet", ""]]
           }
         />
-      </Grid>
-    </div>
+      </FillRow>
+    </Page>
   );
 }
 
@@ -416,9 +450,9 @@ function HealthTab({ data }: { data: AdminMetrics }) {
   const { health, money } = data;
   const queueSlow = health.reviewQueue.oldestHours !== null && health.reviewQueue.oldestHours > 24;
   return (
-    <div className="flex flex-col gap-3">
-      <Grid>
-        <Tile
+    <Page>
+      <StatStrip>
+        <Stat
           label="open disputes"
           value={String(health.disputesByState.open ?? 0)}
           detail={
@@ -427,61 +461,45 @@ function HealthTab({ data }: { data: AdminMetrics }) {
             </Link>
           }
         />
-        <Tile label="dispute rate" value={pct(health.disputes.rate, 1)} detail={`of sold spots · closed in ${hours(health.disputes.hoursToClose)} on average`} />
-        <Tile
+        <Stat label="dispute rate" value={pct(health.disputes.rate, 1)} detail={`of sold spots · closed in ${hours(health.disputes.hoursToClose)}`} />
+        <Stat
           label="failed transactions"
           value={String(health.failedTxsLast7)}
-          detail={
-            <Link href="/review?tab=failed" className="text-accent hover:underline">
-              7 days · {health.abandonedTxsLast7} abandoned, never signed
-            </Link>
-          }
+          detail={`7 days · ${health.abandonedTxsLast7} never signed`}
           status={{ ok: health.failedTxsLast7 === 0, text: health.failedTxsLast7 === 0 ? "none on-chain" : "check the failed tab" }}
         />
-        <Tile label="fee and rent payer" value={health.feePayerSol === null ? "unavailable" : `${health.feePayerSol.toFixed(3)} SOL`} detail="pays every fee and all rent" status={feePayerStatus(data)} />
-        <Tile
+        <Stat label="fee and rent payer" value={health.feePayerSol === null ? "unavailable" : `${health.feePayerSol.toFixed(3)} SOL`} status={feePayerStatus(data)} />
+        <Stat
           label="review queue"
           value={plural(health.reviewQueue.waiting, "listing")}
           detail={health.reviewQueue.oldestHours === null ? "nothing waiting" : `oldest waiting ${hours(health.reviewQueue.oldestHours)}`}
           status={queueSlow ? { ok: false, text: "over a day: review it" } : undefined}
         />
-        <Tile
+        <Stat
           label="overdue deliveries"
           value={String(health.overdueDeliveries.count)}
-          detail={`${formatUsd(health.overdueDeliveries.amount)} past due with no proof`}
-          status={{ ok: health.overdueDeliveries.count === 0, text: health.overdueDeliveries.count === 0 ? "all on time" : "sponsors can take refunds" }}
+          detail={`${formatUsd(health.overdueDeliveries.amount)} past due, no proof`}
+          status={{ ok: health.overdueDeliveries.count === 0, text: health.overdueDeliveries.count === 0 ? "all on time" : "sponsors can refund" }}
         />
-        <Tile label="payouts ready" value={String(money.payoutsReady.count)} detail={`${formatUsd(money.payoutsReady.amount)} past the review window`} />
-        <Tile
-          label="escrow check"
-          value={money.escrow.matches === null ? "unavailable" : money.escrow.matches ? "balanced" : "mismatch"}
-          detail="database vs on-chain vaults"
-          status={escrowStatus(data)}
+        <Stat label="payouts ready" value={String(money.payoutsReady.count)} detail={`${formatUsd(money.payoutsReady.amount)} past review`} />
+        <Stat label="escrow check" value={money.escrow.matches === null ? "unavailable" : money.escrow.matches ? "balanced" : "mismatch"} status={escrowStatus(data)} />
+      </StatStrip>
+      <FillRow n={3}>
+        <DailyBars fill title="disputes opened, 30 days" total={String(total(data, (day) => day.disputes))} points={daily(data, (day) => day.disputes, (n) => plural(n, "dispute"))} />
+        <DailyBars fill title="failed transactions, 30 days" total={String(total(data, (day) => day.failedTxs))} points={daily(data, (day) => day.failedTxs, (n) => `${n} failed`)} />
+        <List
+          className={scroll}
+          title="transactions by type, 7 days"
+          rows={
+            health.txByOp.length
+              ? health.txByOp.map((row) => [
+                  row.op.replaceAll("_", " "),
+                  `${row.confirmed} ok${row.failed ? ` · ${row.failed} failed` : ""}${row.abandoned ? ` · ${row.abandoned} unsigned` : ""}`,
+                ])
+              : [["no transactions", ""]]
+          }
         />
-      </Grid>
-      <Grid cols={3}>
-        <DailyBars compact title="disputes opened, 30 days" total={String(total(data, (day) => day.disputes))} points={daily(data, (day) => day.disputes, (n) => plural(n, "dispute"))} />
-        <DailyBars compact title="failed transactions, 30 days" total={String(total(data, (day) => day.failedTxs))} points={daily(data, (day) => day.failedTxs, (n) => `${n} failed`)} />
-        <Breakdown
-          title="dispute outcomes"
-          rows={[
-            ["decided (split or refund)", health.disputesByState.resolved ?? 0],
-            ["withdrawn by the sponsor", health.disputesByState.withdrawn ?? 0],
-            ["timed out, full refund", health.disputesByState.timed_out ?? 0],
-          ]}
-        />
-      </Grid>
-      <Breakdown
-        title="transactions by type, 7 days"
-        rows={
-          health.txByOp.length
-            ? health.txByOp.map((row) => [
-                row.op.replaceAll("_", " "),
-                `${row.confirmed} ok${row.failed ? ` · ${row.failed} failed` : ""}${row.abandoned ? ` · ${row.abandoned} unsigned` : ""}`,
-              ])
-            : [["no transactions", ""]]
-        }
-      />
-    </div>
+      </FillRow>
+    </Page>
   );
 }
