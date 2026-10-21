@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNotNull, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lt, notInArray, or, sql, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { Db } from "../db/client.js";
 import { chainTxs, spots, withdrawals } from "../db/schema.js";
@@ -38,6 +38,9 @@ export interface ReconcileReport {
 const LANDING_WINDOW_MS = 2 * 60 * 1000;
 // Failed rows are rechecked for a week in case a confirmation timed out but the tx landed.
 const FAILED_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
+// A pending row has no signature: it was built (or prepared for a user to sign) but never sent. The
+// signature is stored before sending, so nothing of it can be on-chain, and its blockhash is long dead.
+const UNSIGNED_EXPIRY_MS = 60 * 60 * 1000;
 
 // Which DB spot states are consistent with each on-chain status.
 const consistent: Record<ChainSpotStatus, readonly string[]> = {
@@ -50,6 +53,13 @@ const consistent: Record<ChainSpotStatus, readonly string[]> = {
 };
 
 async function reconcileTransactions(deps: ReconcilerDeps, now: Date) {
+  const expired = await deps.db
+    .update(chainTxs)
+    .set({ status: "failed", error: "never signed or sent", updatedAt: now })
+    .where(
+      and(eq(chainTxs.status, "pending"), isNull(chainTxs.signature), lt(chainTxs.updatedAt, new Date(now.getTime() - UNSIGNED_EXPIRY_MS))),
+    )
+    .returning({ id: chainTxs.id });
   const rows = await deps.db
     .select({ id: chainTxs.id, status: chainTxs.status, signature: chainTxs.signature, updatedAt: chainTxs.updatedAt })
     .from(chainTxs)
@@ -84,7 +94,7 @@ async function reconcileTransactions(deps: ReconcilerDeps, now: Date) {
       }
     }
   }
-  return { checked: rows.length, confirmed, failed };
+  return { checked: rows.length, confirmed, failed: failed + expired.length };
 }
 
 // Withdrawal ids are embedded in their transaction keys (`withdrawal:<id>`).
