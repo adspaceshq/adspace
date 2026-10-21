@@ -39,7 +39,7 @@ export function LedgerView() {
   // One screen on desktop: the page stays put and the table (or a listing's ledger) scrolls inside,
   // with a scrollbar that only shows on hover. Phones scroll the page as usual.
   return (
-    <div className="flex flex-col gap-4 lg:h-[calc(100dvh-15rem)]">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="flex flex-col gap-1">
         <Link href="/review" className="inline-flex items-center gap-1.5 self-start text-small text-muted hover:text-ink">
           <ArrowLeft className="size-4" aria-hidden /> queue
