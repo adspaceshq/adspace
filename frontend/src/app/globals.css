@@ -114,15 +114,16 @@ h1, h2, h3, h4 {
   }
 }
 
-/* One-screen dashboards: the same slim scrollbar, shown only while the pointer is over the panel. */
+/* One-screen dashboards: a slim scrollbar with no arrows, shown only while the pointer is over the panel.
+   Chrome ignores the ::-webkit-scrollbar rules once scrollbar-width/color are set, so those standard
+   properties apply only where the webkit pseudo-elements don't exist (Firefox). */
 @utility hover-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  &:hover {
-    scrollbar-color: color-mix(in srgb, var(--color-ink) 20%, transparent) transparent;
-  }
   &::-webkit-scrollbar {
     width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
   }
   &::-webkit-scrollbar-thumb {
     border-radius: 999px;
@@ -131,8 +132,16 @@ h1, h2, h3, h4 {
   &:hover::-webkit-scrollbar-thumb {
     background: color-mix(in srgb, var(--color-ink) 20%, transparent);
   }
-  &::-webkit-scrollbar-track {
+  &::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-corner {
     background: transparent;
+  }
+  @supports not selector(::-webkit-scrollbar) {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+    &:hover {
+      scrollbar-color: color-mix(in srgb, var(--color-ink) 20%, transparent) transparent;
+    }
   }
 }
 
