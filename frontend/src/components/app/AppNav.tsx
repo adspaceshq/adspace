@@ -74,7 +74,7 @@ export function AppSidebar() {
     );
   };
   return (
-    <nav aria-label="app" className="hidden w-56 shrink-0 flex-col gap-6 self-start py-6 lg:sticky lg:top-16 lg:flex lg:h-[calc(100dvh-7rem)]">
+    <nav aria-label="app" className="hidden w-56 shrink-0 flex-col gap-6 self-start py-6 lg:sticky lg:top-16 lg:flex lg:h-[calc(100dvh-7rem)] lg:max-h-full">
       {sidebarSections.map((section, index) => (
         <div key={index} className="flex flex-col gap-1">
           {section.title && <p className="px-3 pb-1 text-caption font-medium uppercase tracking-wide text-subtle">{section.title}</p>}

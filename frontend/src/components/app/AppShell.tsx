@@ -1,4 +1,5 @@
 import { AppSidebar, BottomTabs, SignedInBottomTabs } from "./AppNav";
+import { cx } from "@/lib/cx";
 import { DevnetBanner } from "./DevnetBanner";
 import { PausedBanner } from "./PausedBanner";
 import { CompactFooter, SiteFooter } from "./SiteFooter";
@@ -11,9 +12,22 @@ import { TopBar } from "./TopBar";
 // "app": signed-in work areas — sidebar on desktop, bottom tabs on mobile.
 // Public pages on small screens get a menu in the top bar, bottom tabs when signed in, and the full
 // footer (with the legal links). `mobileTabs={false}` for pages with their own bottom bar (listing).
-export function AppShell({ children, variant = "public", mobileTabs = true }: { children: React.ReactNode; variant?: "public" | "app"; mobileTabs?: boolean }) {
+// fill (app variant): on desktop the whole layout is exactly the window's height, so the window never
+// scrolls; banners and the header take their space, the page gets the rest and scrolls its own panels.
+// Phones scroll as usual.
+export function AppShell({
+  children,
+  variant = "public",
+  mobileTabs = true,
+  fill = false,
+}: {
+  children: React.ReactNode;
+  variant?: "public" | "app";
+  mobileTabs?: boolean;
+  fill?: boolean;
+}) {
   return (
-    <div className="flex min-h-dvh flex-col bg-canvas">
+    <div className={cx("flex min-h-dvh flex-col bg-canvas", fill && "lg:h-dvh lg:overflow-hidden")}>
       <DevnetBanner />
       <PausedBanner />
       <TopBar inSidebar={variant === "app"} />
@@ -28,9 +42,16 @@ export function AppShell({ children, variant = "public", mobileTabs = true }: { 
           {mobileTabs && <SignedInBottomTabs />}
         </>
       ) : (
-        <div className="mx-auto flex w-full max-w-7xl flex-1 gap-8 px-4 sm:px-6">
+        <div className={cx("mx-auto flex w-full max-w-7xl flex-1 gap-8 px-4 sm:px-6", fill && "lg:min-h-0")}>
           <AppSidebar />
-          <main id="main" className="min-w-0 flex-1 py-8 pb-24 lg:pb-24">
+          <main
+            id="main"
+            className={cx(
+              "min-w-0 flex-1 py-8 pb-24",
+              // The compact footer is fixed over the bottom 3rem; keep the page clear of it.
+              fill ? "flex flex-col lg:min-h-0 lg:pb-16 lg:pt-6" : "lg:pb-24",
+            )}
+          >
             {children}
           </main>
         </div>
