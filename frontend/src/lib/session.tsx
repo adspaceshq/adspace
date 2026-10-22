@@ -135,6 +135,12 @@ const hintSnapshot = () => (hasPrivyHint() ? "signed-in" : "guest");
 // The server can't see localStorage; until hydration the session counts as unknown (not ready).
 const serverHintSnapshot = () => "unknown";
 
+// Whether this browser was signed in last time (Privy's stored token), known before Privy loads. Lets a
+// layout show the signed-in frame from the first paint instead of jumping once the session arrives.
+export function useSignedInHint(): boolean {
+  return useSyncExternalStore(noSubscription, hintSnapshot, serverHintSnapshot) === "signed-in";
+}
+
 function LazyPrivySession({ children }: { children: React.ReactNode }) {
   const hint = useSyncExternalStore(noSubscription, hintSnapshot, serverHintSnapshot);
   const checked = hint !== "unknown";
