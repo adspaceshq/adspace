@@ -9,8 +9,8 @@ export const privyConfigured = Boolean(appId && appSecret);
 export const privy = privyConfigured ? new PrivyClient({ appId, appSecret }) : null;
 
 export function cookieOptions() {
-  // Deployed the API (onrender) and the frontend (workers.dev) are cross-site,
-  // and browsers never attach SameSite=Lax cookies to cross-site fetch — every
+  // When the API and the frontend are on different sites (a preview deploy, say),
+  // browsers never attach SameSite=Lax cookies to cross-site fetch — every
   // mutation then arrives cookieless and fails CSRF. SameSite=None (Secure) is
   // sent cross-site and also works same-site, so it is the production default.
   const raw = (process.env.SESSION_COOKIE_SAMESITE ?? "").trim().toLowerCase();
