@@ -5,9 +5,9 @@ const apiKey = process.env.CLOUDINARY_API_KEY?.trim() ?? "";
 const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim() ?? "";
 const rootFolder = (process.env.CLOUDINARY_UPLOAD_FOLDER?.trim() || "adspaces").replace(/^\/+|\/+$/g, "");
 
-export type CloudinaryUploadKind = "listings" | "logos" | "proofs" | "videos" | "static/landing" | "posts" | "evidence" | "avatars";
+export type CloudinaryUploadKind = "listings" | "logos" | "proofs" | "videos" | "static/landing" | "posts" | "evidence" | "avatars" | "support";
 
-const KINDS: readonly CloudinaryUploadKind[] = ["listings", "logos", "proofs", "videos", "static/landing", "posts", "evidence", "avatars"];
+const KINDS: readonly CloudinaryUploadKind[] = ["listings", "logos", "proofs", "videos", "static/landing", "posts", "evidence", "avatars", "support"];
 
 export function cloudinaryConfigured(): boolean {
   return Boolean(cloudName && apiKey && apiSecret);

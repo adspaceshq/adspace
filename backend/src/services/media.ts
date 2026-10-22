@@ -17,13 +17,14 @@ const FOLDERS: Record<AssetKind, CloudinaryUploadKind> = {
   brand_logo: "logos",
   evidence: "evidence",
   avatar: "avatars",
+  support: "support",
 };
 const IMAGE_FORMATS = ["jpg", "jpeg", "png", "webp", "heic", "avif"];
 const MAX_BYTES = 15 * 1024 * 1024;
 
 export function parseAssetKind(value: unknown): AssetKind {
   if (typeof value === "string" && value in FOLDERS) return value as AssetKind;
-  throw new MediaError("kind must be listing_photo, post_media, brand_logo, evidence or avatar");
+  throw new MediaError("kind must be listing_photo, post_media, brand_logo, evidence, avatar or support");
 }
 
 export function signUpload(kind: AssetKind) {
