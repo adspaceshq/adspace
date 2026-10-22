@@ -23,9 +23,9 @@ export interface Viewer {
 }
 
 export interface TicketInput {
-  topic: unknown;
-  subject: unknown;
-  message: unknown;
+  topic?: unknown;
+  subject?: unknown;
+  message?: unknown;
   attachmentIds?: unknown;
   page?: unknown;
   listingId?: unknown;
@@ -187,7 +187,7 @@ export async function getTicket(db: Db, viewer: Viewer, ticketId: string) {
 
 // Adds a message. A team reply marks the ticket answered and emails the user; a user reply reopens
 // it and tells the team. Replying to a closed ticket reopens it.
-export async function replyToTicket(db: Db, viewer: Viewer, ticketId: string, input: { message: unknown; attachmentIds?: unknown }, team: TeamLookup, now = new Date()) {
+export async function replyToTicket(db: Db, viewer: Viewer, ticketId: string, input: { message?: unknown; attachmentIds?: unknown }, team: TeamLookup, now = new Date()) {
   const ticket = await ticketFor(db, viewer, ticketId);
   const fromStaff = viewer.isStaff && ticket.userId !== viewer.id;
   const body = text(input.message, "the message", 1, 4000);
