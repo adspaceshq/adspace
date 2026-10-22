@@ -34,6 +34,7 @@ import { spotBidHistory } from "../services/bid-history.js";
 import { listingLedger, searchListings, verifyLedger } from "../services/ledger.js";
 import { listWatchlist, unwatchListing, watchListing } from "../services/watchlist.js";
 import { getPrefs, listNotifications, markRead, setPrefs } from "../services/notifications.js";
+import { resubscribe, unsubscribe, unsubscribeStatus } from "../services/unsubscribe.js";
 import { reconcile } from "../services/reconciler.js";
 import { adoptListings, prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
 import { adminMetrics, readChainMetrics } from "../services/metrics.js";
@@ -149,6 +150,8 @@ export function createV2Router(options: {
   buyerPaidDisputes?: boolean;
   // Below this the metrics page flags the fee and rent payer as low (MIN_FEE_PAYER_LAMPORTS).
   minFeePayerLamports?: number;
+  // Signs email unsubscribe links (EMAIL_UNSUBSCRIBE_SECRET). Without it the unsubscribe routes answer 503.
+  unsubscribeSecret?: string;
 }) {
   const { db, chain, reviewers } = options;
   const minFeePayerLamports = options.minFeePayerLamports ?? 1_000_000_000;
@@ -963,6 +966,20 @@ export function createV2Router(options: {
   );
   router.get("/me/notification-prefs", requireUser, handle(async (req, res) => send(res, await getPrefs(db, me(req).id))));
   router.put("/me/notification-prefs", ...mutate, handle(async (req, res) => send(res, await setPrefs(db, me(req).id, req.body))));
+
+  // Email unsubscribe: the signed token is the authorization, so no session or CSRF token.
+  // Mail clients POST with the token in the query (RFC 8058); the app page sends it in the body.
+  const unsubscribeRoute = (action: (db: Db, secret: string, token: unknown) => Promise<unknown>) =>
+    handle(async (req, res) => {
+      if (!options.unsubscribeSecret) return void send(res, { error: "unsubscribe is not configured" }, 503);
+      const token = req.query.token ?? (req.body as { token?: unknown } | undefined)?.token;
+      const result = await action(db, options.unsubscribeSecret, token);
+      if (!result) return void send(res, { error: "this unsubscribe link is not valid" }, 404);
+      send(res, result);
+    });
+  router.get("/email/unsubscribe", mutationLimiter, unsubscribeRoute(unsubscribeStatus));
+  router.post("/email/unsubscribe", mutationLimiter, unsubscribeRoute(unsubscribe));
+  router.post("/email/resubscribe", mutationLimiter, unsubscribeRoute(resubscribe));
   router.get(
     "/spots/:id/bids",
     handle(async (req, res) => {

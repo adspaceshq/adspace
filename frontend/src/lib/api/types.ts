@@ -648,6 +648,12 @@ export interface WatchItem {
 
 export type NotificationCategory = "sales" | "bidding" | "delivery" | "disputes" | "payments" | "listings" | "messages" | "reminders";
 
+// A category's email state as read through an unsubscribe link.
+export interface UnsubscribeState {
+  category: NotificationCategory;
+  subscribed: boolean;
+}
+
 export interface AppNotification {
   id: string;
   type: string;

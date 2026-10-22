@@ -1,5 +1,5 @@
-// Cloudinary does resizing and format negotiation itself, which also works on Cloudflare
-// where Next's built-in optimizer does not run. Other sources are served as-is.
+// Cloudinary does resizing and format negotiation itself, so images skip Next's built-in
+// optimizer. Other sources are served as-is.
 const CLOUDINARY_UPLOAD = /^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(.*)$/;
 
 export default function imageLoader({ src, width, quality }: { src: string; width: number; quality?: number }): string {

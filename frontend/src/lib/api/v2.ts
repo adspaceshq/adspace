@@ -44,6 +44,7 @@ import type {
   WatchItem,
   AppNotification,
   NotificationCategory,
+  UnsubscribeState,
 } from "./types";
 
 const BASE = `${(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080").replace(/\/$/, "")}/api/v2`;
@@ -107,6 +108,13 @@ export const api = {
       }),
     me: () => get<Session>("/auth/me"),
     logout: () => post<{ ok: true }>("/auth/logout"),
+  },
+
+  // Unsubscribe links in emails: the signed token stands in for a session.
+  email: {
+    unsubscribeStatus: (token: string) => get<UnsubscribeState>(`/email/unsubscribe?token=${enc(token)}`),
+    unsubscribe: (token: string) => post<UnsubscribeState>("/email/unsubscribe", { token }),
+    resubscribe: (token: string) => post<UnsubscribeState>("/email/resubscribe", { token }),
   },
 
   me: {
