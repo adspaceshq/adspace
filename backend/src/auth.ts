@@ -95,10 +95,12 @@ function xFromPrivyUser(u: {
   return xFromAccounts(u.linked_accounts ?? u.linkedAccounts);
 }
 
-function accountDetails(accounts: Linked[] | undefined): { email?: string; walletAddress?: string } {
-  const emailAccount = (accounts ?? []).find((account) =>
-    (account.type ?? "").toLowerCase().includes("email"),
-  );
+// The email we treat as verified: one confirmed through Privy's email code, else the one on a Google
+// login (Google only signs people in with an address it has verified). X logins carry no email.
+export function accountDetails(accounts: Linked[] | undefined): { email?: string; walletAddress?: string } {
+  const emailAccount =
+    (accounts ?? []).find((account) => (account.type ?? "").toLowerCase() === "email") ??
+    (accounts ?? []).find((account) => (account.type ?? "").toLowerCase() === "google_oauth" && account.email);
   const solanaWallet = (accounts ?? []).find((account) => {
     const type = (account.type ?? "").toLowerCase();
     const chain = (account.chain_type ?? account.chainType ?? "").toLowerCase();

@@ -4,6 +4,8 @@ import { DevnetBanner } from "./DevnetBanner";
 import { PausedBanner } from "./PausedBanner";
 import { CompactFooter, SiteFooter } from "./SiteFooter";
 import { TopBar } from "./TopBar";
+import { FirstRunRedirect } from "./FirstRunRedirect";
+import { Suspense } from "react";
 
 // The window scrolls (one standard browser scrollbar). The header sticks to the top, the compact
 // footer is fixed to the bottom on desktop, and the app sidebar sticks between them, so only the
@@ -28,6 +30,9 @@ export function AppShell({
 }) {
   return (
     <div className={cx("flex min-h-dvh flex-col bg-canvas", fill && "lg:h-dvh lg:overflow-hidden")}>
+      <Suspense fallback={null}>
+        <FirstRunRedirect />
+      </Suspense>
       <DevnetBanner />
       <PausedBanner />
       <TopBar inSidebar={variant === "app"} />
