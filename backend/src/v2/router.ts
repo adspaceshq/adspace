@@ -37,7 +37,7 @@ import { getPrefs, listNotifications, markRead, setPrefs } from "../services/not
 import { reconcile } from "../services/reconciler.js";
 import { adoptListings, prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
 import { adminMetrics, readChainMetrics } from "../services/metrics.js";
-import { closeTicket, createTicket, getTicket, listMyTickets, listTickets, replyToTicket, type SupportState } from "../services/support.js";
+import { closeTicket, createTicket, getTicket, listMyTickets, listTickets, openTicketCount, replyToTicket, type SupportState } from "../services/support.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
 
@@ -1006,7 +1006,11 @@ export function createV2Router(options: {
     requireReviewer,
     handle(async (_req, res) => {
       const timeoutSeconds = chain ? await chain.readDisputeTimeoutSeconds().catch(() => 3 * 24 * 60 * 60) : 3 * 24 * 60 * 60;
-      send(res, await reviewSummary(db, new Date(), { readDeadlines: chain?.readDisputeDeadlines, timeoutSeconds }, { proposalStatus: chain?.squads?.proposalStatus }));
+      const [summary, openSupport] = await Promise.all([
+        reviewSummary(db, new Date(), { readDeadlines: chain?.readDisputeDeadlines, timeoutSeconds }, { proposalStatus: chain?.squads?.proposalStatus }),
+        openTicketCount(db),
+      ]);
+      send(res, { ...summary, counts: { ...summary.counts, openSupport } });
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));
