@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { Session } from "@/lib/api/types";
 import { PRIVY_APP_ID } from "@/lib/privy";
+import { markSignInStarted } from "@/lib/first-run";
 
 export interface WalletAccess {
   // Gasless: the backend submits transactions for the user's embedded wallet via a Privy signer.
@@ -144,13 +145,23 @@ function LazyPrivySession({ children }: { children: React.ReactNode }) {
 
   const requestAuth = useCallback(() => setRequested(true), []);
   const signIn = useCallback(() => {
+    markSignInStarted();
     setLoginRequested(true);
     setRequested(true);
   }, []);
   const onLoginHandled = useCallback(() => setLoginRequested(false), []);
 
   const value = useMemo<SessionState>(() => {
-    if (bridged) return { ...bridged, requestAuth };
+    // Privy already loaded: still note the sign-in, so a first-time user is taken to setup afterwards.
+    if (bridged)
+      return {
+        ...bridged,
+        signIn: () => {
+          markSignInStarted();
+          bridged.signIn();
+        },
+        requestAuth,
+      };
     // Loading Privy: not ready yet. Not loading: a guest, with sign in loading Privy on demand.
     return { ...guest, ready: checked && !load, signIn, requestAuth };
   }, [bridged, checked, load, signIn, requestAuth]);
