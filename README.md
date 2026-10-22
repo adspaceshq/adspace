@@ -6,7 +6,7 @@ is held on-chain until the creator posts proof of delivery, then paid out.
 
 - App (devnet, test USDC): https://devnet.adspaces.fun
 - Website: https://adspaces.fun
-- Solana program: [adspaceshq/adspaces-program](https://github.com/adspaceshq/adspaces-program)
+- Solana program (devnet): [`8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5`](https://explorer.solana.com/address/8Vg24teSaNrY4AmksQ8hZw2z2RRPuobeCtir7jVTYGw5?cluster=devnet)
 - X: [@adspacesfun](https://x.com/adspacesfun)
 
 > **Status:** live on Solana devnet with test USDC, so nothing here moves real money. Mainnet is next.
@@ -97,3 +97,7 @@ Money is held by the Solana program, not by this server. Upgrades, settings and 
 a 2-of-3 multisig, and a separate guardian key can pause new purchases in an emergency.
 
 Please report security issues privately to support@adspaces.fun.
+
+## License
+
+All rights reserved. This repository is public for hackathon evaluation only; see [LICENSE](LICENSE).
