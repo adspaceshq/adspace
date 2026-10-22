@@ -47,5 +47,8 @@ export const queryKeys = {
   adminStatus: ["admin", "status"] as const,
   adminRent: ["admin", "rent"] as const,
   adminMetrics: ["admin", "metrics"] as const,
+  supportMine: ["support", "mine"] as const,
+  supportTicket: (id: string) => ["support", "ticket", id] as const,
+  supportQueue: (state: string) => ["support", "queue", state] as const,
   profile: (handle: string) => ["profile", handle] as const,
 };

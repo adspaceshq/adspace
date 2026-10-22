@@ -47,6 +47,9 @@ const CTA_LABELS: Record<string, string> = {
   listing_approved: "view listing",
   listing_changes_requested: "view listing",
   listing_rejected: "view listing",
+  support_received: "view your request",
+  support_reply: "read the reply",
+  support_new: "open the request",
 };
 
 export const ctaLabel = (type: string | null | undefined) => (type && CTA_LABELS[type]) || "open adspaces";

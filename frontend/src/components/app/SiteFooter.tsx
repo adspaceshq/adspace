@@ -30,7 +30,7 @@ export function SiteFooter({ bottomInset = false }: { bottomInset?: boolean }) {
             { href: "https://adspaces.fun", label: "adspaces.fun" },
             { href: "https://adspaces.fun/#faq", label: "faq" },
             { href: "https://x.com/adspacesfun", label: "x / twitter" },
-            { href: "mailto:support@adspaces.fun", label: "support" },
+            { href: "/help", label: "help" },
           ]}
         />
         <FooterColumn
@@ -74,7 +74,7 @@ export function CompactFooter() {
           <Link href="/privacy" className="hover:text-ink">privacy</Link>
           <Link href="/fees" className="hover:text-ink">fees</Link>
           <Link href="/content-policy" className="hover:text-ink">content policy</Link>
-          <a href="mailto:support@adspaces.fun" className="hover:text-ink">support</a>
+          <Link href="/help" className="hover:text-ink">help</Link>
           <a href="https://adspaces.fun" className="hover:text-ink">adspaces.fun</a>
         </nav>
       </div>

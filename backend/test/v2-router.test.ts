@@ -558,3 +558,28 @@ test("the review summary lists stale Squads proposals with what to cancel", asyn
   assert.ok(Array.isArray(summary.body.staleProposals));
   assert.equal(typeof summary.body.counts.staleProposals, "number");
 });
+
+test("support: sign-in required, owners and the team only, team queue for reviewers", async () => {
+  const user = await signIn("support_user");
+  const stranger = await signIn("support_stranger");
+  const reviewer = await signIn("reviewer_one");
+  const ticket = { topic: "bug", subject: "claim button does nothing", message: "I press claim on a spot and nothing happens at all." };
+
+  await request(app).post("/api/v2/support/tickets").send(ticket).expect(401);
+  await request(app).post("/api/v2/support/tickets").set("Cookie", user.cookie).send(ticket).expect(403);
+  const created = await request(app).post("/api/v2/support/tickets").set("Cookie", user.cookie).set("x-csrf-token", user.csrf).send(ticket).expect(201);
+  const id = created.body.id as string;
+
+  await request(app).get(`/api/v2/support/tickets/${id}`).set("Cookie", user.cookie).expect(200);
+  await request(app).get(`/api/v2/support/tickets/${id}`).set("Cookie", stranger.cookie).expect(404);
+  const staffView = await request(app).get(`/api/v2/support/tickets/${id}`).set("Cookie", reviewer.cookie).expect(200);
+  assert.equal(staffView.body.user.handle, "support_user");
+
+  await request(app).get("/api/v2/review/support").set("Cookie", user.cookie).expect(403);
+  const queue = await request(app).get("/api/v2/review/support?state=open").set("Cookie", reviewer.cookie).expect(200);
+  assert.ok((queue.body as Array<{ id: string }>).some((row) => row.id === id));
+
+  await request(app).post(`/api/v2/support/tickets/${id}/messages`).set("Cookie", reviewer.cookie).set("x-csrf-token", reviewer.csrf).send({ message: "fixed, try again now" }).expect(201);
+  const mine = await request(app).get("/api/v2/support/tickets").set("Cookie", user.cookie).expect(200);
+  assert.equal(mine.body[0].state, "answered");
+});

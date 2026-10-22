@@ -1,5 +1,9 @@
 import type {
   ActivityItem,
+  SupportState,
+  SupportTicket,
+  SupportTicketInput,
+  SupportTicketSummary,
   AdminMetrics,
   TeamMember,
   LedgerListingHit,
@@ -209,8 +213,16 @@ export const api = {
     sendMessage: (id: string, body: string) => post<Message>(`/spots/${enc(id)}/messages`, { body }),
   },
 
+  support: {
+    mine: () => get<SupportTicketSummary[]>("/support/tickets"),
+    create: (input: SupportTicketInput) => post<SupportTicketSummary>("/support/tickets", input),
+    ticket: (id: string) => get<SupportTicket>(`/support/tickets/${enc(id)}`),
+    reply: (id: string, message: string, attachmentIds: string[] = []) => post<{ id: string }>(`/support/tickets/${enc(id)}/messages`, { message, attachmentIds }),
+    close: (id: string) => post<{ id: string; state: "closed" }>(`/support/tickets/${enc(id)}/close`),
+  },
   review: {
     queue: () => get<ReviewQueueItem[]>("/review/queue"),
+    support: (state: SupportState) => get<SupportTicketSummary[]>(`/review/support?state=${state}`),
     listing: (listingId: string) => get<ReviewListingDetail>(`/review/listings/${enc(listingId)}`),
     summary: () => get<ReviewSummary>("/review/summary"),
     decide: (listingId: string, decision: ReviewDecision) => post<Listing>(`/review/listings/${enc(listingId)}`, decision),

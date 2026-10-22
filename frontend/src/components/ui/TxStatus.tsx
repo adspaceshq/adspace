@@ -1,3 +1,7 @@
+"use client";
+
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { AlertCircle, CheckCircle2, Loader2, PenLine } from "lucide-react";
 import { cx } from "@/lib/cx";
 import { Button } from "./Button";
@@ -30,6 +34,7 @@ export function TxStatus({
   onRetry?: () => void;
   className?: string;
 }) {
+  const pathname = usePathname();
   if (state.phase === "idle") return null;
   const { title, tone } = copy[state.phase];
   const Icon =
@@ -62,6 +67,12 @@ export function TxStatus({
         </p>
         {state.phase === "failed" && state.error && (
           <p className="mt-0.5 text-small text-muted">{state.error}</p>
+        )}
+        {state.phase === "failed" && (
+          // The request records this page; the server attaches the failed transaction itself.
+          <Link href={`/help?topic=bug&from=${encodeURIComponent(pathname)}#contact`} className="mt-1 inline-block text-small font-medium text-accent hover:underline">
+            get help with this
+          </Link>
         )}
         {state.signature && <Address value={state.signature} kind="tx" chars={6} prefix="tx " className="mt-1 text-small" />}
       </div>
