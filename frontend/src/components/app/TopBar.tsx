@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import Logo from "@/components/Logo";
 import { Button } from "@/components/ui/Button";
-import { useSession } from "@/lib/session";
+import { useSession, useSignedInHint } from "@/lib/session";
 import { cx } from "@/lib/cx";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { AccountMenu } from "./AccountMenu";
@@ -17,9 +17,12 @@ const links = [
 ];
 
 // `inSidebar`: app pages show the account card at the bottom of the sidebar on desktop instead of here.
-export function TopBar({ inSidebar = false }: { inSidebar?: boolean }) {
+// Public pages have the sidebar too once someone is signed in (PublicFrame), with the same rule.
+export function TopBar({ inSidebar: appPage = false }: { inSidebar?: boolean }) {
   const pathname = usePathname();
   const { ready, session, signIn, signOut } = useSession();
+  const hinted = useSignedInHint();
+  const inSidebar = appPage || Boolean(session) || (!ready && hinted);
   return (
     <header className="sticky top-0 z-40 border-b border-line bg-canvas/85 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:px-6 md:gap-6">
