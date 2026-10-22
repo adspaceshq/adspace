@@ -45,7 +45,7 @@ const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
       { href: "/activity", label: "activity", icon: Activity },
       { href: "/watchlist", label: "saved", icon: Bookmark },
       { href: "/settings", label: "settings", icon: Settings },
-      { href: "mailto:support@adspaces.fun", label: "need help?", icon: LifeBuoy },
+      { href: "/help", label: "need help?", icon: LifeBuoy },
     ],
   },
 ];

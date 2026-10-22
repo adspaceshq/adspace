@@ -37,6 +37,7 @@ import { getPrefs, listNotifications, markRead, setPrefs } from "../services/not
 import { reconcile } from "../services/reconciler.js";
 import { adoptListings, prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
 import { adminMetrics, readChainMetrics } from "../services/metrics.js";
+import { closeTicket, createTicket, getTicket, listMyTickets, listTickets, openTicketCount, replyToTicket, type SupportState } from "../services/support.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
 
@@ -846,6 +847,44 @@ export function createV2Router(options: {
       send(res, await rentReport({ db, readLamports: context.readLamports, readListingRentPayers: context.readListingRentPayers, serverRentPayer: context.rentPayer.publicKey }));
     }),
   );
+  // ---- support ----
+  // Everyone on the team hears about new requests: owner admins from env, roles granted in the app,
+  // and env reviewers.
+  const supportTeam = async () => (await listStaff(db, [...admins, ...reviewers])).map((member) => member.userId);
+  const supportViewer = (req: Request, res: Response) => ({ id: me(req).id, isStaff: Boolean(roleIn(res)) });
+  const ticketLimiter = perUser(60 * 60_000, 10);
+  router.get("/support/tickets", requireUser, handle(async (req, res) => send(res, await listMyTickets(db, me(req).id))));
+  router.post(
+    "/support/tickets",
+    ...mutate,
+    ticketLimiter,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      send(res, await createTicket(db, me(req).id, { ...body, userAgent: req.get("user-agent") }, supportTeam), 201);
+    }),
+  );
+  router.get("/support/tickets/:id", requireUser, handle(async (req, res) => send(res, await getTicket(db, supportViewer(req, res), req.params.id))));
+  router.post(
+    "/support/tickets/:id/messages",
+    ...mutate,
+    ticketLimiter,
+    handle(async (req, res) => {
+      const body = (req.body ?? {}) as { message?: unknown; attachmentIds?: unknown };
+      send(res, await replyToTicket(db, supportViewer(req, res), req.params.id, body, supportTeam), 201);
+    }),
+  );
+  router.post("/support/tickets/:id/close", ...mutate, handle(async (req, res) => send(res, await closeTicket(db, supportViewer(req, res), req.params.id))));
+  // Team queue, by state.
+  router.get(
+    "/review/support",
+    requireUser,
+    requireReviewer,
+    handle(async (req, res) => {
+      const state = ["open", "answered", "closed"].includes(String(req.query.state)) ? (String(req.query.state) as SupportState) : "open";
+      send(res, await listTickets(db, state));
+    }),
+  );
+
   // Admin numbers: money, marketplace, users and health, from the database plus a few live chain reads.
   router.get(
     "/admin/metrics",
@@ -967,7 +1006,11 @@ export function createV2Router(options: {
     requireReviewer,
     handle(async (_req, res) => {
       const timeoutSeconds = chain ? await chain.readDisputeTimeoutSeconds().catch(() => 3 * 24 * 60 * 60) : 3 * 24 * 60 * 60;
-      send(res, await reviewSummary(db, new Date(), { readDeadlines: chain?.readDisputeDeadlines, timeoutSeconds }, { proposalStatus: chain?.squads?.proposalStatus }));
+      const [summary, openSupport] = await Promise.all([
+        reviewSummary(db, new Date(), { readDeadlines: chain?.readDisputeDeadlines, timeoutSeconds }, { proposalStatus: chain?.squads?.proposalStatus }),
+        openTicketCount(db),
+      ]);
+      send(res, { ...summary, counts: { ...summary.counts, openSupport } });
     }),
   );
   router.get("/spots/:id/messages", requireUser, handle(async (req, res) => send(res, await listMessages(db, actor(req), req.params.id))));

@@ -78,7 +78,7 @@ export const chainOp = app.enum("chain_op", [
 ]);
 export const chainTxStatus = app.enum("chain_tx_status", ["pending", "submitted", "confirmed", "failed"]);
 
-export const assetKind = app.enum("asset_kind", ["avatar", "listing_photo", "post_media", "brand_logo", "evidence"]);
+export const assetKind = app.enum("asset_kind", ["avatar", "listing_photo", "post_media", "brand_logo", "evidence", "support"]);
 export const postKind = app.enum("post_kind", ["x", "instagram", "tiktok", "youtube", "link", "photo", "text"]);
 export const metricsSource = app.enum("metrics_source", ["manual", "x_api", "instagram_api", "tiktok_api", "youtube_api"]);
 
@@ -649,4 +649,75 @@ export const termsAcceptances = app.table(
     check("terms_acceptances_context", sql`context IN ('onboarding', 'claim', 'bid')`),
     check("terms_acceptances_version_length", sql`length(terms_version) BETWEEN 1 AND 40`),
   ],
+);
+
+// ---------- support ----------
+
+export const supportTopic = app.enum("support_topic", ["buying", "selling", "payments", "disputes", "account", "bug", "other"]);
+// open: waiting on the team; answered: the team replied, waiting on the user; closed: done.
+export const supportState = app.enum("support_state", ["open", "answered", "closed"]);
+
+// Where the user was when they asked, captured with the request so the team needn't ask.
+export interface SupportContext {
+  page?: string;
+  listingId?: string;
+  spotId?: string;
+  // The user's most recent failed transaction in the day before asking, if any.
+  failedTx?: { id: string; op: string; error: string | null; signature: string | null; at: string };
+  userAgent?: string;
+}
+
+export const supportTickets = app.table(
+  "support_tickets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    topic: supportTopic("topic").notNull(),
+    subject: text("subject").notNull(),
+    state: supportState("state").notNull().default("open"),
+    context: jsonb("context").$type<SupportContext>().notNull().default({}),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    closedAt: at("closed_at"),
+  },
+  (t) => [
+    index("support_tickets_user_idx").on(t.userId, t.updatedAt),
+    index("support_tickets_state_idx").on(t.state, t.updatedAt),
+    check("support_tickets_subject_length", sql`length(subject) BETWEEN 3 AND 120`),
+  ],
+);
+
+export const supportMessages = app.table(
+  "support_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => supportTickets.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    // Staff replies show as "adspaces team", never the reviewer's own account.
+    fromStaff: boolean("from_staff").notNull().default(false),
+    body: text("body").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("support_messages_ticket_idx").on(t.ticketId, t.createdAt),
+    check("support_messages_body_length", sql`length(body) BETWEEN 1 AND 4000`),
+  ],
+);
+
+export const supportAttachments = app.table(
+  "support_attachments",
+  {
+    messageId: uuid("message_id")
+      .notNull()
+      .references(() => supportMessages.id, { onDelete: "cascade" }),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => mediaAssets.id, { onDelete: "restrict" }),
+    position: smallint("position").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.messageId, t.position] })],
 );

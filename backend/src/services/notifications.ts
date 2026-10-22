@@ -4,7 +4,10 @@ import { listings, notifications, sessions, spotEvents, spots, users, watchlist,
 import { payoutAvailableAt } from "./settlement.js";
 
 export const NOTIFICATION_CATEGORIES = ["sales", "bidding", "delivery", "disputes", "payments", "listings", "messages", "reminders"] as const;
-export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number];
+// Service messages (support replies) always email: they are not in the preferences, so no opt-out.
+export const SERVICE_CATEGORIES = ["support"] as const;
+export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number] | (typeof SERVICE_CATEGORIES)[number];
+const isService = (category: string) => (SERVICE_CATEGORIES as readonly string[]).includes(category);
 
 export interface NotificationInput {
   userId: string;
@@ -227,7 +230,7 @@ export async function deliverEmails(db: Db, send: EmailSender, render: (n: typeo
   let sent = 0;
   for (const row of rows) {
     const { notification } = row;
-    if (!row.email || !row.verifiedAt || row.prefs[notification.category] === false) {
+    if (!row.email || !row.verifiedAt || (!isService(notification.category) && row.prefs[notification.category] === false)) {
       await db.update(notifications).set({ emailState: "skipped" }).where(eq(notifications.id, notification.id));
       continue;
     }
