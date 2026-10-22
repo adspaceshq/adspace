@@ -566,7 +566,7 @@ export interface StaleSquadsProposal {
 }
 
 export interface ReviewSummary {
-  counts: { listingsInReview: number; openDisputes: number; payoutsReady: number; failedTxs: number; staleProposals?: number };
+  counts: { listingsInReview: number; openDisputes: number; payoutsReady: number; failedTxs: number; staleProposals?: number; openSupport?: number };
   staleProposals?: StaleSquadsProposal[];
   disputes: Array<{
     dispute: {

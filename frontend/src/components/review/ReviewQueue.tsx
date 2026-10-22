@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { BarChart3, BookOpen, CheckCircle2, ChevronRight, Settings2 } from "lucide-react";
 import { useSession } from "@/lib/session";
+import { SupportTab } from "./SupportTab";
 import { api } from "@/lib/api/v2";
 import type { ReviewSummary } from "@/lib/api/types";
 import { queryKeys } from "@/lib/query";
@@ -27,8 +28,8 @@ import { Address } from "@/components/ui/Address";
 import { UserLink } from "@/components/ui/UserLink";
 import { StaleProposals } from "./StaleProposals";
 
-type Tab = "listings" | "disputes" | "payouts" | "failed";
-const TABS: Tab[] = ["listings", "disputes", "payouts", "failed"];
+type Tab = "listings" | "disputes" | "payouts" | "failed" | "support";
+const TABS: Tab[] = ["listings", "disputes", "payouts", "failed", "support"];
 
 export function ReviewQueue() {
   const params = useSearchParams();
@@ -65,10 +66,12 @@ export function ReviewQueue() {
           { href: "/review?tab=disputes", label: "disputes", count: counts?.openDisputes },
           { href: "/review?tab=payouts", label: "payouts ready", count: counts?.payoutsReady },
           { href: "/review?tab=failed", label: "failed txs", count: counts?.failedTxs },
+          { href: "/review?tab=support", label: "support", count: counts?.openSupport },
         ]}
       />
       {tab === "listings" && <ListingsTab />}
-      {tab !== "listings" && (summary.isPending ? <Skeleton className="h-40 w-full" /> : summary.data && <SummaryTab tab={tab} data={summary.data} />)}
+      {tab === "support" && <SupportTab />}
+      {tab !== "listings" && tab !== "support" && (summary.isPending ? <Skeleton className="h-40 w-full" /> : summary.data && <SummaryTab tab={tab} data={summary.data} />)}
     </div>
   );
 }
@@ -112,7 +115,7 @@ function ListingsTab() {
   );
 }
 
-function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings">; data: ReviewSummary }) {
+function SummaryTab({ tab, data }: { tab: Exclude<Tab, "listings" | "support">; data: ReviewSummary }) {
   if (tab === "disputes") return <DisputesTab disputes={data.disputes} stale={data.staleProposals ?? []} />;
   if (tab === "payouts") {
     if (data.payoutsReady.length === 0) return <EmptyState icon={CheckCircle2} title="no payouts waiting" description="delivered spots appear here once their review window closes." />;
