@@ -53,9 +53,9 @@ export function buildOnboarding(form: RoleForm): { payload?: Onboarding; errors:
   };
 }
 
-// Where to land after setup: an explicit in-app `next`, else the dashboard for the chosen role.
-export function landingPath(next: string | null, role: Role): string {
+// Where to land after setup: an explicit in-app `next`, else home, which covers both roles.
+export function landingPath(next: string | null): string {
   // Browsers treat "/\" like "//", so backslashes are refused too.
   if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\") && !next.startsWith("/onboarding")) return next;
-  return role === "sponsor" ? "/dashboard/sponsor" : role === "creator" ? "/dashboard/creator" : "/dashboard";
+  return "/dashboard";
 }
