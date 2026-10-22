@@ -12,6 +12,7 @@ export function resendSender(apiKey: string, from = "hello@adspaces.fun"): Email
       subject: message.subject,
       html: message.html,
       text: message.text,
+      headers: message.headers,
     });
     if (error) throw new Error(error.message);
   };

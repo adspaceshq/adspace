@@ -213,6 +213,8 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html: string;
+  // Extra mail headers, e.g. List-Unsubscribe.
+  headers?: Record<string, string>;
 }
 export type EmailSender = (message: EmailMessage) => Promise<void>;
 
