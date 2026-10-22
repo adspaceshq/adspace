@@ -24,14 +24,12 @@ import { EarningsChart } from "./EarningsChart";
 import { NeedsYouList } from "./NeedsYouList";
 import { SubmittedBanner } from "./SubmittedBanner";
 import { userErrorMessage } from "@/lib/errors";
+import { listingLink } from "@/lib/dashboard-links";
 import { useToast } from "@/components/ToastProvider";
 
 type CreatorListing = CreatorDashboard["listings"][number];
 
 const IN_PROGRESS: ListingState[] = ["draft", "in_review", "changes_requested", "approved", "publishing"];
-
-const listingLink = (listing: CreatorListing) =>
-  listing.state === "draft" || listing.state === "changes_requested" ? `/sell/drafts/${listing.id}` : `/sell/listings/${listing.id}`;
 
 // Listings that never went live can be deleted (the API refuses anything published).
 const DELETABLE: ListingState[] = ["draft", "changes_requested", "rejected"];
