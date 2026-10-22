@@ -20,9 +20,9 @@ describe("onboarding", () => {
     expect(handleError("@bo_rides")).toBeNull();
     expect(handleError("ab")).not.toBeNull();
     expect(handleError("a b c")).not.toBeNull();
-    expect(landingPath("/browse?q=car", "sponsor")).toBe("/browse?q=car");
-    expect(landingPath("//evil.com", "creator")).toBe("/dashboard/creator");
-    expect(landingPath(null, "sponsor")).toBe("/dashboard/sponsor");
-    expect(landingPath("/onboarding", "both")).toBe("/dashboard");
+    expect(landingPath("/browse?q=car")).toBe("/browse?q=car");
+    expect(landingPath("//evil.com")).toBe("/dashboard");
+    expect(landingPath(null)).toBe("/dashboard");
+    expect(landingPath("/onboarding")).toBe("/dashboard");
   });
 });

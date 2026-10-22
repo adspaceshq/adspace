@@ -7,7 +7,7 @@ import {
   LifeBuoy,
   Bookmark,
   Compass,
-  LayoutDashboard,
+  Home,
   ListChecks,
   Megaphone,
   Plus,
@@ -26,11 +26,14 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
   match?: string;
+  // Active only on this exact path (home is /dashboard, the parent of the other dashboard pages).
+  exact?: boolean;
 }
 
 const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
   {
     items: [
+      { href: "/dashboard", label: "home", icon: Home, exact: true },
       { href: "/dashboard/creator", label: "creator", icon: Store, match: "/dashboard/creator" },
       { href: "/dashboard/sponsor", label: "sponsor", icon: Megaphone, match: "/dashboard/sponsor" },
     ],
@@ -49,6 +52,7 @@ const sidebarSections: Array<{ title?: string; items: NavItem[] }> = [
 
 function isActive(pathname: string, item: NavItem) {
   const target = item.match ?? item.href;
+  if (item.exact) return pathname === target;
   return pathname === target || pathname.startsWith(`${target}/`);
 }
 
@@ -101,7 +105,7 @@ export function AppSidebar() {
 }
 
 const tabs: NavItem[] = [
-  { href: "/dashboard", label: "home", icon: LayoutDashboard },
+  { href: "/dashboard", label: "home", icon: Home, exact: true },
   { href: "/browse", label: "browse", icon: Compass },
   { href: "/sell", label: "sell", icon: Plus },
   { href: "/activity", label: "activity", icon: ListChecks },
