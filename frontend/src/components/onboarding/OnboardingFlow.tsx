@@ -32,7 +32,7 @@ export function OnboardingFlow() {
 
   const finished = Boolean(session?.emailVerified && session.onboarding);
   useEffect(() => {
-    if (finished && session?.onboarding) router.replace(landingPath(next, session.onboarding.accountType));
+    if (finished && session?.onboarding) router.replace(landingPath(next));
   }, [finished, next, router, session?.onboarding]);
 
   if (!ready || finished) return <Skeleton className="h-96 w-full" />;
