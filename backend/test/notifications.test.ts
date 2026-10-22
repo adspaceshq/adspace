@@ -200,3 +200,22 @@ test("notification emails use a contextual button, escape user text and show rea
   assert.equal(ctaLabel("something_new"), "open adspaces");
   has(renderNotificationEmail({ title: "hi", body: "", href: null }, "https://devnet.adspaces.fun").html, ">open adspaces</a>");
 });
+
+test("emails with unsubscribe links carry one-click headers and a footer link", () => {
+  const plain = renderNotificationEmail({ title: "hi", body: "", href: null }, "https://devnet.adspaces.fun");
+  assert.equal(plain.headers, undefined);
+  assert.ok(!plain.html.includes("unsubscribe"));
+
+  const email = renderNotificationEmail({ title: "outbid", body: "", href: null }, "https://devnet.adspaces.fun", {
+    category: "bidding",
+    pageUrl: "https://devnet.adspaces.fun/unsubscribe?token=abc&x=1",
+    oneClickUrl: "https://api-devnet.adspaces.fun/api/v2/email/unsubscribe?token=abc",
+  });
+  assert.deepEqual(email.headers, {
+    "List-Unsubscribe": "<https://api-devnet.adspaces.fun/api/v2/email/unsubscribe?token=abc>",
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  });
+  assert.ok(email.html.includes('href="https://devnet.adspaces.fun/unsubscribe?token=abc&amp;x=1"'));
+  assert.ok(email.html.includes("unsubscribe from bidding emails</a>"));
+  assert.ok(email.text.includes("unsubscribe from bidding emails: https://devnet.adspaces.fun/unsubscribe?token=abc&x=1"));
+});

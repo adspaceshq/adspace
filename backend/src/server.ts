@@ -14,7 +14,8 @@ import { coalesce, heliusWebhook } from "./webhooks.js";
 import { reconcile } from "./services/reconciler.js";
 import { expireUnsignedWithdrawals } from "./services/wallet.js";
 import { deliverEmails, detectDeposits, processSpotEvents, scheduleReminders, scheduleSettlementNotices, scheduleWalletNotices } from "./services/notifications.js";
-import { renderNotificationEmail, resendSender } from "./email.js";
+import { renderNotificationEmail, resendSender, type UnsubscribeLinks } from "./email.js";
+import { unsubscribeToken } from "./services/unsubscribe.js";
 
 async function start() {
   const config = loadConfig();
@@ -33,8 +34,10 @@ async function start() {
         squadsProposalTtlHours: config.solana.squadsProposalTtlHours,
       })
     : undefined;
+  const unsubscribeSecret = process.env.EMAIL_UNSUBSCRIBE_SECRET?.trim() || undefined;
   const v2Router = createV2Router({
     db,
+    unsubscribeSecret,
     chain: v2Chain,
     reviewers: config.platformReviewers,
     admins: (process.env.PLATFORM_ADMINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
@@ -82,6 +85,19 @@ async function start() {
   const resendKey = process.env.RESEND_API_KEY?.trim();
   const sendEmail = resendKey ? resendSender(resendKey, process.env.NOTIFICATIONS_FROM_EMAIL || undefined) : undefined;
   if (!sendEmail) console.warn("RESEND_API_KEY not set; notifications are in-app only");
+  // Signed unsubscribe links: a footer link to the app page, and the one-click header mail clients POST to.
+  const apiUrl = (process.env.PUBLIC_API_URL?.trim() || process.env.RENDER_EXTERNAL_URL?.trim() || "").replace(/\/$/, "");
+  if (sendEmail && (!unsubscribeSecret || !apiUrl)) console.warn("EMAIL_UNSUBSCRIBE_SECRET or PUBLIC_API_URL not set; emails go out without unsubscribe links");
+  const unsubscribeLinks = (notification: { userId: string; category: string }): UnsubscribeLinks | undefined => {
+    const token = unsubscribeSecret && apiUrl ? unsubscribeToken(unsubscribeSecret, notification.userId, notification.category) : null;
+    if (!token) return undefined;
+    const query = `token=${encodeURIComponent(token)}`;
+    return {
+      category: notification.category,
+      pageUrl: `${config.frontendUrl.replace(/\/$/, "")}/unsubscribe?${query}`,
+      oneClickUrl: `${apiUrl}/api/v2/email/unsubscribe?${query}`,
+    };
+  };
   const notifyEveryMs = Number(process.env.NOTIFY_INTERVAL_MS ?? 30_000);
   if (notifyEveryMs > 0) {
     let running = false;
@@ -100,7 +116,7 @@ async function start() {
           lastDepositCheck = Date.now();
           await detectDeposits(db, (owner) => v2Chain.readTokenBalance(new PublicKey(owner)));
         }
-        if (sendEmail) await deliverEmails(db, sendEmail, (notification) => renderNotificationEmail(notification, config.frontendUrl));
+        if (sendEmail) await deliverEmails(db, sendEmail, (notification) => renderNotificationEmail(notification, config.frontendUrl, unsubscribeLinks(notification)));
       } catch (error) {
         console.error("notifier failed:", error instanceof Error ? error.message : error);
       } finally {

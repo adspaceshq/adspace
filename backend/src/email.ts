@@ -12,6 +12,7 @@ export function resendSender(apiKey: string, from = "hello@adspaces.fun"): Email
       subject: message.subject,
       html: message.html,
       text: message.text,
+      headers: message.headers,
     });
     if (error) throw new Error(error.message);
   };
@@ -59,14 +60,27 @@ const X_URL = "https://x.com/adspacesfun";
 const LOGO_URL = "https://res.cloudinary.com/jvd3gsf7/image/upload/w_128,f_png/adspaces/static/email/logo.png";
 const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif";
 
+export interface UnsubscribeLinks {
+  // The category this email belongs to, named in the footer link.
+  category: string;
+  // Confirmation page in the app (footer link).
+  pageUrl: string;
+  // API endpoint mail clients POST to for one-click unsubscribe (RFC 8058).
+  oneClickUrl: string;
+}
+
 // Email-client-safe layout (tables, inline styles, 600px max) shared in look with the waitlist welcome email.
 export function renderNotificationEmail(
   notification: { title: string; body: string; href: string | null; type?: string | null },
   siteUrl: string,
+  unsubscribe?: UnsubscribeLinks,
 ): Omit<EmailMessage, "to"> {
   const base = siteUrl.replace(/\/$/, "");
   const link = `${base}${notification.href ?? "/dashboard"}`;
   const settings = `${base}/settings#notifications`;
+  const unsubscribeLink = unsubscribe
+    ? `<a href="${escape(unsubscribe.pageUrl)}" style="color:#94a3b8;text-decoration:underline;">unsubscribe from ${escape(unsubscribe.category)} emails</a>&nbsp;&nbsp;&middot;&nbsp;&nbsp;`
+    : "";
   const cta = ctaLabel(notification.type);
   const title = escape(notification.title);
   const body = notification.body
@@ -115,7 +129,7 @@ export function renderNotificationEmail(
               <td align="center" style="padding:28px 16px 0;font-family:${FONT};font-size:13px;line-height:1.6;color:#64748b;">
                 <p style="margin:0 0 6px;font-weight:600;color:#020817;">attention is everywhere</p>
                 <p style="margin:0 0 16px;"><a href="${MAIN_SITE}" style="color:#64748b;text-decoration:underline;">adspaces.fun</a>&nbsp;&nbsp;&middot;&nbsp;&nbsp;<a href="${X_URL}" style="color:#64748b;text-decoration:underline;">x.com/adspacesfun</a></p>
-                <p style="margin:0;font-size:12px;color:#94a3b8;">you're getting this because of activity on your adspaces account. <a href="${escape(settings)}" style="color:#94a3b8;text-decoration:underline;">change email settings</a></p>
+                <p style="margin:0;font-size:12px;color:#94a3b8;">you're getting this because of activity on your adspaces account.<br>${unsubscribeLink}<a href="${escape(settings)}" style="color:#94a3b8;text-decoration:underline;">change email settings</a></p>
               </td>
             </tr>
           </table>
@@ -124,6 +138,11 @@ export function renderNotificationEmail(
     </table>
   </body>
 </html>`;
-  const text = `${notification.title}\n\n${notification.body ? `${notification.body}\n\n` : ""}${cta}: ${link}\n\n--\nadspaces - attention is everywhere\n${MAIN_SITE} | ${X_URL}\n\nchange email settings: ${settings}`;
-  return { subject: notification.title, html, text };
+  const unsubscribeText = unsubscribe ? `\nunsubscribe from ${unsubscribe.category} emails: ${unsubscribe.pageUrl}` : "";
+  const text = `${notification.title}\n\n${notification.body ? `${notification.body}\n\n` : ""}${cta}: ${link}\n\n--\nadspaces - attention is everywhere\n${MAIN_SITE} | ${X_URL}\n\nchange email settings: ${settings}${unsubscribeText}`;
+  // Gmail, Apple Mail and Outlook show their own unsubscribe button from these headers.
+  const headers = unsubscribe
+    ? { "List-Unsubscribe": `<${unsubscribe.oneClickUrl}>`, "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" }
+    : undefined;
+  return { subject: notification.title, html, text, ...(headers ? { headers } : {}) };
 }

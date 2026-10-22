@@ -13,6 +13,7 @@ import type { Db } from "../src/db/client.js";
 import { listings } from "../src/db/schema.js";
 import type { ChainContext } from "../src/v2/chain-context.js";
 import { createV2Router, parseUsdc } from "../src/v2/router.js";
+import { unsubscribeToken } from "../src/services/unsubscribe.js";
 import { createTestDb } from "./helpers/db.js";
 import { fakeRunTx, seedListing } from "./helpers/seed.js";
 
@@ -25,7 +26,13 @@ before(async () => {
   ({ db, close } = await createTestDb());
   auth = new AppAuthRepository(db);
   app = createApp({
-    v2Router: createV2Router({ db, reviewers: ["did:privy:reviewer_one", "@impostor_one"], termsVersion: "test", metadataBaseUrl: "https://adspaces.test" }),
+    v2Router: createV2Router({
+      db,
+      reviewers: ["did:privy:reviewer_one", "@impostor_one"],
+      termsVersion: "test",
+      metadataBaseUrl: "https://adspaces.test",
+      unsubscribeSecret: "test-unsubscribe",
+    }),
   });
 });
 after(async () => close());
@@ -58,6 +65,28 @@ const draft = {
   deadline: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
   spots: [{ price: "49.5", layout: { x: 1, y: 2, w: 10 } }],
 };
+
+test("email unsubscribe works without a session, one click from the mail client or from the page", async () => {
+  const user = await signIn("unsub_route");
+  const token = unsubscribeToken("test-unsubscribe", user.id, "bidding")!;
+  const prefs = async () => (await request(app).get("/api/v2/me/notification-prefs").set("Cookie", user.cookie)).body;
+
+  const status = await request(app).get("/api/v2/email/unsubscribe").query({ token });
+  assert.equal(status.status, 200);
+  assert.deepEqual(status.body, { category: "bidding", subscribed: true });
+
+  // RFC 8058: the client POSTs form data with the token in the URL, and no cookies.
+  const oneClick = await request(app).post(`/api/v2/email/unsubscribe?token=${encodeURIComponent(token)}`).type("form").send("List-Unsubscribe=One-Click");
+  assert.equal(oneClick.status, 200);
+  assert.equal((await prefs()).bidding, false);
+
+  const back = await request(app).post("/api/v2/email/resubscribe").send({ token });
+  assert.deepEqual(back.body, { category: "bidding", subscribed: true });
+  assert.equal((await prefs()).bidding, true);
+
+  assert.equal((await request(app).post("/api/v2/email/unsubscribe").send({ token: `${token}x` })).status, 404);
+  assert.equal((await request(app).post("/api/v2/email/unsubscribe")).status, 404);
+});
 
 test("parses USDC amounts into base units", () => {
   assert.equal(parseUsdc("49.5", "price"), 49_500_000n);
