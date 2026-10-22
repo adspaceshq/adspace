@@ -485,7 +485,46 @@ export interface SpotDetail {
   deadlines: { deliveryDueAt: IsoDate; reviewUntil: IsoDate };
 }
 
-export type AssetKind = "listing_photo" | "post_media" | "brand_logo" | "evidence" | "avatar";
+export type AssetKind = "listing_photo" | "post_media" | "brand_logo" | "evidence" | "avatar" | "support";
+
+export type SupportTopic = "buying" | "selling" | "payments" | "disputes" | "account" | "bug" | "other";
+// open: waiting on the team; answered: the team replied; closed: done (a reply reopens it).
+export type SupportState = "open" | "answered" | "closed";
+
+export interface SupportTicketSummary {
+  id: string;
+  topic: SupportTopic;
+  subject: string;
+  state: SupportState;
+  createdAt: IsoDate;
+  updatedAt: IsoDate;
+  // Team queue only.
+  userHandle?: string;
+}
+
+export interface SupportTicket extends SupportTicketSummary {
+  closedAt: IsoDate | null;
+  messages: Array<{ id: string; body: string; fromStaff: boolean; createdAt: IsoDate; attachments: string[] }>;
+  // Team view only: where the user was when they asked, and who they are.
+  context?: {
+    page?: string;
+    listingId?: string;
+    spotId?: string;
+    failedTx?: { id: string; op: string; error: string | null; signature: string | null; at: IsoDate };
+    userAgent?: string;
+  };
+  user?: { handle: string; email: string | null; walletAddress: string | null } | null;
+}
+
+export interface SupportTicketInput {
+  topic: SupportTopic;
+  subject: string;
+  message: string;
+  attachmentIds?: string[];
+  page?: string;
+  listingId?: string;
+  spotId?: string;
+}
 
 export interface UploadSignature {
   kind: AssetKind;
