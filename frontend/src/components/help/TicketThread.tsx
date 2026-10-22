@@ -15,9 +15,10 @@ import { Address } from "@/components/ui/Address";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { Textarea } from "@/components/ui/Field";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { PhotoUploader } from "@/components/sell/PhotoUploader";
+import { RichTextarea } from "@/components/ui/RichTextarea";
+import { FormattedText } from "@/components/ui/FormattedText";
 
 export const STATE_LABEL: Record<SupportState, { text: string; tone: BadgeTone }> = {
   open: { text: "waiting on the team", tone: "warning" },
@@ -81,7 +82,7 @@ export function TicketThread({ ticketId, staff = false }: { ticketId: string; st
             <p className="text-small font-medium text-muted">
               {message.fromStaff ? "adspaces team" : staff ? `@${ticket.user?.handle ?? "user"}` : "you"} · {when(message.createdAt)}
             </p>
-            <p className="whitespace-pre-line text-body">{message.body}</p>
+            <FormattedText text={message.body} className="text-body" />
             {message.attachments.length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {message.attachments.map((url) => (
@@ -97,12 +98,12 @@ export function TicketThread({ ticketId, staff = false }: { ticketId: string; st
       </ol>
 
       <div className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4">
-        <Textarea
+        <RichTextarea
           label={staff ? "reply as the adspaces team" : ticket.state === "closed" ? "reply to reopen this request" : "reply"}
           rows={3}
           maxLength={4000}
           value={reply}
-          onChange={(event) => setReply(event.target.value)}
+          onChange={setReply}
         />
         {!staff && <PhotoUploader photos={shots} onChange={setShots} kind="support" max={4} cover={false} addLabel="add screenshots" onUploadingChange={setUploading} />}
         {(send.isError || close.isError) && (
