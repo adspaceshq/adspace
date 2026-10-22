@@ -26,6 +26,7 @@ import { listingStateLabel } from "@/components/ui/StateBadge";
 import { Badge } from "@/components/ui/Badge";
 import { ADMIN_APPROVAL_AFTER_DAYS, adminApprovalMessage, beyondHorizon, MAX_DELIVERY_DAYS, needsAdminApproval } from "@/lib/listing-rules";
 import { useNow } from "@/lib/use-now";
+import { FormattedText } from "@/components/ui/FormattedText";
 
 const toLocal = (iso: string) => {
   const date = new Date(iso);
@@ -161,7 +162,7 @@ function DecisionForm({ listing, floorBps }: { listing: ReviewListingDetail; flo
               spots={listing.spots.map((spot) => ({ id: spot.id, index: spot.index, layout: spot.layout, state: "open", price: spot.price, label: spot.label }))}
             />
           )}
-          {listing.description && <p className="whitespace-pre-line text-body text-muted">{listing.description}</p>}
+          {listing.description && <FormattedText text={listing.description} className="text-body text-muted" />}
           <dl className="grid gap-3 text-body sm:grid-cols-3">
             <div>
               <dt className="text-small text-muted">mode</dt>

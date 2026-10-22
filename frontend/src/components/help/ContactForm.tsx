@@ -8,9 +8,10 @@ import { userErrorMessage } from "@/lib/errors";
 import { queryKeys } from "@/lib/query";
 import type { WizardPhoto } from "@/lib/sell-draft";
 import { Button } from "@/components/ui/Button";
-import { Input, Textarea } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Field";
 import { PhotoUploader } from "@/components/sell/PhotoUploader";
 import { useToast } from "@/components/ToastProvider";
+import { RichTextarea } from "@/components/ui/RichTextarea";
 
 const TOPICS: Array<{ value: SupportTopic; label: string }> = [
   { value: "buying", label: "sponsoring a spot" },
@@ -88,13 +89,13 @@ export function ContactForm({ context, onSent }: { context: ContactContext; onSe
         </select>
       </label>
       <Input label="subject" placeholder="e.g. my payout hasn't arrived" value={subject} maxLength={120} onChange={(event) => setSubject(event.target.value)} />
-      <Textarea
+      <RichTextarea
         label="message"
         hint="what happened, and what you expected. we already see which page you came from."
         rows={5}
         maxLength={4000}
         value={message}
-        onChange={(event) => setMessage(event.target.value)}
+        onChange={setMessage}
       />
       <div className="flex flex-col gap-2">
         <p className="text-small font-medium">screenshots (optional)</p>
