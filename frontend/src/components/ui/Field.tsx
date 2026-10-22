@@ -71,7 +71,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         id={fieldId}
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${fieldId}-error` : hint ? `${fieldId}-hint` : undefined}
-        className={cx(control, "min-h-24 py-2", className)}
+        // Grows with its text up to a cap, then scrolls inside; never resized by hand (it pushed layouts apart).
+        className={cx(control, "min-h-24 max-h-80 resize-none overflow-y-auto py-2 thin-scrollbar field-sizing-content", className)}
         {...rest}
       />
     </FieldShell>

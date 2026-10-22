@@ -29,6 +29,7 @@ import { WatchButton } from "@/components/watchlist/WatchButton";
 import { SellerAvatar } from "./SellerAvatar";
 import { UserLink, XHandleLink } from "@/components/ui/UserLink";
 import { PENDING_CHECKOUT } from "@/lib/first-run";
+import { FormattedText } from "@/components/ui/FormattedText";
 
 // Remembers which spot a signed-out visitor chose, so checkout reopens after sign-in (Privy's OAuth
 // logins can reload the page, so component state alone would be lost).
@@ -166,7 +167,7 @@ export function ListingView({ initial }: { initial: PublicListing }) {
             <h2 id="about" className="text-lead font-semibold">
               about this space
             </h2>
-            <p className="whitespace-pre-line text-body text-muted">{listing.description}</p>
+            <FormattedText text={listing.description} className="text-body text-muted" />
           </section>
         )}
 

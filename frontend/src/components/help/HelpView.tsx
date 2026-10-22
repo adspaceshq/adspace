@@ -3,15 +3,16 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft, ChevronRight, LifeBuoy } from "lucide-react";
+import { ArrowLeft, LifeBuoy } from "lucide-react";
 import { api } from "@/lib/api/v2";
 import type { SupportTopic } from "@/lib/api/types";
-import { HELP_GUIDES, HELP_TOPICS } from "@/lib/help-guides";
+import { HELP_TOPICS } from "@/lib/help-guides";
 import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { ContactForm } from "./ContactForm";
+import { HelpGuides } from "./HelpGuides";
 import { STATE_LABEL, TicketThread } from "./TicketThread";
 
 const TOPICS = new Set<string>(["buying", "selling", "payments", "disputes", "account", "bug", "other"]);
@@ -64,27 +65,7 @@ export function HelpView() {
 
       {session && <MyRequests />}
 
-      {HELP_TOPICS.map((entry) => (
-        <section key={entry.topic} id={entry.topic} aria-labelledby={`${entry.topic}-title`} className="flex scroll-mt-24 flex-col gap-3">
-          <div>
-            <h2 id={`${entry.topic}-title`} className="text-lead font-semibold">
-              {entry.label}
-            </h2>
-            <p className="text-small text-muted">{entry.description}</p>
-          </div>
-          <div className="flex flex-col divide-y divide-line overflow-hidden rounded-card border border-line bg-surface">
-            {HELP_GUIDES.filter((guide) => guide.topic === entry.topic).map((guide) => (
-              <details key={guide.id} id={guide.id} className="group scroll-mt-24">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-body font-medium hover:bg-ink/5">
-                  {guide.question}
-                  <ChevronRight className="size-4 shrink-0 text-muted transition-transform group-open:rotate-90" aria-hidden />
-                </summary>
-                <p className="px-4 pb-4 text-body text-muted">{guide.answer}</p>
-              </details>
-            ))}
-          </div>
-        </section>
-      ))}
+      <HelpGuides />
 
       <section id="contact" aria-labelledby="contact-title" className="flex scroll-mt-24 flex-col gap-4 rounded-panel border border-line bg-surface p-5 shadow-card">
         <div className="flex items-start gap-3">
