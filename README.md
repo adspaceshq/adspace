@@ -93,8 +93,7 @@ The Solana program has its own test suite in its repository.
 
 ## Security
 
-Money is held by the Solana program, not by this server. The program was scanned three times with
-CertiK's AI Auditor before mainnet, with fixes between runs. These are automated AI scans, not a
-manual audit.
+Money is held by the Solana program, not by this server. Upgrades, settings and fees are controlled by
+a 2-of-3 multisig, and a separate guardian key can pause new purchases in an emergency.
 
 Please report security issues privately to support@adspaces.fun.
