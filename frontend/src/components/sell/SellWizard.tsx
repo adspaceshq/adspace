@@ -18,7 +18,7 @@ import { queryKeys } from "@/lib/query";
 import { useSession } from "@/lib/session";
 import { cx } from "@/lib/cx";
 import { Button } from "@/components/ui/Button";
-import { Input, Textarea } from "@/components/ui/Field";
+import { Input } from "@/components/ui/Field";
 import { SpotPhotos } from "@/components/ui/SpotPhotos";
 import { Timeline } from "@/components/ui/Timeline";
 import { MacMockupPicker } from "./MacMockupPicker";
@@ -26,6 +26,8 @@ import { PhotoUploader } from "./PhotoUploader";
 import { SpotEditor } from "./SpotEditor";
 import { ListingCard } from "@/components/market/ListingCard";
 import { userErrorMessage } from "@/lib/errors";
+import { RichTextarea } from "@/components/ui/RichTextarea";
+import { FormattedText } from "@/components/ui/FormattedText";
 
 const storageKey = (listingId?: string, surface?: string) => `adspaces:sell:${listingId ?? `new:${surface}`}`;
 
@@ -248,13 +250,13 @@ export function SellWizard({
       {step === "basics" && (
         <section className="flex max-w-3xl flex-col gap-5">
           <Input label="title" placeholder="e.g. MacBook lid at Token2049" value={state.title} maxLength={80} onChange={(event) => set("title", event.target.value)} error={errors.title} />
-          <Textarea
+          <RichTextarea
             label="description"
-            hint="where it'll be seen, for how long, and by whom"
+            hint="where it'll be seen, for how long, and by whom. use the toolbar for bold, lists and links."
             value={state.description}
             maxLength={2000}
             rows={5}
-            onChange={(event) => set("description", event.target.value)}
+            onChange={(value) => set("description", value)}
             error={errors.description}
           />
           <div className="grid gap-4 sm:grid-cols-3">
@@ -430,7 +432,7 @@ export function SellWizard({
             {state.description && (
               <div className="flex flex-col gap-1 rounded-panel border border-line bg-surface p-4 shadow-card">
                 <p className="text-caption font-medium uppercase tracking-wide text-muted">on your listing page</p>
-                <p className="whitespace-pre-line text-body text-muted">{state.description}</p>
+                <FormattedText text={state.description} className="text-body text-muted" />
               </div>
             )}
           </div>
