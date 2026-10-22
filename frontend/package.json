@@ -7,14 +7,9 @@
     "dev": "next dev",
     "start": "next start",
     "lint": "eslint",
-    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "test": "vitest run"
   },
   "dependencies": {
-    "@opennextjs/cloudflare": "^1.20.9",
     "@privy-io/react-auth": "^3.46.0",
     "@solana-program/memo": "^0.14.0",
     "@solana-program/system": "^0.14.1",
@@ -35,7 +30,6 @@
     "eslint-config-next": "^16.4.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^3.2.7",
-    "wrangler": "^4.148.0"
+    "vitest": "^3.2.7"
   }
 }
