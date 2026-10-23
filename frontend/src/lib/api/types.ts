@@ -305,6 +305,26 @@ export interface Withdrawal {
   updatedAt: IsoDate;
 }
 
+export type OpsRole = "fee_payer" | "reviewer" | "proposer" | "config_authority" | "upgrade_authority" | "treasury" | "guardian" | "member";
+
+// A platform wallet on the admin wallets page. One key can hold several roles.
+export interface OpsWallet {
+  address: string;
+  roles: OpsRole[];
+  // null when the balance could not be read.
+  sol: number | null;
+  minSol: number;
+  targetSol: number;
+  low: boolean | null;
+  // Treasury only: USDC base units.
+  usdc: BaseUnits | null;
+}
+
+export interface AdminWallets {
+  cluster: string | null;
+  wallets: OpsWallet[];
+}
+
 // Admin metrics page. Money is USDC base units as strings; chain numbers are null when a read failed.
 export interface AdminMetrics {
   generatedAt: IsoDate;

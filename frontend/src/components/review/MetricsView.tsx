@@ -5,13 +5,14 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AlertTriangle, ArrowLeft, CheckCircle2, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api/v2";
-import type { AdminMetrics } from "@/lib/api/types";
+import type { AdminMetrics, OpsRole, OpsWallet } from "@/lib/api/types";
 import { ADSPACES_CLUSTER } from "@/lib/chain-config";
 import { cx } from "@/lib/cx";
 import { formatUsd } from "@/lib/money";
 import { queryKeys } from "@/lib/query";
 import { userErrorMessage } from "@/lib/errors";
 import { listingHref, profileHref, SURFACE_LABELS } from "@/lib/listing-display";
+import { Address } from "@/components/ui/Address";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Skeleton, SkeletonGroup } from "@/components/ui/Skeleton";
@@ -19,7 +20,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { DailyBars, type DailyPoint } from "./DailyBars";
 import { HBars } from "./HBars";
 
-const TABS = ["overview", "money", "marketplace", "users", "health"] as const;
+const TABS = ["overview", "money", "marketplace", "users", "health", "wallets"] as const;
 type Tab = (typeof TABS)[number];
 
 const usd = (value: string | null | undefined) => (value == null ? "unavailable" : formatUsd(value));
@@ -59,7 +60,9 @@ export function MetricsView() {
       <Tabs active={`/review/metrics?tab=${tab}`} items={TABS.map((item) => ({ href: `/review/metrics?tab=${item}`, label: item }))} />
       {/* Only a fallback: on very short screens the rows can't fit and this area scrolls. */}
       <div className="flex min-h-0 flex-1 flex-col hover-scrollbar lg:overflow-y-auto">
-        {query.isPending ? (
+        {tab === "wallets" ? (
+          <WalletsTab />
+        ) : query.isPending ? (
           <SkeletonGroup label="loading metrics">
             <div className="flex flex-col gap-3">
               <Skeleton className="h-20 w-full" />
@@ -442,6 +445,114 @@ function UsersTab({ data }: { data: AdminMetrics }) {
           }
         />
       </FillRow>
+    </Page>
+  );
+}
+
+const ROLE_LABELS: Record<OpsRole, string> = {
+  fee_payer: "fee & rent payer",
+  reviewer: "reviewer",
+  proposer: "squads proposer",
+  config_authority: "config authority",
+  upgrade_authority: "upgrade authority",
+  treasury: "treasury",
+  guardian: "pause guardian",
+  member: "multisig member",
+};
+// Rent one fully delivered 10-spot listing holds until it closes (listing, spots, vaults, proofs).
+const LISTING_RENT_SOL = 0.055;
+const sol = (value: number | null) => (value === null ? "unavailable" : `${value.toFixed(value < 1 ? 4 : 3)} SOL`);
+
+function walletStatus(wallet: OpsWallet): Status | undefined {
+  if (wallet.low === null || wallet.sol === null) return undefined;
+  if (wallet.targetSol === 0) return { ok: true, text: "needs no SOL" };
+  if (wallet.low) return { ok: false, text: `low: top up ${(wallet.targetSol - wallet.sol).toFixed(3)} SOL` };
+  return { ok: true, text: "funded" };
+}
+
+// Every wallet the platform runs on, found on-chain, with its SOL against the level it should hold.
+function WalletsTab() {
+  const query = useQuery({ queryKey: queryKeys.adminWallets, queryFn: () => api.admin.wallets(), refetchInterval: 60_000 });
+  if (query.isPending) return <Skeleton className="h-64 w-full" />;
+  if (query.isError) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="couldn't read the wallets"
+        description={userErrorMessage(query.error, "the RPC node may be slow. try again in a minute.")}
+        action={<Button onClick={() => void query.refetch()}>try again</Button>}
+      />
+    );
+  }
+  const { wallets } = query.data;
+  const payer = wallets.find((wallet) => wallet.roles.includes("fee_payer"));
+  const treasury = wallets.find((wallet) => wallet.roles.includes("treasury"));
+  const low = wallets.filter((wallet) => wallet.low);
+  const totalSol = wallets.reduce((sum, wallet) => sum + (wallet.sol ?? 0), 0);
+  const runway = payer?.sol == null ? null : Math.max(0, Math.floor((payer.sol - payer.minSol) / LISTING_RENT_SOL));
+  return (
+    <Page>
+      <StatStrip>
+        <Stat
+          label="fee and rent payer"
+          value={sol(payer?.sol ?? null)}
+          detail={runway === null ? undefined : `room for about ${plural(runway, "more 10-spot listing")} before the alert`}
+          status={payer ? walletStatus(payer) : undefined}
+        />
+        <Stat
+          label="wallets low on SOL"
+          value={String(low.length)}
+          detail={`of ${plural(wallets.length, "wallet")}`}
+          status={{ ok: low.length === 0, text: low.length === 0 ? "all above their minimum" : low.map((wallet) => ROLE_LABELS[wallet.roles[0]]).join(", ") }}
+        />
+        <Stat label="treasury" value={treasury?.usdc == null ? "unavailable" : formatUsd(treasury.usdc)} detail="fees collected, held by the multisig" />
+        <Stat label="SOL across wallets" value={sol(totalSol)} detail="rent locked in listings is not included" />
+      </StatStrip>
+      <div className={cx("rounded-card border border-line bg-surface shadow-card lg:min-h-0 lg:flex-1", scroll)}>
+        <table className="w-full text-left text-small">
+          <thead className="sticky top-0 bg-surface text-muted">
+            <tr className="border-b border-line">
+              <th className="px-4 py-2 font-medium">wallet</th>
+              <th className="px-4 py-2 text-right font-medium">balance</th>
+              <th className="px-4 py-2 text-right font-medium">minimum</th>
+              <th className="px-4 py-2 text-right font-medium">top up to</th>
+              <th className="px-4 py-2 font-medium">status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-line">
+            {wallets.map((wallet) => {
+              const status = walletStatus(wallet);
+              return (
+                <tr key={wallet.address}>
+                  <td className="px-4 py-2.5">
+                    <p className="font-medium">{wallet.roles.map((role) => ROLE_LABELS[role]).join(" · ")}</p>
+                    <Address value={wallet.address} className="text-caption text-muted" />
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                    {sol(wallet.sol)}
+                    {wallet.usdc != null && <span className="block text-caption font-normal text-muted">{formatUsd(wallet.usdc)}</span>}
+                  </td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-muted">{wallet.minSol ? sol(wallet.minSol) : "none"}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums text-muted">{wallet.targetSol ? sol(wallet.targetSol) : "none"}</td>
+                  <td className="px-4 py-2.5">
+                    {status && (
+                      <span className={cx("inline-flex items-center gap-1 text-caption font-medium", status.ok ? "text-success" : "text-danger")}>
+                        {status.ok ? <CheckCircle2 className="size-3.5 shrink-0" aria-hidden /> : <AlertTriangle className="size-3.5 shrink-0" aria-hidden />}
+                        {status.text}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <p className="border-t border-line px-4 py-2 text-caption text-muted">
+          minimum is the alert level; top up to the target. the fee payer pays rent for every listing, spot and proof (about{" "}
+          {LISTING_RENT_SOL} SOL per 10-spot listing, returned when it closes). addresses are read from the chain, so a rotated key
+          shows up here on its own.
+        </p>
+      </div>
     </Page>
   );
 }
