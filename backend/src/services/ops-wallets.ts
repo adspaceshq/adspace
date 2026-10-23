@@ -69,7 +69,7 @@ export async function readOpsWallets(
     rentPayer: { publicKey: PublicKey };
     reviewer: { publicKey: PublicKey };
     squads?: { multisig: PublicKey; proposer: { publicKey: PublicKey } };
-    readProtocolStatus: () => Promise<{ authority: PublicKey; treasury: PublicKey; pauseGuardian: PublicKey | null }>;
+    readProtocolStatus: () => Promise<{ authority: PublicKey; treasury: PublicKey; pauseGuardian?: PublicKey | null }>;
     readTokenBalance: (owner: PublicKey) => Promise<bigint>;
   },
   minFeePayerLamports: number,
