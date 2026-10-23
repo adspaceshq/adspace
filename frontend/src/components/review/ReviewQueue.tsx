@@ -206,7 +206,8 @@ function DisputesTab({ disputes, stale }: { disputes: ReviewSummary["disputes"];
       <ul className="flex flex-col gap-2">
         {disputes.map((item) => {
           const left = new Date(item.timeoutAt).getTime() - now;
-          const urgent = left < DISPUTE_URGENT_MS;
+          // A timed-out dispute is no longer the team's to decide, so it isn't highlighted as urgent.
+          const urgent = left > 0 && left < DISPUTE_URGENT_MS;
           return (
             <li
               key={item.dispute.id}
@@ -224,7 +225,7 @@ function DisputesTab({ disputes, stale }: { disputes: ReviewSummary["disputes"];
                 </Badge>
                 <span className="text-muted">
                   {left <= 0
-                    ? "the sponsor can take a full refund now."
+                    ? "waiting on the sponsor to take their full refund. they've been emailed; nothing to decide, and no fee."
                     : urgent
                       ? viaMultisig
                         ? "under a day left for the multisig to approve and execute."
