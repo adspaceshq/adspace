@@ -38,6 +38,7 @@ import { resubscribe, unsubscribe, unsubscribeStatus } from "../services/unsubsc
 import { reconcile } from "../services/reconciler.js";
 import { adoptListings, prepareGuardianPause, setDisputeTimeout, setPaused, submitGuardianPause, type AdminDeps, type GuardianPauseDeps } from "../services/admin.js";
 import { adminMetrics, readChainMetrics } from "../services/metrics.js";
+import { readOpsWallets } from "../services/ops-wallets.js";
 import { closeTicket, createTicket, getTicket, listMyTickets, listTickets, openTicketCount, replyToTicket, type SupportState } from "../services/support.js";
 import { activityFeed, creatorDashboard, creatorEarnings, reviewSummary, spotDetail, spotTimeline, sponsorDashboard } from "../services/dashboards.js";
 import type { ChainContext } from "./chain-context.js";
@@ -897,6 +898,13 @@ export function createV2Router(options: {
       const chainNumbers = chain ? await readChainMetrics(db, chain, minFeePayerLamports) : null;
       send(res, await adminMetrics(db, chainNumbers));
     }),
+  );
+  // The platform's wallets (fee payer, multisig vault, guardian, members...) with SOL against their levels.
+  router.get(
+    "/admin/wallets",
+    requireUser,
+    requireAdmin,
+    handle(async (_req, res) => send(res, { cluster: options.cluster ?? null, wallets: await readOpsWallets(requireChain(), minFeePayerLamports) })),
   );
   // Reviewer key rotation: once the review authority is the server's new key, move every live listing
   // still recorded to a former key onto it (adopt_listing). Safe to run again; adopted ones are skipped.

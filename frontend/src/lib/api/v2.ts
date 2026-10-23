@@ -5,6 +5,7 @@ import type {
   SupportTicketInput,
   SupportTicketSummary,
   AdminMetrics,
+  AdminWallets,
   TeamMember,
   LedgerListingHit,
   LedgerVerification,
@@ -261,6 +262,7 @@ export const api = {
     removeTeamMember: (userId: string) => request<TeamMember[]>("DELETE", `/admin/team/${enc(userId)}`),
     rent: () => get<RentReport>("/admin/rent"),
     metrics: () => get<AdminMetrics>("/admin/metrics"),
+    wallets: () => get<AdminWallets>("/admin/wallets"),
     // Without force the server only closes spots past their listing deadline.
     closeSpot: (spotId: string, force = false) => post<{ spot: Spot; signature: string }>(`/admin/spots/${enc(spotId)}/close`, force ? { force: true } : {}),
     closeListing: (listingId: string) => post<{ listing: Listing; signature: string }>(`/admin/listings/${enc(listingId)}/close`),
