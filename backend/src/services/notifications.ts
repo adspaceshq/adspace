@@ -1,6 +1,7 @@
 import { and, asc, desc, eq, gt, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 import type { Db } from "../db/client.js";
-import { listings, notifications, sessions, spotEvents, spots, users, watchlist, withdrawals } from "../db/schema.js";
+import { disputes, listings, notifications, sessions, spotEvents, spots, users, watchlist, withdrawals } from "../db/schema.js";
+import { disputeDeadlines, type DisputeDeadlineSource } from "./dispute-deadlines.js";
 import { payoutAvailableAt } from "./settlement.js";
 
 export const NOTIFICATION_CATEGORIES = ["sales", "bidding", "delivery", "disputes", "payments", "listings", "messages", "reminders"] as const;
@@ -398,6 +399,84 @@ export async function scheduleSettlementNotices(db: Db, now = new Date()) {
         inputs.push({ userId: row.buyerId, type: "refund_available", category: "payments", title: `you can take a refund on ${label}`, body: "the creator missed the delivery date. claim your USDC back from the spot page.", href, dedupeKey: `refund_available:${row.spotId}` });
       }
       inputs.push({ userId: row.sellerId, type: "delivery_missed", category: "delivery", title: `delivery date passed for ${label}`, body: "the sponsor can now take a full refund. post proof as soon as you can.", href, dedupeKey: `delivery_missed:${row.spotId}` });
+    }
+  }
+  await notify(db, inputs);
+  return inputs.length;
+}
+
+// Open disputes against their deadline. A day before, the team is told to decide; once a dispute times
+// out the program only allows a full refund to the sponsor (no fee), so the sponsor is told to take it,
+// the creator is told why, and the team knows the card now waits on the sponsor.
+export async function scheduleDisputeNotices(db: Db, deadlines: DisputeDeadlineSource, team: () => Promise<string[]>, now = new Date()) {
+  const open = await db
+    .select({
+      disputeId: disputes.id,
+      openedAt: disputes.openedAt,
+      buyerId: disputes.buyerId,
+      spotId: spots.id,
+      spotAddress: spots.chainAddress,
+      index: spots.index,
+      amount: spots.amount,
+      sellerId: listings.sellerId,
+      title: listings.title,
+    })
+    .from(disputes)
+    .innerJoin(spots, eq(spots.id, disputes.spotId))
+    .innerJoin(listings, eq(listings.id, spots.listingId))
+    .where(eq(disputes.state, "open"));
+  if (!open.length) return 0;
+  const timeouts = await disputeDeadlines(open, deadlines);
+  const due = open.map((row, index) => ({ ...row, timeoutAt: timeouts[index] })).filter((row) => row.timeoutAt.getTime() - now.getTime() <= DAY);
+  if (!due.length) return 0;
+  const staff = await team();
+  const inputs: NotificationInput[] = [];
+  for (const row of due) {
+    const label = spotLabel(row.index, row.title);
+    const href = `/dashboard/spots/${row.spotId}`;
+    const teamHref = "/review?tab=disputes";
+    if (row.timeoutAt <= now) {
+      inputs.push({
+        userId: row.buyerId,
+        type: "dispute_refund_available",
+        category: "disputes",
+        title: `take your full refund on ${label}`,
+        body: `your dispute wasn't decided in time, so all ${usd(row.amount)} can come back to you. claim it from the spot page.`,
+        href,
+        dedupeKey: `dispute_refund_available:${row.disputeId}`,
+      });
+      inputs.push({
+        userId: row.sellerId,
+        type: "dispute_expired",
+        category: "disputes",
+        title: `the dispute on ${label} timed out`,
+        body: "it wasn't decided in time, so the sponsor can now take a full refund.",
+        href,
+        dedupeKey: `dispute_expired:${row.disputeId}`,
+      });
+      for (const staffId of staff) {
+        inputs.push({
+          userId: staffId,
+          type: "dispute_expired_team",
+          category: "disputes",
+          title: `dispute timed out: ${label}`,
+          body: `nobody decided it in time. the sponsor can take the full ${usd(row.amount)} back and the platform earns no fee.`,
+          href: teamHref,
+          dedupeKey: `dispute_expired_team:${row.disputeId}:${staffId}`,
+        });
+      }
+    } else {
+      for (const staffId of staff) {
+        inputs.push({
+          userId: staffId,
+          type: "dispute_due_soon",
+          category: "disputes",
+          title: `decide the dispute on ${label} within a day`,
+          body: `it times out ${formatUtc(row.timeoutAt)}. after that the sponsor gets the full ${usd(row.amount)} back and the platform earns no fee.`,
+          href: teamHref,
+          dedupeKey: `dispute_due_soon:${row.disputeId}:${staffId}`,
+        });
+      }
     }
   }
   await notify(db, inputs);
