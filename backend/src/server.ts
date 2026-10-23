@@ -13,7 +13,8 @@ import { createV2Router } from "./v2/router.js";
 import { coalesce, heliusWebhook } from "./webhooks.js";
 import { reconcile } from "./services/reconciler.js";
 import { expireUnsignedWithdrawals } from "./services/wallet.js";
-import { deliverEmails, detectDeposits, processSpotEvents, scheduleReminders, scheduleSettlementNotices, scheduleWalletNotices } from "./services/notifications.js";
+import { deliverEmails, detectDeposits, processSpotEvents, scheduleDisputeNotices, scheduleReminders, scheduleSettlementNotices, scheduleWalletNotices } from "./services/notifications.js";
+import { listStaff } from "./services/staff.js";
 import { renderNotificationEmail, resendSender, type UnsubscribeLinks } from "./email.js";
 import { unsubscribeToken } from "./services/unsubscribe.js";
 
@@ -35,12 +36,15 @@ async function start() {
       })
     : undefined;
   const unsubscribeSecret = process.env.EMAIL_UNSUBSCRIBE_SECRET?.trim() || undefined;
+  const admins = (process.env.PLATFORM_ADMINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+  // Everyone who reviews: env owners and reviewers plus roles granted in the app.
+  const team = async () => (await listStaff(db, [...admins, ...config.platformReviewers])).map((member) => member.userId);
   const v2Router = createV2Router({
     db,
     unsubscribeSecret,
     chain: v2Chain,
     reviewers: config.platformReviewers,
-    admins: (process.env.PLATFORM_ADMINS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean),
+    admins,
     termsVersion: TERMS_VERSION,
     cluster: config.solana.cluster,
     metadataBaseUrl: config.frontendUrl,
@@ -112,6 +116,8 @@ async function start() {
         await expireUnsignedWithdrawals(db);
         await scheduleWalletNotices(db);
         await scheduleSettlementNotices(db);
+        const disputeTimeoutSeconds = v2Chain ? await v2Chain.readDisputeTimeoutSeconds().catch(() => 3 * 24 * 60 * 60) : 3 * 24 * 60 * 60;
+        await scheduleDisputeNotices(db, { readDeadlines: v2Chain?.readDisputeDeadlines, timeoutSeconds: disputeTimeoutSeconds }, team);
         if (v2Chain && Date.now() - lastDepositCheck >= depositEveryMs) {
           lastDepositCheck = Date.now();
           await detectDeposits(db, (owner) => v2Chain.readTokenBalance(new PublicKey(owner)));

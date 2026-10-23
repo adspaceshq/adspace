@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { eq } from "drizzle-orm";
 import type { Db } from "../src/db/client.js";
-import { notifications, spotEvents, users, watchlist } from "../src/db/schema.js";
+import { disputes, notifications, spotEvents, users, watchlist } from "../src/db/schema.js";
 import { ctaLabel, renderNotificationEmail } from "../src/email.js";
 import {
   deliverEmails,
@@ -12,6 +12,7 @@ import {
   markRead,
   notificationsForEvent,
   processSpotEvents,
+  scheduleDisputeNotices,
   scheduleReminders,
   setPrefs,
   type EmailMessage,
@@ -199,6 +200,33 @@ test("notification emails use a contextual button, escape user text and show rea
   assert.equal(ctaLabel("payout_ready"), "collect payout");
   assert.equal(ctaLabel("something_new"), "open adspaces");
   has(renderNotificationEmail({ title: "hi", body: "", href: null }, "https://devnet.adspaces.fun").html, ">open adspaces</a>");
+});
+
+test("dispute timeouts: the team hears a day before, then sponsor, creator and team at the timeout, once", async () => {
+  const DAY_MS = 24 * HOUR;
+  const seed = () => seedListing(db, { deadline: new Date(Date.now() - DAY_MS), deliveryDueAt: new Date(Date.now() + DAY_MS), funded: true });
+  const [expired, soon, fresh] = [await seed(), await seed(), await seed()];
+  const staff = await seedUser(db, "staff");
+  const openDispute = (row: Awaited<ReturnType<typeof seed>>, ageMs: number) =>
+    db.insert(disputes).values({ spotId: row.spot.id, buyerId: row.buyer!.user.id, reason: "no photo", openedAt: new Date(Date.now() - ageMs) });
+  await openDispute(expired, 4 * DAY_MS);
+  await openDispute(soon, 2.5 * DAY_MS);
+  await openDispute(fresh, HOUR);
+
+  const deadlines = { timeoutSeconds: 3 * 24 * 60 * 60 };
+  const team = async () => [staff.user.id];
+  await scheduleDisputeNotices(db, deadlines, team);
+  await scheduleDisputeNotices(db, deadlines, team);
+
+  const types = async (userId: string) => (await forUser(userId)).map((item) => item.type).sort();
+  assert.deepEqual(await types(expired.buyer!.user.id), ["dispute_refund_available"]);
+  assert.deepEqual(await types(expired.seller.user.id), ["dispute_expired"]);
+  assert.deepEqual(await types(soon.buyer!.user.id), []);
+  assert.deepEqual(await types(fresh.buyer!.user.id), []);
+  assert.deepEqual(await types(staff.user.id), ["dispute_due_soon", "dispute_expired_team"]);
+  const [refund] = await forUser(expired.buyer!.user.id);
+  assert.match(refund.body, /all \$100\.00 can come back/);
+  assert.equal(refund.href, `/dashboard/spots/${expired.spot.id}`);
 });
 
 test("emails with unsubscribe links carry one-click headers and a footer link", () => {
