@@ -88,6 +88,12 @@ test("email unsubscribe works without a session, one click from the mail client 
   assert.equal((await request(app).post("/api/v2/email/unsubscribe")).status, 404);
 });
 
+test("only admins can see the platform wallets", async () => {
+  assert.equal((await request(app).get("/api/v2/admin/wallets")).status, 401);
+  const reviewer = await signIn("reviewer_one");
+  assert.equal((await request(app).get("/api/v2/admin/wallets").set("Cookie", reviewer.cookie)).status, 403);
+});
+
 test("parses USDC amounts into base units", () => {
   assert.equal(parseUsdc("49.5", "price"), 49_500_000n);
   assert.equal(parseUsdc("1", "price"), 1_000_000n);
